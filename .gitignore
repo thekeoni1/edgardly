@@ -1,0 +1,36 @@
+# Downloaded filings
+app/downloads/
+
+# Exported files
+app/exports/
+
+# Ticker cache database
+app/data/*.db
+
+# Python bytecode
+__pycache__/
+*.pyc
+*.pyo
+
+# Virtual environments
+env/
+venv/
+.env/
+.venv/
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Pytest cache
+.pytest_cache/
+
+# Coverage
+.coverage
+htmlcov/

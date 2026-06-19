@@ -1,0 +1,1122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Edgardly</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <header>
+        <h1>Edgardly</h1>
+        <p class="subtitle">Search and download SEC EDGAR filings</p>
+    </header>
+    <main>
+        <section class="search-panel">
+            <div class="panel-title">Filing Search</div>
+            <div class="search-row">
+                <div class="company-search-wrap">
+                    <label for="company-input">Company or Ticker</label>
+                    <div class="autocomplete">
+                        <input id="company-input" type="text" placeholder="e.g. AAPL or Apple" autocomplete="off">
+                        <ul id="company-dropdown" class="dropdown hidden"></ul>
+                    </div>
+                    <input id="selected-cik" type="hidden">
+                    <span id="selected-name" class="selected-badge hidden"></span>
+                </div>
+                <div class="date-group">
+                    <label for="start-date">From</label>
+                    <input id="start-date" type="date">
+                </div>
+                <div class="date-group">
+                    <label for="end-date">To</label>
+                    <input id="end-date" type="date">
+                </div>
+                <button id="search-btn" class="btn-primary" disabled>Search Filings</button>
+            </div>
+            <div class="chips-row">
+                <span class="chips-label">Filing types</span>
+                <div class="form-chips">
+                    <button class="chip active" data-form="10-K"    title="Annual report">10-K</button>
+                    <button class="chip"        data-form="10-K/A"  title="Annual report amendment">10-K/A</button>
+                    <button class="chip"        data-form="10-Q"    title="Quarterly report">10-Q</button>
+                    <button class="chip"        data-form="10-Q/A"  title="Quarterly amendment">10-Q/A</button>
+                    <button class="chip"        data-form="8-K"     title="Current report">8-K</button>
+                    <button class="chip"        data-form="8-K/A"   title="Current report amendment">8-K/A</button>
+                    <button class="chip"        data-form="DEF 14A" title="Proxy statement">DEF 14A</button>
+                    <button class="chip"        data-form="S-1"     title="Registration statement">S-1</button>
+                    <button class="chip"        data-form="S-1/A"   title="Registration amendment">S-1/A</button>
+                </div>
+            </div>
+            <div id="status" class="status hidden"></div>
+        </section>
+
+        <section class="library-panel collapsed" id="library-panel">
+            <div class="library-header" id="library-toggle">
+                <h3>Downloads Library</h3>
+                <span id="library-count" class="count-badge hidden"></span>
+                <button id="refresh-library-btn" class="btn-refresh" title="Refresh library">&#x21BB;</button>
+                <span class="library-chevron">&#9662;</span>
+            </div>
+            <div class="library-body" id="library-body">
+                <p class="library-empty">No files downloaded yet.</p>
+            </div>
+        </section>
+
+        <section id="results-section" class="hidden">
+            <div class="results-toolbar">
+                <h2 id="results-heading">Filings</h2>
+                <div class="toolbar-right">
+                    <div class="export-controls">
+                        <label class="export-fmt-label"><input type="radio" name="export-fmt" value="xlsx" checked> Excel</label>
+                        <label class="export-fmt-label"><input type="radio" name="export-fmt" value="csv"> CSV</label>
+                        <button id="export-btn" class="btn-export" disabled>Export Results</button>
+                    </div>
+                    <div class="dl-format-group">
+                        <label for="dl-format" class="dl-format-label">Format</label>
+                        <select id="dl-format" class="dl-format-select">
+                            <option value="pdf" selected>PDF</option>
+                            <option value="html">HTML</option>
+                            <option value="both">PDF + HTML</option>
+                        </select>
+                    </div>
+                    <button id="batch-download-btn" class="btn-batch" disabled>Download Selected</button>
+                </div>
+            </div>
+            <div id="export-confirm" class="export-confirm hidden">
+                Exported: <a id="export-link" class="export-link" href="#" target="_blank" rel="noopener noreferrer"></a>
+                <button id="show-folder-btn" class="btn-show-folder">Show in folder</button>
+            </div>
+            <table class="filings-table">
+                <thead>
+                    <tr>
+                        <th class="col-check"><input type="checkbox" id="select-all" title="Select all"></th>
+                        <th>Form</th>
+                        <th>Filing Date</th>
+                        <th>Fiscal Year End</th>
+                        <th>Accession #</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="filings-body"></tbody>
+            </table>
+            <p id="no-results" class="no-results hidden">No filings found for the selected criteria.</p>
+        </section>
+
+        <section class="search-panel" id="xbrl-section">
+            <div class="panel-title">XBRL Financial Data</div>
+            <div class="search-row">
+                <div class="company-search-wrap">
+                    <label for="xbrl-company-input">Company or Ticker</label>
+                    <div class="autocomplete">
+                        <input id="xbrl-company-input" type="text" placeholder="e.g. AAPL or Apple" autocomplete="off">
+                        <ul id="xbrl-company-dropdown" class="dropdown hidden"></ul>
+                    </div>
+                    <input id="xbrl-selected-cik" type="hidden">
+                    <span id="xbrl-selected-name" class="selected-badge hidden"></span>
+                </div>
+                <div class="date-group">
+                    <label for="xbrl-start-date">From</label>
+                    <input id="xbrl-start-date" type="date">
+                </div>
+                <div class="date-group">
+                    <label for="xbrl-end-date">To</label>
+                    <input id="xbrl-end-date" type="date">
+                </div>
+                <button id="xbrl-load-btn" class="btn-primary" disabled>Load Financials</button>
+            </div>
+            <div class="chips-row">
+                <span class="chips-label">Period</span>
+                <div class="form-chips">
+                    <button class="chip xbrl-period-chip active" data-period="annual">Annual</button>
+                    <button class="chip xbrl-period-chip" data-period="quarterly">Quarterly</button>
+                </div>
+            </div>
+            <div id="xbrl-status" class="status hidden"></div>
+        </section>
+
+        <section id="xbrl-results" class="xbrl-results-section hidden">
+            <div class="xbrl-results-header">
+                <span id="xbrl-entity-name" class="xbrl-entity-name"></span>
+                <div class="xbrl-export-bar">
+                    <label class="export-fmt-label"><input type="radio" name="xbrl-export-fmt" value="xlsx" checked> Excel</label>
+                    <label class="export-fmt-label"><input type="radio" name="xbrl-export-fmt" value="csv"> CSV</label>
+                    <button id="xbrl-export-btn" class="btn-export">Export</button>
+                </div>
+            </div>
+            <div id="xbrl-export-confirm" class="export-confirm hidden" style="margin: 0 16px 8px;">
+                Exported: <a id="xbrl-export-link" class="export-link" href="#" target="_blank" rel="noopener noreferrer"></a>
+                <button id="xbrl-show-folder-btn" class="btn-show-folder">Show in folder</button>
+            </div>
+            <div class="xbrl-table-wrap">
+                <table id="xbrl-table" class="xbrl-table">
+                    <thead id="xbrl-thead"></thead>
+                    <tbody id="xbrl-tbody"></tbody>
+                </table>
+            </div>
+            <p class="xbrl-legend">
+                <span class="xbrl-flag-pill">!</span> Flagged value &mdash; hover any data cell for tag, period dates, and flag details.
+                "Not reported" = no XBRL data for that period.
+            </p>
+        </section>
+    </main>
+    <footer>
+        <p>Data sourced from SEC EDGAR &mdash; public domain</p>
+    </footer>
+
+    <script>
+        const companyInput = document.getElementById('company-input');
+        const dropdown = document.getElementById('company-dropdown');
+        const selectedCik = document.getElementById('selected-cik');
+        const selectedName = document.getElementById('selected-name');
+        const searchBtn = document.getElementById('search-btn');
+        const status = document.getElementById('status');
+        const resultsSection = document.getElementById('results-section');
+        const filingsBody = document.getElementById('filings-body');
+        const noResults = document.getElementById('no-results');
+        const resultsHeading = document.getElementById('results-heading');
+        const batchDownloadBtn = document.getElementById('batch-download-btn');
+        const selectAllChk = document.getElementById('select-all');
+        const exportBtn = document.getElementById('export-btn');
+        const exportConfirm = document.getElementById('export-confirm');
+        const exportLink = document.getElementById('export-link');
+        const showFolderBtn = document.getElementById('show-folder-btn');
+
+        const _d = new Date();
+        document.getElementById('end-date').value = _d.getFullYear() + '-' + String(_d.getMonth() + 1).padStart(2, '0') + '-' + String(_d.getDate()).padStart(2, '0');
+        const _ds = new Date(_d); _ds.setFullYear(_ds.getFullYear() - 10);
+        document.getElementById('start-date').value = _ds.getFullYear() + '-' + String(_ds.getMonth() + 1).padStart(2, '0') + '-' + String(_ds.getDate()).padStart(2, '0');
+
+        let debounceTimer;
+        let currentCompanyName = '';
+        let currentTicker = '';
+        let filingsMap = [];
+        let dlBtnMap = {};
+
+        companyInput.addEventListener('input', () => {
+            clearSelection();
+            const q = companyInput.value.trim();
+            clearTimeout(debounceTimer);
+            if (q.length < 2) { hideDropdown(); return; }
+            debounceTimer = setTimeout(() => fetchCompanies(q), 250);
+        });
+
+        companyInput.addEventListener('blur', () => {
+            setTimeout(hideDropdown, 150);
+        });
+
+        function fetchCompanies(q) {
+            fetch('/api/search?q=' + encodeURIComponent(q))
+                .then(r => r.json())
+                .then(data => showDropdown(data))
+                .catch(() => hideDropdown());
+        }
+
+        function showDropdown(results) {
+            dropdown.innerHTML = '';
+            if (!results.length) { hideDropdown(); return; }
+            results.forEach(r => {
+                const li = document.createElement('li');
+                const ticker = r.ticker ? ' [' + r.ticker + ']' : '';
+                li.textContent = r.company_name + ticker;
+                li.dataset.cik = r.cik;
+                li.addEventListener('mousedown', () => selectCompany(r));
+                dropdown.appendChild(li);
+            });
+            dropdown.classList.remove('hidden');
+        }
+
+        function hideDropdown() {
+            dropdown.classList.add('hidden');
+        }
+
+        function selectCompany(r) {
+            selectedCik.value = r.cik;
+            currentCompanyName = r.company_name;
+            currentTicker = r.ticker || '';
+            companyInput.value = '';
+            companyInput.placeholder = 'Type to change company';
+            const ticker = r.ticker ? ' (' + r.ticker + ')' : '';
+            selectedName.textContent = r.company_name + ticker + ' — CIK ' + r.cik;
+            selectedName.classList.remove('hidden');
+            searchBtn.disabled = false;
+            hideDropdown();
+        }
+
+        function clearSelection() {
+            selectedCik.value = '';
+            selectedName.classList.add('hidden');
+            searchBtn.disabled = true;
+        }
+
+        // Chip toggle
+        document.querySelectorAll('.chip').forEach(chip => {
+            chip.addEventListener('click', () => chip.classList.toggle('active'));
+        });
+
+        function getSelectedForms() {
+            return Array.from(document.querySelectorAll('.chip.active'))
+                .map(c => c.dataset.form);
+        }
+
+        searchBtn.addEventListener('click', () => {
+            const cik = selectedCik.value;
+            const start = document.getElementById('start-date').value;
+            const end = document.getElementById('end-date').value;
+            const forms = getSelectedForms();
+            if (!cik || !start || !end) return;
+            if (!forms.length) {
+                setStatus('Select at least one filing type.', 'error');
+                return;
+            }
+
+            setLoading('Fetching filings…');
+            searchBtn.disabled = true;
+
+            const params = new URLSearchParams({ cik, start, end, forms: forms.join(',') });
+            fetch('/api/filings?' + params)
+                .then(r => r.json())
+                .then(data => {
+                    searchBtn.disabled = false;
+                    if (data.error) { setStatus(data.error, 'error'); return; }
+                    clearStatus();
+                    renderFilings(data);
+                })
+                .catch(err => {
+                    searchBtn.disabled = false;
+                    setStatus('Error fetching filings: ' + err.message, 'error');
+                });
+        });
+
+        function renderFilings(filings) {
+            filingsBody.innerHTML = '';
+            filingsMap = filings.slice();
+            dlBtnMap = {};
+            selectAllChk.checked = false;
+            selectAllChk.indeterminate = false;
+            updateBatchBtn();
+            exportBtn.disabled = filings.length === 0;
+            exportConfirm.classList.add('hidden');
+
+            resultsSection.classList.remove('hidden');
+            resultsHeading.textContent = 'Filings (' + filings.length + ')';
+
+            if (!filings.length) {
+                noResults.classList.remove('hidden');
+                return;
+            }
+            noResults.classList.add('hidden');
+
+            filings.forEach((f, idx) => {
+                const tr = document.createElement('tr');
+
+                const tdCheck = document.createElement('td');
+                tdCheck.className = 'col-check';
+                const cb = document.createElement('input');
+                cb.type = 'checkbox';
+                cb.dataset.idx = idx;
+                cb.addEventListener('change', onCheckboxChange);
+                tdCheck.appendChild(cb);
+
+                const td0 = document.createElement('td');
+                const badge = document.createElement('span');
+                badge.className = 'badge';
+                badge.textContent = f.form_type;
+                td0.appendChild(badge);
+
+                const td1 = document.createElement('td');
+                td1.textContent = f.filing_date;
+
+                const td2 = document.createElement('td');
+                td2.textContent = f.fiscal_year_end || '—';
+
+                const td3 = document.createElement('td');
+                td3.className = 'mono';
+                td3.textContent = f.accession_number;
+
+                const td4 = document.createElement('td');
+                td4.className = 'actions-cell';
+
+                const a = document.createElement('a');
+                a.href = f.document_url;
+                a.target = '_blank';
+                a.rel = 'noopener noreferrer';
+                a.textContent = 'View';
+                a.className = 'action-link';
+
+                const dlBtn = document.createElement('button');
+                dlBtn.textContent = 'Download';
+                dlBtn.className = 'btn-download';
+                dlBtn.addEventListener('click', () => triggerDownload(f, dlBtn));
+                dlBtnMap[f.accession_number] = dlBtn;
+
+                td4.appendChild(a);
+                td4.appendChild(dlBtn);
+
+                tr.appendChild(tdCheck);
+                tr.appendChild(td0);
+                tr.appendChild(td1);
+                tr.appendChild(td2);
+                tr.appendChild(td3);
+                tr.appendChild(td4);
+                filingsBody.appendChild(tr);
+            });
+        }
+
+        function onCheckboxChange() {
+            const all = filingsBody.querySelectorAll('input[type="checkbox"]');
+            const checked = filingsBody.querySelectorAll('input[type="checkbox"]:checked');
+            selectAllChk.checked = all.length > 0 && checked.length === all.length;
+            selectAllChk.indeterminate = checked.length > 0 && checked.length < all.length;
+            updateBatchBtn();
+        }
+
+        function updateBatchBtn() {
+            const count = filingsBody.querySelectorAll('input[type="checkbox"]:checked').length;
+            batchDownloadBtn.textContent = count > 0
+                ? 'Download Selected (' + count + ')'
+                : 'Download Selected';
+            batchDownloadBtn.disabled = count === 0;
+        }
+
+        selectAllChk.addEventListener('change', function () {
+            filingsBody.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+                cb.checked = this.checked;
+            });
+            updateBatchBtn();
+        });
+
+        batchDownloadBtn.addEventListener('click', () => {
+            const checkedBoxes = Array.from(
+                filingsBody.querySelectorAll('input[type="checkbox"]:checked')
+            );
+            const toDownload = checkedBoxes.map(cb => {
+                const f = filingsMap[parseInt(cb.dataset.idx)];
+                return {
+                    cik: selectedCik.value,
+                    accession_number: f.accession_number,
+                    company_name: currentCompanyName,
+                    filing_date: f.filing_date,
+                    fiscal_year_end: f.fiscal_year_end,
+                    form_type: f.form_type,
+                    document_url: f.document_url,
+                };
+            });
+
+            const dlFmt = document.getElementById('dl-format').value;
+            batchDownloadBtn.disabled = true;
+            batchDownloadBtn.textContent = (dlFmt === 'pdf' || dlFmt === 'both')
+                ? 'Preparing ' + toDownload.length + ' PDFs…'
+                : 'Downloading ' + toDownload.length + '…';
+
+            checkedBoxes.forEach(cb => {
+                const f = filingsMap[parseInt(cb.dataset.idx)];
+                const btn = dlBtnMap[f.accession_number];
+                if (btn) {
+                    btn.disabled = true;
+                    btn.textContent = (dlFmt === 'pdf' || dlFmt === 'both') ? 'Preparing PDF…' : 'Downloading…';
+                    btn.className = 'btn-download loading';
+                }
+            });
+
+            fetch('/api/download-batch', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ format: dlFmt, filings: toDownload }),
+            })
+            .then(r => r.json())
+            .then(data => {
+                updateBatchBtn();
+                if (data.error) {
+                    setStatus(data.error, 'error');
+                    checkedBoxes.forEach(cb => {
+                        const f = filingsMap[parseInt(cb.dataset.idx)];
+                        const btn = dlBtnMap[f.accession_number];
+                        if (btn) { btn.disabled = false; btn.textContent = 'Download'; btn.className = 'btn-download'; }
+                    });
+                    return;
+                }
+                const results = data.results;
+                const batchFolder = data.folder;
+                let succeeded = 0, fallbacks = 0, err = 0;
+                results.forEach(r => {
+                    const btn = dlBtnMap[r.accession_number];
+                    if (!btn) return;
+                    if (r.status === 'ok') {
+                        btn.textContent = r.pdf_fallback ? 'Saved as HTML' : 'Downloaded';
+                        btn.className = 'btn-download done';
+                        btn.title = r.path + (r.pdf_fallback ? ' (PDF unavailable)' : '');
+                        if (r.pdf_fallback) fallbacks++; else succeeded++;
+                    } else {
+                        btn.textContent = 'Error';
+                        btn.className = 'btn-download dl-error';
+                        btn.title = r.error || 'Download failed';
+                        btn.disabled = false;
+                        err++;
+                    }
+                });
+                const ok = succeeded + fallbacks;
+                const parts = [];
+                if (succeeded > 0) parts.push(succeeded + ' downloaded');
+                if (fallbacks > 0) parts.push(fallbacks + ' saved as HTML (PDF unavailable)');
+                if (err > 0) parts.push(err + ' failed');
+                const msg = parts.join(', ') + '.';
+                status.innerHTML = '';
+                status.appendChild(document.createTextNode(msg));
+                if (ok > 0 && batchFolder) {
+                    const folderBtn = document.createElement('button');
+                    folderBtn.className = 'btn-show-folder';
+                    folderBtn.textContent = 'Show in folder';
+                    folderBtn.style.marginLeft = '10px';
+                    folderBtn.addEventListener('click', () => {
+                        fetch('/api/open-folder', {
+                            method: 'POST',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({ folder: batchFolder }),
+                        }).catch(() => {});
+                    });
+                    status.appendChild(folderBtn);
+                }
+                status.className = 'status ' + (err ? 'error' : 'info');
+                if (ok > 0) loadLibrary();
+            })
+            .catch(err => {
+                updateBatchBtn();
+                setStatus('Batch download error: ' + err.message, 'error');
+            });
+        });
+
+        function triggerDownload(f, btn) {
+            const dlFmt = document.getElementById('dl-format').value;
+            btn.disabled = true;
+            btn.textContent = (dlFmt === 'pdf' || dlFmt === 'both') ? 'Preparing PDF…' : 'Downloading…';
+            btn.className = 'btn-download loading';
+
+            fetch('/api/download', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    cik: selectedCik.value,
+                    accession_number: f.accession_number,
+                    company_name: currentCompanyName,
+                    filing_date: f.filing_date,
+                    fiscal_year_end: f.fiscal_year_end,
+                    form_type: f.form_type,
+                    document_url: f.document_url,
+                    format: dlFmt,
+                })
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.error) {
+                    btn.textContent = 'Error';
+                    btn.className = 'btn-download dl-error';
+                    btn.title = data.error;
+                    btn.disabled = false;
+                } else {
+                    btn.textContent = data.pdf_fallback ? 'Saved as HTML' : 'Downloaded';
+                    btn.className = 'btn-download done';
+                    btn.title = data.path + (data.pdf_fallback ? ' (PDF unavailable)' : '');
+                    const folderBtn = document.createElement('button');
+                    folderBtn.className = 'btn-folder-inline';
+                    folderBtn.title = 'Show in folder';
+                    folderBtn.textContent = '📂';
+                    const folder = data.folder;
+                    folderBtn.addEventListener('click', () => {
+                        fetch('/api/open-folder', {
+                            method: 'POST',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({ folder }),
+                        }).catch(() => {});
+                    });
+                    btn.insertAdjacentElement('afterend', folderBtn);
+                    loadLibrary();
+                }
+            })
+            .catch(err => {
+                btn.textContent = 'Error';
+                btn.className = 'btn-download dl-error';
+                btn.title = err.message;
+                btn.disabled = false;
+            });
+        }
+
+        // Export
+        let lastExportFolder = null;
+
+        exportBtn.addEventListener('click', () => {
+            const cik = selectedCik.value;
+            const start = document.getElementById('start-date').value;
+            const end = document.getElementById('end-date').value;
+            const forms = getSelectedForms();
+            const fmt = document.querySelector('input[name="export-fmt"]:checked').value;
+
+            exportBtn.disabled = true;
+            exportBtn.textContent = 'Exporting…';
+            exportConfirm.classList.add('hidden');
+
+            fetch('/api/export', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    cik,
+                    start,
+                    end,
+                    forms: forms.join(','),
+                    format: fmt,
+                    company_name: currentCompanyName,
+                    ticker: currentTicker,
+                }),
+            })
+            .then(r => r.json())
+            .then(data => {
+                exportBtn.disabled = false;
+                exportBtn.textContent = 'Export Results';
+                if (data.error) { setStatus('Export failed: ' + data.error, 'error'); return; }
+                exportLink.textContent = data.filename;
+                exportLink.href = data.download_url;
+                lastExportFolder = data.folder || null;
+                exportConfirm.classList.remove('hidden');
+            })
+            .catch(err => {
+                exportBtn.disabled = false;
+                exportBtn.textContent = 'Export Results';
+                setStatus('Export failed: ' + err.message, 'error');
+            });
+        });
+
+        showFolderBtn.addEventListener('click', () => {
+            fetch('/api/open-folder', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ folder: lastExportFolder }),
+            }).catch(() => {});
+        });
+
+        // Library
+        const libraryPanel = document.getElementById('library-panel');
+        const libraryBody = document.getElementById('library-body');
+        const libraryCount = document.getElementById('library-count');
+
+        let libraryLoaded = false;
+
+        document.getElementById('library-toggle').addEventListener('click', (e) => {
+            if (e.target.id === 'refresh-library-btn') return;
+            libraryPanel.classList.toggle('collapsed');
+            if (!libraryPanel.classList.contains('collapsed') && !libraryLoaded) {
+                loadLibrary();
+                libraryLoaded = true;
+            }
+        });
+
+        document.getElementById('refresh-library-btn').addEventListener('click', (e) => {
+            e.stopPropagation();
+            libraryLoaded = true;
+            loadLibrary();
+        });
+
+        function loadLibrary() {
+            fetch('/api/downloads')
+                .then(r => r.json())
+                .then(data => renderLibrary(data))
+                .catch(() => {});
+        }
+
+        function latestModified(companyData) {
+            let max = 0;
+            Object.values(companyData).forEach(files =>
+                files.forEach(f => { if (f.modified > max) max = f.modified; })
+            );
+            return max;
+        }
+
+        function renderLibrary(data) {
+            const companies = Object.keys(data).sort(
+                (a, b) => latestModified(data[b]) - latestModified(data[a])
+            );
+            libraryBody.innerHTML = '';
+
+            if (companies.length === 0) {
+                libraryBody.classList.add('lib-empty-state');
+                libraryBody.innerHTML = '<p class="library-empty">No files downloaded yet.</p>';
+                libraryCount.classList.add('hidden');
+                return;
+            }
+            libraryBody.classList.remove('lib-empty-state');
+
+            let total = 0;
+            companies.forEach(c => Object.values(data[c]).forEach(files => { total += files.length; }));
+            libraryCount.textContent = total + ' file' + (total !== 1 ? 's' : '');
+            libraryCount.classList.remove('hidden');
+
+            // Left pane
+            const paneLeft = document.createElement('div');
+            paneLeft.className = 'lib-left';
+
+            const filterInput = document.createElement('input');
+            filterInput.type = 'search';
+            filterInput.placeholder = 'Filter companies…';
+            filterInput.className = 'lib-filter';
+
+            const companyList = document.createElement('ul');
+            companyList.className = 'lib-company-list';
+
+            paneLeft.appendChild(filterInput);
+            paneLeft.appendChild(companyList);
+
+            // Right pane
+            const paneRight = document.createElement('div');
+            paneRight.className = 'lib-right';
+
+            libraryBody.appendChild(paneLeft);
+            libraryBody.appendChild(paneRight);
+
+            companies.forEach(company => {
+                const li = document.createElement('li');
+                li.className = 'lib-company-item';
+                li.title = company;
+
+                const allFiles = Object.values(data[company]).flat();
+
+                const nameSpan = document.createElement('span');
+                nameSpan.className = 'lib-company-item-name';
+                nameSpan.textContent = company;
+
+                const countSpan = document.createElement('span');
+                countSpan.className = 'lib-company-item-count';
+                countSpan.textContent = allFiles.length;
+
+                li.appendChild(nameSpan);
+                li.appendChild(countSpan);
+
+                li.addEventListener('click', () => {
+                    companyList.querySelectorAll('.lib-company-item').forEach(el => el.classList.remove('active'));
+                    li.classList.add('active');
+                    renderCompanyDetail(paneRight, company, data[company]);
+                });
+
+                companyList.appendChild(li);
+            });
+
+            filterInput.addEventListener('input', () => {
+                const q = filterInput.value.toLowerCase();
+                companyList.querySelectorAll('.lib-company-item').forEach(item => {
+                    const name = item.querySelector('.lib-company-item-name').textContent.toLowerCase();
+                    item.style.display = name.includes(q) ? '' : 'none';
+                });
+            });
+
+            // Auto-select the most recently downloaded company
+            const first = companyList.querySelector('.lib-company-item');
+            if (first) first.click();
+        }
+
+        function parseLibFilename(fname) {
+            const m = fname.match(/^(.+)_(\d{4}-\d{2}-\d{2})\./);
+            return m ? { form: m[1], date: m[2] } : { form: fname, date: '' };
+        }
+
+        function renderCompanyDetail(pane, company, years) {
+            pane.innerHTML = '';
+
+            const heading = document.createElement('div');
+            heading.className = 'lib-detail-heading';
+            heading.textContent = company;
+            pane.appendChild(heading);
+
+            const table = document.createElement('table');
+            table.className = 'lib-detail-table';
+
+            const thead = document.createElement('thead');
+            thead.innerHTML = '<tr><th>Form</th><th>Date</th><th>Size</th><th>Downloaded</th><th></th></tr>';
+            table.appendChild(thead);
+
+            const tbody = document.createElement('tbody');
+
+            Object.keys(years).sort((a, b) => {
+                if (a === '—') return 1;
+                if (b === '—') return -1;
+                return parseInt(b) - parseInt(a);
+            }).forEach(year => {
+                const sepRow = document.createElement('tr');
+                sepRow.className = 'lib-year-row';
+                const sepTd = document.createElement('td');
+                sepTd.colSpan = 5;
+                sepTd.textContent = year;
+                sepRow.appendChild(sepTd);
+                tbody.appendChild(sepRow);
+
+                years[year].forEach(f => {
+                    const { form, date } = parseLibFilename(f.filename);
+                    const tr = document.createElement('tr');
+                    tr.className = 'lib-file-row';
+
+                    const tdForm = document.createElement('td');
+                    const badge = document.createElement('span');
+                    badge.className = 'badge';
+                    badge.textContent = form;
+                    tdForm.appendChild(badge);
+
+                    const tdDate = document.createElement('td');
+                    tdDate.className = 'lib-td-date';
+                    tdDate.textContent = date;
+
+                    const tdSize = document.createElement('td');
+                    tdSize.className = 'lib-td-size';
+                    tdSize.textContent = formatBytes(f.size);
+
+                    const tdAge = document.createElement('td');
+                    tdAge.className = 'lib-td-age';
+                    tdAge.textContent = timeAgo(f.modified);
+
+                    const tdOpen = document.createElement('td');
+                    tdOpen.className = 'lib-td-open';
+                    const link = document.createElement('a');
+                    link.href = '/downloads/' + f.path.split('/').map(encodeURIComponent).join('/');
+                    link.target = '_blank';
+                    link.rel = 'noopener noreferrer';
+                    link.textContent = '↗';
+                    link.className = 'lib-open-link';
+                    link.title = f.filename;
+                    tdOpen.appendChild(link);
+
+                    tr.appendChild(tdForm);
+                    tr.appendChild(tdDate);
+                    tr.appendChild(tdSize);
+                    tr.appendChild(tdAge);
+                    tr.appendChild(tdOpen);
+                    tbody.appendChild(tr);
+                });
+            });
+
+            table.appendChild(tbody);
+            pane.appendChild(table);
+        }
+
+        function formatBytes(bytes) {
+            if (bytes < 1024) return bytes + ' B';
+            if (bytes < 1048576) return Math.round(bytes / 1024) + ' KB';
+            return (bytes / 1048576).toFixed(1) + ' MB';
+        }
+
+        function timeAgo(ts) {
+            const diff = Date.now() / 1000 - ts;
+            if (diff < 60) return 'just now';
+            if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
+            if (diff < 86400) return Math.floor(diff / 3600) + 'h ago';
+            if (diff < 604800) return Math.floor(diff / 86400) + 'd ago';
+            return new Date(ts * 1000).toLocaleDateString();
+        }
+
+        function setStatus(msg, type) {
+            status.textContent = msg;
+            status.className = 'status ' + type;
+        }
+
+        function setLoading(msg) {
+            status.innerHTML = '';
+            const spin = document.createElement('span');
+            spin.className = 'spinner';
+            status.appendChild(spin);
+            status.appendChild(document.createTextNode(' ' + msg));
+            status.className = 'status info';
+        }
+
+        function clearStatus() {
+            status.textContent = '';
+            status.className = 'status hidden';
+        }
+
+        // -- XBRL Financial Data --
+
+        const xbrlCompanyInput  = document.getElementById('xbrl-company-input');
+        const xbrlDropdown      = document.getElementById('xbrl-company-dropdown');
+        const xbrlSelectedCik   = document.getElementById('xbrl-selected-cik');
+        const xbrlSelectedName  = document.getElementById('xbrl-selected-name');
+        const xbrlLoadBtn       = document.getElementById('xbrl-load-btn');
+        const xbrlStatusEl      = document.getElementById('xbrl-status');
+        const xbrlResults       = document.getElementById('xbrl-results');
+        const xbrlTooltip       = document.getElementById('xbrl-tooltip');
+
+        const _xd = new Date();
+        document.getElementById('xbrl-end-date').value = _xd.getFullYear() + '-' + String(_xd.getMonth() + 1).padStart(2, '0') + '-' + String(_xd.getDate()).padStart(2, '0');
+        const _xds = new Date(_xd); _xds.setFullYear(_xds.getFullYear() - 10);
+        document.getElementById('xbrl-start-date').value = _xds.getFullYear() + '-' + String(_xds.getMonth() + 1).padStart(2, '0') + '-' + String(_xds.getDate()).padStart(2, '0');
+
+        // Period chips -- radio-like: only one active at a time
+        document.querySelectorAll('.xbrl-period-chip').forEach(chip => {
+            chip.addEventListener('click', () => {
+                document.querySelectorAll('.xbrl-period-chip').forEach(c => c.classList.remove('active'));
+                chip.classList.add('active');
+            });
+        });
+
+        let xbrlDebounceTimer;
+        let xbrlCurrentData = null;
+
+        xbrlCompanyInput.addEventListener('input', () => {
+            xbrlClearSelection();
+            const q = xbrlCompanyInput.value.trim();
+            clearTimeout(xbrlDebounceTimer);
+            if (q.length < 2) { xbrlHideDropdown(); return; }
+            xbrlDebounceTimer = setTimeout(() => xbrlFetchCompanies(q), 250);
+        });
+
+        xbrlCompanyInput.addEventListener('blur', () => {
+            setTimeout(xbrlHideDropdown, 150);
+        });
+
+        function xbrlFetchCompanies(q) {
+            fetch('/api/search?q=' + encodeURIComponent(q))
+                .then(r => r.json())
+                .then(data => xbrlShowDropdown(data))
+                .catch(() => xbrlHideDropdown());
+        }
+
+        function xbrlShowDropdown(results) {
+            xbrlDropdown.innerHTML = '';
+            if (!results.length) { xbrlHideDropdown(); return; }
+            results.forEach(r => {
+                const li = document.createElement('li');
+                li.textContent = r.company_name + (r.ticker ? ' [' + r.ticker + ']' : '');
+                li.dataset.cik = r.cik;
+                li.addEventListener('mousedown', () => xbrlSelectCompany(r));
+                xbrlDropdown.appendChild(li);
+            });
+            xbrlDropdown.classList.remove('hidden');
+        }
+
+        function xbrlHideDropdown() { xbrlDropdown.classList.add('hidden'); }
+
+        function xbrlSelectCompany(r) {
+            xbrlSelectedCik.value = r.cik;
+            xbrlCompanyInput.value = '';
+            xbrlCompanyInput.placeholder = 'Type to change company';
+            xbrlSelectedName.textContent = r.company_name + (r.ticker ? ' (' + r.ticker + ')' : '') + ' — CIK ' + r.cik;
+            xbrlSelectedName.classList.remove('hidden');
+            xbrlLoadBtn.disabled = false;
+            xbrlHideDropdown();
+        }
+
+        function xbrlClearSelection() {
+            xbrlSelectedCik.value = '';
+            xbrlSelectedName.classList.add('hidden');
+            xbrlLoadBtn.disabled = true;
+        }
+
+        xbrlLoadBtn.addEventListener('click', () => {
+            const cik = xbrlSelectedCik.value;
+            const startYear = parseInt(document.getElementById('xbrl-start-date').value) || 2015;
+            const endYear   = parseInt(document.getElementById('xbrl-end-date').value) || new Date().getFullYear();
+            const periodType = document.querySelector('.xbrl-period-chip.active').dataset.period;
+            if (!cik) return;
+            xbrlLoadBtn.disabled = true;
+            xbrlSetLoading('Fetching XBRL financial data from EDGAR…');
+            xbrlResults.classList.add('hidden');
+            document.getElementById('xbrl-export-confirm').classList.add('hidden');
+            fetch('/api/xbrl/extract', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ cik, start_year: startYear, end_year: endYear, period_type: periodType }),
+            })
+            .then(r => r.json())
+            .then(data => {
+                xbrlLoadBtn.disabled = false;
+                if (data.error) { xbrlSetStatus('Error: ' + data.error, 'error'); return; }
+                if (!data.columns || data.columns.length === 0) {
+                    xbrlSetStatus('No data found for the selected period. Try a wider year range.', 'info');
+                    return;
+                }
+                xbrlClearStatus();
+                xbrlCurrentData = data;
+                renderXbrlTable(data);
+            })
+            .catch(err => {
+                xbrlLoadBtn.disabled = false;
+                xbrlSetStatus('Error: ' + err.message, 'error');
+            });
+        });
+
+        function renderXbrlTable(data) {
+            const thead = document.getElementById('xbrl-thead');
+            const tbody = document.getElementById('xbrl-tbody');
+            thead.innerHTML = '';
+            tbody.innerHTML = '';
+
+            const hrow = document.createElement('tr');
+            const th0 = document.createElement('th');
+            th0.className = 'xbrl-col-name';
+            th0.textContent = 'Line Item';
+            hrow.appendChild(th0);
+            data.columns.forEach(col => {
+                const th = document.createElement('th');
+                th.className = 'xbrl-col-period';
+                th.textContent = col.label;
+                th.title = col.key;
+                hrow.appendChild(th);
+            });
+            thead.appendChild(hrow);
+
+            data.rows.forEach(row => {
+                const tr = document.createElement('tr');
+                const td0 = document.createElement('td');
+                td0.className = 'xbrl-col-name';
+                const nameDiv = document.createElement('div');
+                nameDiv.className = 'xbrl-line-item-name';
+                nameDiv.textContent = row.line_item;
+                td0.appendChild(nameDiv);
+                if (row.tag_used) {
+                    const tagDiv = document.createElement('div');
+                    tagDiv.className = 'xbrl-tag-label';
+                    tagDiv.textContent = row.tag_used;
+                    tagDiv.title = row.tag_used;
+                    td0.appendChild(tagDiv);
+                }
+                tr.appendChild(td0);
+
+                data.columns.forEach(col => {
+                    const cell = row.cells[col.key];
+                    const td = document.createElement('td');
+                    td.className = 'xbrl-cell';
+                    if (!cell) {
+                        td.classList.add('xbrl-not-reported');
+                        const s = document.createElement('span');
+                        s.textContent = 'Not reported';
+                        td.appendChild(s);
+                    } else {
+                        if (cell.flags && cell.flags.length > 0) td.classList.add('xbrl-flagged');
+                        const valSpan = document.createElement('span');
+                        valSpan.className = 'xbrl-value';
+                        valSpan.textContent = cell.formatted !== null ? cell.formatted : String(cell.value);
+                        td.appendChild(valSpan);
+                        if (cell.flags && cell.flags.length > 0) {
+                            const icon = document.createElement('span');
+                            icon.className = 'xbrl-flag-icon';
+                            icon.textContent = '!';
+                            td.appendChild(icon);
+                        }
+                        td.dataset.tooltip = JSON.stringify({
+                            tag: cell.tag,
+                            start: cell.start,
+                            end: cell.end,
+                            value: cell.value,
+                            unit: cell.unit,
+                            filed: cell.filed,
+                            flags: cell.flags || [],
+                        });
+                    }
+                    tr.appendChild(td);
+                });
+                tbody.appendChild(tr);
+            });
+
+            document.getElementById('xbrl-entity-name').textContent = data.entity;
+            xbrlResults.classList.remove('hidden');
+        }
+
+        // Tooltip
+        (function() {
+            const tbl = document.getElementById('xbrl-table');
+            tbl.addEventListener('mousemove', e => {
+                const td = e.target.closest('td[data-tooltip]');
+                if (!td) { xbrlTooltip.classList.add('hidden'); return; }
+                const d = JSON.parse(td.dataset.tooltip);
+                let html = '<div class="tt-row"><b>Tag:</b> ' + xbrlEsc(d.tag || '—') + '</div>';
+                html += d.start
+                    ? '<div class="tt-row"><b>Period:</b> ' + d.start + ' — ' + d.end + '</div>'
+                    : '<div class="tt-row"><b>Date:</b> ' + (d.end || '—') + '</div>';
+                const rawNum = (d.value !== null && d.value !== undefined)
+                    ? Number(d.value).toLocaleString('en-US') + (d.unit ? ' ' + d.unit : '')
+                    : 'N/A';
+                html += '<div class="tt-row"><b>Value:</b> ' + rawNum + '</div>';
+                if (d.filed) html += '<div class="tt-row"><b>Filed:</b> ' + d.filed + '</div>';
+                if (d.flags && d.flags.length > 0) {
+                    html += '<div class="tt-row tt-flags"><b>Flags:</b></div>';
+                    d.flags.forEach(f => {
+                        const msg = (typeof f === 'object') ? f.msg : f;
+                        html += '<div class="tt-row tt-flag-msg">&#8226; ' + xbrlEsc(msg) + '</div>';
+                    });
+                }
+                xbrlTooltip.innerHTML = html;
+                xbrlTooltip.classList.remove('hidden');
+                const w = 284;
+                let x = e.clientX + 14, y = e.clientY + 14;
+                if (x + w > window.innerWidth - 10) x = e.clientX - w - 14;
+                if (y + 160 > window.innerHeight - 10) y = e.clientY - 160 - 10;
+                xbrlTooltip.style.left = x + 'px';
+                xbrlTooltip.style.top  = y + 'px';
+            });
+            tbl.addEventListener('mouseleave', () => xbrlTooltip.classList.add('hidden'));
+        })();
+
+        function xbrlEsc(s) {
+            return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+        }
+
+        // XBRL Export
+        let xbrlLastExportFolder = null;
+
+        document.getElementById('xbrl-export-btn').addEventListener('click', () => {
+            if (!xbrlCurrentData || !xbrlSelectedCik.value) return;
+            const cik = xbrlSelectedCik.value;
+            const startYear  = parseInt(document.getElementById('xbrl-start-date').value) || 2015;
+            const endYear    = parseInt(document.getElementById('xbrl-end-date').value) || new Date().getFullYear();
+            const periodType = document.querySelector('.xbrl-period-chip.active').dataset.period;
+            const fmt        = document.querySelector('input[name="xbrl-export-fmt"]:checked').value;
+            const btn = document.getElementById('xbrl-export-btn');
+            btn.disabled = true;
+            btn.textContent = 'Exporting…';
+            document.getElementById('xbrl-export-confirm').classList.add('hidden');
+            fetch('/api/xbrl/export', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ cik, start_year: startYear, end_year: endYear, period_type: periodType, format: fmt }),
+            })
+            .then(r => r.json())
+            .then(data => {
+                btn.disabled = false;
+                btn.textContent = 'Export';
+                if (data.error) { xbrlSetStatus('Export failed: ' + data.error, 'error'); return; }
+                const link = document.getElementById('xbrl-export-link');
+                link.textContent = data.filename;
+                link.href = data.download_url;
+                xbrlLastExportFolder = data.folder || null;
+                document.getElementById('xbrl-export-confirm').classList.remove('hidden');
+            })
+            .catch(err => {
+                btn.disabled = false;
+                btn.textContent = 'Export';
+                xbrlSetStatus('Export failed: ' + err.message, 'error');
+            });
+        });
+
+        document.getElementById('xbrl-show-folder-btn').addEventListener('click', () => {
+            fetch('/api/open-folder', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ folder: xbrlLastExportFolder }),
+            }).catch(() => {});
+        });
+
+        function xbrlSetStatus(msg, type) {
+            xbrlStatusEl.textContent = msg;
+            xbrlStatusEl.className = 'status ' + type;
+        }
+
+        function xbrlSetLoading(msg) {
+            xbrlStatusEl.innerHTML = '';
+            const spin = document.createElement('span');
+            spin.className = 'spinner';
+            xbrlStatusEl.appendChild(spin);
+            xbrlStatusEl.appendChild(document.createTextNode(' ' + msg));
+            xbrlStatusEl.className = 'status info';
+        }
+
+        function xbrlClearStatus() {
+            xbrlStatusEl.textContent = '';
+            xbrlStatusEl.className = 'status hidden';
+        }
+    </script>
+    <div id="xbrl-tooltip" class="xbrl-tooltip hidden"></div>
+</body>
+</html>
