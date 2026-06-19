@@ -16,7 +16,7 @@ A web application for searching and downloading SEC EDGAR filings, with structur
 
 ```bash
 # Clone the repository
-git clone <your-repo-url>
+git clone https://github.com/thekeoni1/edgardly
 cd edgardly/app
 
 # Create and activate a virtual environment (recommended)
