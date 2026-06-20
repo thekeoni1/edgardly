@@ -54,6 +54,63 @@ def _xbrl_format_value(value, unit):
     return "{:g}".format(value)
 
 
+# ---------------------------------------------------------------------------
+# XBRL export: line-item classification and Excel format constants
+# ---------------------------------------------------------------------------
+
+_DOLLAR_LINE_ITEMS = frozenset({
+    "Revenue", "Cost of Revenue", "Gross Profit", "Operating Income", "Net Income",
+    "Total Assets", "Total Liabilities", "Total Equity", "Cash and Equivalents", "Total Debt",
+})
+_EPS_LINE_ITEMS = frozenset({"EPS Basic", "EPS Diluted"})
+_SHARE_LINE_ITEMS = frozenset({"Shares Outstanding (Basic)", "Shares Outstanding (Diluted)"})
+
+# Accounting-style format: positives with trailing space (aligns with closing paren on negatives),
+# negatives in parentheses, zero as dash.
+_XLSX_FMT_DOLLAR = '#,##0_);(#,##0);"-"'
+_XLSX_FMT_EPS    = '#,##0.00_);(#,##0.00);"-"'
+_XLSX_FMT_SHARES = '#,##0_);(#,##0);"-"'
+
+
+def _detect_dollar_scale(rows, columns):
+    """Return (factor, label) for dollar scaling based on most recent Revenue.
+
+    Falls back to Total Assets if Revenue has no data in the displayed column range
+    (this can happen when a company switched XBRL revenue tags mid-history and the
+    older tag only covers pre-filter years).
+    """
+    def _scale_from_value(val):
+        val = abs(val)
+        if val > 1_000_000_000:
+            return 1_000_000, "$mm"
+        if val > 10_000_000:
+            return 1_000, "$000s"
+        return 1, "$"
+
+    for candidate in ("Revenue", "Total Assets"):
+        for row in rows:
+            if row["line_item"] == candidate:
+                for col in reversed(columns):
+                    cell = row["cells"].get(col["key"])
+                    if cell and cell.get("value") is not None:
+                        return _scale_from_value(cell["value"])
+    return 1, "$"
+
+
+def _detect_share_scale(rows, columns):
+    """Return (factor, label) for share-count scaling based on most recent share count."""
+    for name in ("Shares Outstanding (Diluted)", "Shares Outstanding (Basic)"):
+        for row in rows:
+            if row["line_item"] == name:
+                for col in reversed(columns):
+                    cell = row["cells"].get(col["key"])
+                    if cell and cell.get("value") is not None:
+                        if abs(cell["value"]) > 1_000_000_000:
+                            return 1_000_000, "mm"
+                        return 1_000, "000s"
+    return 1_000, "000s"
+
+
 def _build_xbrl_result(cik, start_year, end_year, period_type):
     facts = xbrl.fetch_company_facts(cik)
     entity = facts.get("entityName", str(cik))
@@ -137,11 +194,21 @@ def _build_xbrl_result(cik, start_year, end_year, period_type):
 
 def _xbrl_write_csv(filepath, entity, columns, rows, period_type):
     import csv
+    dollar_factor, dollar_label = _detect_dollar_scale(rows, columns)
+    share_factor, share_label = _detect_share_scale(rows, columns)
     with open(filepath, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
         writer.writerow(["# {} -- XBRL Financial Data ({})".format(entity, period_type)])
         writer.writerow(["Line Item", "Source Tag"] + [c["label"] for c in columns] + ["Flags"])
         for row in rows:
+            line_item = row["line_item"]
+            if line_item in _DOLLAR_LINE_ITEMS:
+                factor, suffix = dollar_factor, " ({})".format(dollar_label)
+            elif line_item in _SHARE_LINE_ITEMS:
+                factor, suffix = share_factor, " ({})".format(share_label)
+            else:
+                factor, suffix = 1, ""
+            label = line_item + suffix
             cells_out = []
             all_row_flags = []
             for col in columns:
@@ -149,12 +216,17 @@ def _xbrl_write_csv(filepath, entity, columns, rows, period_type):
                 if cell is None:
                     cells_out.append("Not reported")
                 else:
-                    cells_out.append(
-                        cell["formatted"] if cell["formatted"] is not None else str(cell["value"])
-                    )
+                    val = cell.get("value")
+                    if val is None:
+                        cells_out.append("")
+                    elif line_item in _EPS_LINE_ITEMS:
+                        cells_out.append("{:.2f}".format(val))
+                    else:
+                        scaled = val / factor if factor != 1 else val
+                        cells_out.append("{:,.0f}".format(scaled))
                     all_row_flags.extend(f["msg"] for f in cell.get("flags", []))
             flags_str = "; ".join(sorted(set(all_row_flags))) if all_row_flags else ""
-            writer.writerow([row["line_item"], row["tag_used"] or ""] + cells_out + [flags_str])
+            writer.writerow([label, row["tag_used"] or ""] + cells_out + [flags_str])
 
 
 def _xbrl_write_xlsx(filepath, entity, columns, rows, period_type):
@@ -164,53 +236,121 @@ def _xbrl_write_xlsx(filepath, entity, columns, rows, period_type):
         from openpyxl.utils import get_column_letter
     except ImportError:
         raise RuntimeError("openpyxl is required: pip install openpyxl")
+
+    dollar_factor, dollar_label = _detect_dollar_scale(rows, columns)
+    share_factor, share_label = _detect_share_scale(rows, columns)
+
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Financial Data"
+
+    BF = "Calibri"
     hdr_fill = PatternFill("solid", fgColor="003366")
-    hdr_font = Font(color="FFFFFF", bold=True)
+    hdr_font = Font(name=BF, color="FFFFFF", bold=True, size=11)
     flag_fill = PatternFill("solid", fgColor="FFF3CD")
-    ws.cell(1, 1, "{} -- XBRL Financial Data ({})".format(entity, period_type.title()))
-    ws.cell(1, 1).font = Font(bold=True, size=12)
+    tag_font = Font(name=BF, color="888888", size=10)
+    flag_text_font = Font(name=BF, color="856404", size=11)
+    base_font = Font(name=BF, size=11)
+    missing_font = Font(name=BF, color="AAAAAA", italic=True, size=11)
+
+    # Row 1: title
+    tc = ws.cell(1, 1, "{} -- XBRL Financial Data ({})".format(entity, period_type.title()))
+    tc.font = Font(name=BF, bold=True, size=12)
+
     hrow = 3
-    for ci, (text, w) in enumerate([("Line Item", 28), ("Source Tag", 46)], start=1):
+    col_widths = {}
+
+    # Header row
+    for ci, (text, min_w) in enumerate([("Line Item", 28), ("Source Tag", 15)], start=1):
         c = ws.cell(hrow, ci, text)
         c.font = hdr_font
         c.fill = hdr_fill
-        ws.column_dimensions[get_column_letter(ci)].width = w
+        col_widths[ci] = max(min_w, len(text))
+
     for ci, col in enumerate(columns, start=3):
         c = ws.cell(hrow, ci, col["label"])
         c.font = hdr_font
         c.fill = hdr_fill
         c.alignment = Alignment(horizontal="right")
-        ws.column_dimensions[get_column_letter(ci)].width = 12
+        col_widths[ci] = len(col["label"])
+
     flags_col = len(columns) + 3
     c = ws.cell(hrow, flags_col, "Flags")
     c.font = hdr_font
     c.fill = hdr_fill
-    ws.column_dimensions[get_column_letter(flags_col)].width = 40
+    col_widths[flags_col] = 12
+
+    # Data rows
     for ri, row in enumerate(rows, start=hrow + 1):
-        ws.cell(ri, 1, row["line_item"])
-        c = ws.cell(ri, 2, row["tag_used"] or "")
-        c.font = Font(color="888888", size=10)
+        line_item = row["line_item"]
+        is_dollar = line_item in _DOLLAR_LINE_ITEMS
+        is_eps = line_item in _EPS_LINE_ITEMS
+        is_shares = line_item in _SHARE_LINE_ITEMS
+
+        if is_dollar:
+            factor, suffix, num_fmt = dollar_factor, " ({})".format(dollar_label), _XLSX_FMT_DOLLAR
+        elif is_shares:
+            factor, suffix, num_fmt = share_factor, " ({})".format(share_label), _XLSX_FMT_SHARES
+        elif is_eps:
+            factor, suffix, num_fmt = 1, "", _XLSX_FMT_EPS
+        else:
+            factor, suffix, num_fmt = 1, "", _XLSX_FMT_DOLLAR
+
+        label = line_item + suffix
+        c = ws.cell(ri, 1, label)
+        c.font = base_font
+        col_widths[1] = min(42, max(col_widths.get(1, 0), len(label)))
+
+        tag_val = row["tag_used"] or ""
+        c = ws.cell(ri, 2, tag_val)
+        c.font = tag_font
+        col_widths[2] = min(52, max(col_widths.get(2, 0), len(tag_val)))
+
         all_row_flags = []
+
         for ci, col in enumerate(columns, start=3):
             cell = row["cells"].get(col["key"])
             c = ws.cell(ri, ci)
             if cell is None:
                 c.value = "Not reported"
-                c.font = Font(color="AAAAAA", italic=True)
+                c.font = missing_font
                 c.alignment = Alignment(horizontal="right")
             else:
-                c.value = cell["value"]
+                raw_val = cell.get("value")
+                if raw_val is not None:
+                    scaled = raw_val / factor if factor != 1 else raw_val
+                    # Write as int when the scaled value has no fractional part (except EPS)
+                    if is_eps:
+                        c.value = float(scaled)
+                    elif isinstance(scaled, float) and scaled == int(scaled):
+                        c.value = int(scaled)
+                    else:
+                        c.value = float(scaled)
+                    c.number_format = num_fmt
+                    abs_s = abs(scaled)
+                    dstr = "{:,.2f}".format(abs_s) if is_eps else "{:,.0f}".format(abs_s)
+                    col_widths[ci] = max(col_widths.get(ci, 0), len(dstr) + 3)
+                else:
+                    c.value = "Not reported"
+                    c.font = missing_font
                 c.alignment = Alignment(horizontal="right")
                 if cell.get("flags"):
                     c.fill = flag_fill
                     all_row_flags.extend(f["msg"] for f in cell["flags"])
+
         flags_str = "; ".join(sorted(set(all_row_flags))) if all_row_flags else ""
         if flags_str:
             c2 = ws.cell(ri, flags_col, flags_str)
-            c2.font = Font(color="856404")
+            c2.font = flag_text_font
+            col_widths[flags_col] = max(col_widths.get(flags_col, 0), min(len(flags_str), 60))
+
+    # Apply auto-fit column widths
+    for ci, w in col_widths.items():
+        ws.column_dimensions[get_column_letter(ci)].width = w + 2
+
+    # Freeze title + header rows so data scrolls underneath
+    ws.freeze_panes = "A4"
+
     wb.save(filepath)
 
 
@@ -420,8 +560,16 @@ def api_xbrl_export():
         safe = "".join(c if c.isalnum() or c in " -_" else "" for c in entity)[:40].strip()
         company_folder = os.path.join(EXPORTS_DIR, safe.replace(" ", "_") or cik)
         os.makedirs(company_folder, exist_ok=True)
-        ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = "xbrl_{}_{}_{}.{}".format(period_type, ts, cik, fmt)
+        now = datetime.datetime.now()
+        date_str = now.strftime("%Y-%m-%d")
+        time_str = now.strftime("%H%M")
+        filename = "{}_XBRL_{}_{}_{}{}".format(
+            safe.replace(" ", "_") or cik,
+            period_type.title(),
+            date_str,
+            time_str,
+            "." + fmt,
+        )
         filepath = os.path.join(company_folder, filename)
         if fmt == "csv":
             _xbrl_write_csv(filepath, entity, columns, rows, period_type)

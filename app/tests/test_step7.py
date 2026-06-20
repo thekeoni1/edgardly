@@ -113,10 +113,10 @@ def test_batch_partial_failure(client, tmp_path):
 @pytest.mark.timeout(180)
 def test_batch_integration_two_filings(client):
     r = client.post("/api/download-batch",
-                    data=json.dumps([FILING_FY2023, FILING_FY2022]),
+                    data=json.dumps({"filings": [FILING_FY2023, FILING_FY2022]}),
                     content_type="application/json")
     assert r.status_code == 200
-    results = r.get_json()
+    results = r.get_json()["results"]
     assert isinstance(results, list)
     assert len(results) == 2
     for res in results:

@@ -1,4 +1,4 @@
-"""xbrl_extractor.py — EDGAR XBRL structured financial data extraction.
+"""xbrl_extractor.py -- EDGAR XBRL structured financial data extraction.
 
 Stage 1: tag-mapping dictionary, companyfacts fetch, and per-line-item resolution.
 Stage 2: deduplication and clean period time-series.
@@ -12,7 +12,7 @@ XBRL_BASE = "https://data.sec.gov/api/xbrl"
 # ---------------------------------------------------------------------------
 # Tag-mapping dictionary
 # Each key is a canonical line-item name.
-# Value is an ordered list of us-gaap XBRL tags — first found wins.
+# Value is an ordered list of us-gaap XBRL tags -- first found wins.
 # Add new line items here without changing any other code.
 # ---------------------------------------------------------------------------
 TAG_MAP = {
@@ -56,6 +56,7 @@ TAG_MAP = {
         "Liabilities",
     ],
     "Total Equity": [
+        "StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest",
         "StockholdersEquity",
     ],
     "Cash and Equivalents": [
@@ -125,18 +126,43 @@ def _extract_tag_data(facts_data, tag):
 
 def resolve_line_item(facts_data, line_item):
     """
-    Given companyfacts data and a canonical line-item name, try each mapped
-    tag in order and return (data_points, tag_used) for the first tag with data.
+    Given companyfacts data and a canonical line-item name, return the tag whose
+    most recent annual (FY / 10-K) data point is the latest.  This handles
+    companies that changed XBRL reporting tags over time (e.g. Apple switching
+    from Revenues to RevenueFromContractWithCustomerExcludingAssessedTax after
+    FY2018); the old tag has data but it's stale, so the newer tag wins.
+
+    Falls back to the first tag that has ANY data when no tag has annual data.
 
     Returns:
-        (list[dict], str)   -- data points and the tag that produced them
+        (list[dict], str)   -- data points and the winning tag
         ([], None)          -- if no mapped tag has any data
     """
     tags = TAG_MAP.get(line_item, [])
+    best_tag = None
+    best_data = []
+    best_end = ""
+    first_tag = None
+    first_data = []
+
     for tag in tags:
         data = _extract_tag_data(facts_data, tag)
-        if data:
-            return data, tag
+        if not data:
+            continue
+        if first_tag is None:
+            first_tag, first_data = tag, data
+        annual = [dp for dp in data if dp.get("fiscal_period") == "FY"]
+        if annual:
+            most_recent_end = max(dp.get("end", "") for dp in annual)
+            if most_recent_end > best_end:
+                best_end = most_recent_end
+                best_tag = tag
+                best_data = data
+
+    if best_tag is not None:
+        return best_data, best_tag
+    if first_tag is not None:
+        return first_data, first_tag
     return [], None
 
 
@@ -172,14 +198,14 @@ def most_recent_annual(data_points):
 
 
 # ---------------------------------------------------------------------------
-# Stage 2 — Deduplication and clean period time-series
+# Stage 2 -- Deduplication and clean period time-series
 # ---------------------------------------------------------------------------
 
 def _period_key(dp):
     """
     Return the identity key for a data point's reported period.
 
-    Uses the explicit start/end dates from the XBRL data — never inferred
+    Uses the explicit start/end dates from the XBRL data -- never inferred
     from filing date or fiscal_year/fiscal_period labels.
 
     Flow items (income statement): keyed by (unit, start, end)
@@ -232,13 +258,16 @@ def deduplicate_all_line_items(extracted):
 
 
 # ---------------------------------------------------------------------------
-# Stage 3 — Validation and sanity checks
+# Stage 3 -- Validation and sanity checks
 # ---------------------------------------------------------------------------
 
 FLAG_NEGATIVE_REVENUE = "NEGATIVE_REVENUE"
-FLAG_NET_INCOME_EXCEEDS_REVENUE = "NET_INCOME_EXCEEDS_3X_REVENUE"
+FLAG_NET_INCOME_EXCEEDS_REVENUE = "NET_INCOME_EXCEEDS_REVENUE"
 FLAG_BALANCE_SHEET_MISMATCH = "BALANCE_SHEET_MISMATCH"
 FLAG_ZERO_AMONG_NONZERO = "ZERO_AMONG_NONZERO"
+FLAG_EPS_RECONCILIATION = "EPS_RECONCILIATION_MISMATCH"
+FLAG_LARGE_YOY_CHANGE = "LARGE_YOY_CHANGE"
+FLAG_MISSING_CRITICAL_DATA = "MISSING_CRITICAL_DATA"
 
 
 def _make_flag(flag_type, message, period_end, value, details=None):
@@ -268,8 +297,15 @@ def _check_negative_revenue(revenue_points):
     ]
 
 
+_MIN_REVENUE_FOR_RATIO_CHECK = 10_000_000  # $10M -- skip ratio check for tiny/pre-revenue companies
+
+
 def _check_net_income_vs_revenue(net_income_points, revenue_points):
-    """Flag periods where |net income| > 3x |revenue|."""
+    """Flag periods where |net income| > 3x |revenue|.
+
+    Only applies when |revenue| >= $10M; below that threshold the ratio is
+    almost always a false positive for development-stage or pre-revenue companies.
+    """
     rev_by_key = {
         _period_key(dp): dp
         for dp in revenue_points
@@ -286,11 +322,13 @@ def _check_net_income_vs_revenue(net_income_points, revenue_points):
         rev = rev_dp.get("value")
         if not rev:  # None or zero
             continue
+        if abs(rev) < _MIN_REVENUE_FOR_RATIO_CHECK:
+            continue
         ratio = abs(ni) / abs(rev)
         if ratio > 3:
             flags.append(_make_flag(
                 FLAG_NET_INCOME_EXCEEDS_REVENUE,
-                f"Net income ({ni:,}) is {ratio:.1f}x revenue ({rev:,}) — possible tag error",
+                f"Net income ({ni:,}) is {ratio:.1f}x revenue ({rev:,}) -- possible tag error",
                 dp.get("end"), ni,
                 {"revenue": rev, "ratio": ratio},
             ))
@@ -300,7 +338,11 @@ def _check_net_income_vs_revenue(net_income_points, revenue_points):
 def _check_balance_sheet_equation(assets_pts, liabilities_pts, equity_pts):
     """
     For matching instant periods, flag if:
-        |Assets - (Liabilities + Equity)| > 1% of |Assets|
+        |Assets - (Liabilities + Equity)| > 5% of |Assets|
+
+    5% tolerance (up from 1%) avoids false positives on companies with small
+    amounts of mezzanine equity or noncontrolling interests that don't map
+    neatly to any standard equity XBRL tag.
     """
     liab_by = {_instant_key(dp): dp for dp in liabilities_pts if dp.get("value") is not None}
     eq_by   = {_instant_key(dp): dp for dp in equity_pts if dp.get("value") is not None}
@@ -319,7 +361,7 @@ def _check_balance_sheet_equation(assets_pts, liabilities_pts, equity_pts):
         eq   = eq_dp["value"]
         implied = liab + eq
         diff = abs(assets - implied)
-        if diff > 0.01 * abs(assets):
+        if diff > 0.05 * abs(assets):
             pct = 100 * diff / abs(assets)
             flags.append(_make_flag(
                 FLAG_BALANCE_SHEET_MISMATCH,
@@ -332,11 +374,25 @@ def _check_balance_sheet_equation(assets_pts, liabilities_pts, equity_pts):
     return flags
 
 
+# Line items where an exact-zero value is suspicious given non-zero peers.
+# Total Debt and Cash are excluded -- a company paying off all debt, or
+# burning through cash, are legitimate business outcomes, not data errors.
+_ZERO_CHECK_LINE_ITEMS = frozenset({
+    "Revenue", "Net Income", "Total Assets", "Total Liabilities",
+})
+
+
 def _check_zero_among_nonzero(line_item_name, data_points):
     """
     Flag data points with value exactly 0 when the rest of the series has
     substantial nonzero values.
+
+    Restricted to line items where zero is genuinely suspicious (Revenue,
+    Net Income, Total Assets, Total Liabilities). Cash and Total Debt are
+    excluded because legitimate business events routinely produce zero there.
     """
+    if line_item_name not in _ZERO_CHECK_LINE_ITEMS:
+        return []
     import statistics
     nonzero = [abs(dp["value"]) for dp in data_points
                if dp.get("value") not in (None, 0)]
@@ -358,6 +414,134 @@ def _check_zero_among_nonzero(line_item_name, data_points):
     ]
 
 
+def _check_eps_reconciliation(net_income_points, diluted_shares_points, diluted_eps_points,
+                               tolerance=0.05):
+    """
+    Flag periods where (Net Income / Diluted Shares) differs from reported Diluted EPS
+    by more than `tolerance` (default 5%).
+
+    Skipped when any of the three values is missing for a period, or when shares = 0.
+    Shares are reported in ones; EPS is reported per share.
+    """
+    shares_by_key = {
+        _period_key(dp): dp
+        for dp in diluted_shares_points
+        if dp.get("value") is not None and dp["value"] != 0
+    }
+    eps_by_key = {
+        _period_key(dp): dp
+        for dp in diluted_eps_points
+        if dp.get("value") is not None
+    }
+    flags = []
+    for dp in net_income_points:
+        ni = dp.get("value")
+        if ni is None:
+            continue
+        key = _period_key(dp)
+        shares_dp = shares_by_key.get(key)
+        eps_dp = eps_by_key.get(key)
+        if shares_dp is None or eps_dp is None:
+            continue
+        shares = shares_dp["value"]
+        reported_eps = eps_dp["value"]
+        if reported_eps == 0:
+            continue
+        computed_eps = ni / shares
+        diff_pct = abs(computed_eps - reported_eps) / abs(reported_eps)
+        if diff_pct > tolerance:
+            flags.append(_make_flag(
+                FLAG_EPS_RECONCILIATION,
+                (f"Computed EPS ({computed_eps:.4f}) differs from reported Diluted EPS "
+                 f"({reported_eps:.4f}) by {diff_pct*100:.1f}% -- possible share count "
+                 f"or unit mismatch"),
+                dp.get("end"), reported_eps,
+                {"net_income": ni, "shares": shares, "computed_eps": computed_eps,
+                 "reported_eps": reported_eps, "diff_pct": diff_pct},
+            ))
+    return flags
+
+
+def _check_large_yoy_change(line_item_name, data_points, threshold=5.0):
+    """
+    Flag year-over-year changes exceeding `threshold` (default 500%, i.e. 5x).
+
+    Only compares consecutive annual periods (12-month flow items or year-end
+    balance sheet instants). Skips when the prior-year value is zero (would be
+    division by zero) or when either value is None.
+
+    A 500% YoY change is the threshold: value went to >6x or <-4x the prior year.
+    Only compares FY periods whose end dates are 10-14 months apart, to avoid
+    false positives from gaps in historical XBRL data (e.g. early filings with
+    different reporting bases creating phantom large changes across many years).
+    """
+    from datetime import datetime
+    annual = sorted(
+        [dp for dp in data_points if dp.get("fiscal_period") == "FY"
+         and dp.get("value") is not None and dp.get("end")],
+        key=lambda dp: dp.get("end") or ""
+    )
+    flags = []
+    for i in range(1, len(annual)):
+        prev_dp = annual[i - 1]
+        curr_dp = annual[i]
+        prev = prev_dp["value"]
+        curr = curr_dp["value"]
+        if prev == 0 or prev is None:
+            continue
+        try:
+            prev_end = datetime.strptime(prev_dp["end"], "%Y-%m-%d")
+            curr_end = datetime.strptime(curr_dp["end"], "%Y-%m-%d")
+            days_apart = (curr_end - prev_end).days
+            if not (300 <= days_apart <= 425):  # 10-14 months
+                continue
+        except (ValueError, TypeError):
+            continue
+        change_pct = abs(curr - prev) / abs(prev)
+        if change_pct > threshold:
+            flags.append(_make_flag(
+                FLAG_LARGE_YOY_CHANGE,
+                (f"{line_item_name} changed by {change_pct*100:.0f}% YoY "
+                 f"({prev:,} -> {curr:,}) -- possible tagging error or unit mismatch"),
+                annual[i].get("end"), curr,
+                {"prior_value": prev, "current_value": curr, "change_pct": change_pct},
+            ))
+    return flags
+
+
+def _check_missing_critical_data(deduped_line_items):
+    """
+    Flag if annual (FY) periods exist in any line item but both Revenue and
+    Net Income are completely absent across all mapped tags.
+
+    A 10-K with no revenue and no net income at all is almost certainly a
+    tag-mapping gap, not a genuine reporting omission.
+    """
+    def _has_annual(name):
+        data = deduped_line_items.get(name, {}).get("data", [])
+        return any(dp.get("fiscal_period") == "FY" for dp in data)
+
+    def _any_annual_data():
+        for info in deduped_line_items.values():
+            if any(dp.get("fiscal_period") == "FY" for dp in info.get("data", [])):
+                return True
+        return False
+
+    if not _any_annual_data():
+        return []
+
+    if not _has_annual("Revenue") and not _has_annual("Net Income"):
+        return [_make_flag(
+            FLAG_MISSING_CRITICAL_DATA,
+            ("Annual (10-K) periods detected but both Revenue and Net Income are "
+             "absent across all mapped XBRL tags -- likely a tag-mapping gap"),
+            None, None,
+            {"revenue_tag_used": deduped_line_items.get("Revenue", {}).get("tag_used"),
+             "net_income_tag_used": deduped_line_items.get("Net Income", {}).get("tag_used")},
+        )]
+    return []
+
+
 def validate_financials(deduped_line_items):
     """
     Run all sanity checks on a deduplicated line-items dict.
@@ -366,9 +550,10 @@ def validate_financials(deduped_line_items):
     An empty list means no flags for that line item.
     Balance-sheet equation flags are attached to "Total Assets".
 
-    Flags are purely informational — they never modify or remove data.
+    Flags are purely informational -- they never modify or remove data.
     """
     flags = {name: [] for name in deduped_line_items}
+    flags["_company"] = []
 
     def _data(name):
         return deduped_line_items.get(name, {}).get("data", [])
@@ -387,6 +572,26 @@ def validate_financials(deduped_line_items):
 
     for name, info in deduped_line_items.items():
         flags[name].extend(_check_zero_among_nonzero(name, info.get("data", [])))
+
+    flags["EPS Diluted"].extend(
+        _check_eps_reconciliation(
+            _data("Net Income"),
+            _data("Shares Outstanding (Diluted)"),
+            _data("EPS Diluted"),
+        )
+    )
+
+    # YoY check restricted to income statement flow items where unit mismatches
+    # are the primary concern. Balance sheet and EPS items are excluded:
+    # equity changes dramatically with capital raises/IPOs (not data errors),
+    # and EPS is better validated by the reconciliation check.
+    _YOY_CHECK_ITEMS = {"Revenue", "Net Income", "Gross Profit", "Operating Income",
+                        "Cost of Revenue"}
+    for name, info in deduped_line_items.items():
+        if name in _YOY_CHECK_ITEMS:
+            flags[name].extend(_check_large_yoy_change(name, info.get("data", [])))
+
+    flags["_company"].extend(_check_missing_critical_data(deduped_line_items))
 
     return flags
 
