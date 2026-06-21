@@ -101,12 +101,21 @@ playwright install chromium
 
 ## Running
 
+**Option 1 — double-click launcher (simplest)**
+
+- **Windows:** double-click `run.bat` in the project root
+- **Mac:** double-click `run.command` in the project root
+
+  > First time on Mac: you may need to right-click → Open to bypass Gatekeeper's unidentified-developer warning, or run `chmod +x run.command` once in the terminal.
+
+The browser will open automatically to [http://localhost:5000](http://localhost:5000) when the server is ready. The terminal window stays open so you can see any errors.
+
+**Option 2 — command line**
+
 ```bash
 cd app
 python app.py
 ```
-
-Open [http://localhost:5000](http://localhost:5000) in your browser.
 
 ---
 
