@@ -4,7 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Edgardly</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&family=Source+Serif+4:ital,opsz,wght@0,8..60,300..900;1,8..60,300..900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/style.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.5.0/chart.umd.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 </head>
 <body>
     <header>
@@ -154,9 +158,101 @@
                     <tbody id="xbrl-tbody"></tbody>
                 </table>
             </div>
+            <div class="xbrl-chart-area hidden" id="xbrl-chart-area">
+                <div class="xbrl-chart-tabs">
+                    <button class="xbrl-chart-tab active" data-view="dollar">Revenue &amp; Net Income</button>
+                    <button class="xbrl-chart-tab" data-view="pct">Margin %</button>
+                </div>
+                <div class="xbrl-chart-container">
+                    <canvas id="xbrl-chart"></canvas>
+                </div>
+            </div>
             <p class="xbrl-legend">
                 <span class="xbrl-flag-pill">!</span> Flagged value &mdash; hover any data cell for tag, period dates, and flag details.
                 "Not reported" = no XBRL data for that period.
+            </p>
+        </section>
+        <!-- ===== Peer Comparison ===== -->
+        <section class="search-panel" id="peer-section">
+            <div class="panel-title">Peer Comparison</div>
+
+            <!-- Company selector -->
+            <div class="peer-companies-row">
+                <div class="company-search-wrap">
+                    <label for="peer-company-input">Add Company</label>
+                    <div class="autocomplete">
+                        <input id="peer-company-input" type="text" placeholder="e.g. AAPL or Apple" autocomplete="off">
+                        <ul id="peer-company-dropdown" class="dropdown hidden"></ul>
+                    </div>
+                </div>
+                <button id="peer-add-btn" class="btn-primary" disabled>Add</button>
+            </div>
+            <div id="peer-chips" class="peer-chips"></div>
+
+            <!-- Options -->
+            <div class="peer-options-row">
+                <div class="peer-items-group">
+                    <div class="peer-items-header">
+                        <span>Line Items</span>
+                        <button id="peer-select-all-items" class="btn-link">Select All</button>
+                        <button id="peer-clear-all-items" class="btn-link">Clear All</button>
+                    </div>
+                    <div class="peer-items-grid" id="peer-items-grid">
+                        <!-- populated by JS -->
+                    </div>
+                </div>
+                <div class="peer-periods-group">
+                    <label for="peer-periods-select">Periods</label>
+                    <select id="peer-periods-select">
+                        <option value="3" selected>3 years</option>
+                        <option value="5">5 years</option>
+                        <option value="10">10 years</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Run -->
+            <div class="peer-run-row">
+                <button id="peer-run-btn" class="btn-primary" disabled>Run Comparison</button>
+                <div id="peer-progress-wrap" class="peer-progress-wrap hidden">
+                    <div id="peer-progress-label" class="peer-progress-label">Starting…</div>
+                    <progress id="peer-progress-bar" class="peer-progress-bar" value="0" max="100"></progress>
+                </div>
+            </div>
+            <div id="peer-status" class="status hidden"></div>
+        </section>
+
+        <section id="peer-results-section" class="peer-results-section hidden">
+            <div class="peer-results-header">
+                <span id="peer-scale-label" class="peer-scale-label"></span>
+                <div style="display:flex;gap:10px;align-items:center;">
+                    <button id="peer-export-btn" class="btn-export">Export to Excel</button>
+                </div>
+            </div>
+            <div id="peer-export-confirm" class="export-confirm hidden" style="margin:0 16px 8px;">
+                Exported: <a id="peer-export-link" class="export-link" href="#" target="_blank" rel="noopener noreferrer"></a>
+                <button id="peer-show-folder-btn" class="btn-show-folder">Show in folder</button>
+            </div>
+            <div class="peer-table-wrap">
+                <table id="peer-table" class="peer-table">
+                    <thead id="peer-thead"></thead>
+                    <tbody id="peer-tbody"></tbody>
+                </table>
+            </div>
+            <div class="xbrl-chart-area hidden" id="peer-chart-area">
+                <div class="xbrl-chart-tabs">
+                    <button class="xbrl-chart-tab active" data-view="revenue">Revenue</button>
+                    <button class="xbrl-chart-tab" data-view="net_income">Net Income</button>
+                    <button class="xbrl-chart-tab" data-view="gross_margin_pct">Gross Margin %</button>
+                    <button class="xbrl-chart-tab" data-view="net_margin_pct">Net Margin %</button>
+                </div>
+                <div class="xbrl-chart-container">
+                    <canvas id="peer-chart"></canvas>
+                </div>
+            </div>
+            <p class="peer-legend">
+                <span class="peer-flag-icon">⚠</span> Flagged value — hover any data cell for tag, period dates, and flag details.
+                "N/A" = no XBRL data found for that company and period.
             </p>
         </section>
     </main>
@@ -914,6 +1010,7 @@
             xbrlSetLoading('Fetching XBRL financial data from EDGAR…');
             xbrlResults.classList.add('hidden');
             document.getElementById('xbrl-export-confirm').classList.add('hidden');
+            document.getElementById('xbrl-chart-area').classList.add('hidden');
             fetch('/api/xbrl/extract', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -930,6 +1027,7 @@
                 xbrlClearStatus();
                 xbrlCurrentData = data;
                 renderXbrlTable(data);
+                fetchAndRenderXBRLChart(cik, startYear, endYear, periodType);
             })
             .catch(err => {
                 xbrlLoadBtn.disabled = false;
@@ -1014,6 +1112,152 @@
             xbrlResults.classList.remove('hidden');
         }
 
+        // --- XBRL Chart ---
+        let _xbrlChart = null;
+        let _xbrlChartData = null;
+        let _xbrlChartView = 'dollar';
+
+        const C_BLUE  = '#1B6B5C';
+        const C_GREEN = '#0B1F3A';
+        const C_FLAG  = '#B5483D';
+
+        function _ptColors(series, trusted) {
+            return series.map(p => p.flagged ? C_FLAG : trusted);
+        }
+        function _ptRadius(series) {
+            return series.map(p => p.flagged ? 7 : 3);
+        }
+        function _ptStyle(series) {
+            return series.map(p => p.flagged ? 'triangle' : 'circle');
+        }
+
+        function renderXBRLChart(chartData, view) {
+            const area = document.getElementById('xbrl-chart-area');
+            view = view || _xbrlChartView;
+            _xbrlChartView = view;
+            const s = chartData.series;
+            const labels = s.revenue.map(p => p.period_label);
+            let datasets, yAxisLabel;
+            if (view === 'dollar') {
+                const sc  = chartData.dollar_scale;
+                const lbl = sc ? sc.label : '';
+                datasets = [
+                    {
+                        label: 'Revenue' + (lbl ? ' (' + lbl + ')' : ''),
+                        data:  s.revenue.map(p => p.value),
+                        borderColor: C_BLUE,  backgroundColor: C_BLUE + '22',
+                        pointBackgroundColor: _ptColors(s.revenue, C_BLUE),
+                        pointRadius: _ptRadius(s.revenue),
+                        pointStyle:  _ptStyle(s.revenue),
+                        spanGaps: false,  _pts: s.revenue,
+                    },
+                    {
+                        label: 'Net Income' + (lbl ? ' (' + lbl + ')' : ''),
+                        data:  s.net_income.map(p => p.value),
+                        borderColor: C_GREEN, backgroundColor: C_GREEN + '22',
+                        pointBackgroundColor: _ptColors(s.net_income, C_GREEN),
+                        pointRadius: _ptRadius(s.net_income),
+                        pointStyle:  _ptStyle(s.net_income),
+                        spanGaps: false,  _pts: s.net_income,
+                    },
+                ];
+                yAxisLabel = lbl;
+            } else {
+                datasets = [
+                    {
+                        label: 'Gross Margin %',
+                        data:  s.gross_margin_pct.map(p => p.value),
+                        borderColor: C_BLUE,  backgroundColor: C_BLUE + '22',
+                        pointBackgroundColor: _ptColors(s.gross_margin_pct, C_BLUE),
+                        pointRadius: _ptRadius(s.gross_margin_pct),
+                        pointStyle:  _ptStyle(s.gross_margin_pct),
+                        spanGaps: false,  _pts: s.gross_margin_pct,
+                    },
+                    {
+                        label: 'Net Margin %',
+                        data:  s.net_margin_pct.map(p => p.value),
+                        borderColor: C_GREEN, backgroundColor: C_GREEN + '22',
+                        pointBackgroundColor: _ptColors(s.net_margin_pct, C_GREEN),
+                        pointRadius: _ptRadius(s.net_margin_pct),
+                        pointStyle:  _ptStyle(s.net_margin_pct),
+                        spanGaps: false,  _pts: s.net_margin_pct,
+                    },
+                ];
+                yAxisLabel = '%';
+            }
+            const ctx = document.getElementById('xbrl-chart').getContext('2d');
+            if (_xbrlChart) { _xbrlChart.destroy(); }
+            _xbrlChart = new Chart(ctx, {
+                type: 'line',
+                data: { labels, datasets },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: { mode: 'index', intersect: false },
+                    plugins: {
+                        legend: {
+                            position: 'top',
+                            labels: { color: '#0B1F3A', font: { family: 'IBM Plex Sans, sans-serif', size: 12 } },
+                        },
+                        tooltip: {
+                            callbacks: {
+                                title: function(items) {
+                                    const pt = items[0].dataset._pts[items[0].dataIndex];
+                                    return pt.period_label + '  (' + pt.period_end + ')';
+                                },
+                                label: function(item) {
+                                    const pt = item.dataset._pts[item.dataIndex];
+                                    if (pt.value === null || pt.value === undefined) {
+                                        return item.dataset.label + ': —';
+                                    }
+                                    const val = view === 'pct'
+                                        ? pt.value.toFixed(1) + '%'
+                                        : pt.value.toLocaleString('en-US');
+                                    return item.dataset.label + ': ' + val
+                                        + (pt.flagged ? '  ⚠ Flagged for review' : '');
+                                },
+                            },
+                        },
+                    },
+                    scales: {
+                        x: {
+                            grid: { display: false },
+                            ticks: { color: '#8A8378', font: { family: 'IBM Plex Sans, sans-serif', size: 11 } },
+                        },
+                        y: {
+                            title: { display: !!yAxisLabel, text: yAxisLabel, color: '#8A8378' },
+                            grid: { color: 'rgba(138, 131, 120, 0.15)' },
+                            ticks: { color: '#8A8378', font: { family: 'IBM Plex Sans, sans-serif', size: 11 } },
+                        },
+                    },
+                },
+            });
+            area.classList.remove('hidden');
+        }
+
+        function fetchAndRenderXBRLChart(cik, startYear, endYear, periodType) {
+            fetch('/api/xbrl/chart-data', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ cik, start_year: startYear, end_year: endYear, period_type: periodType }),
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.error) return;
+                _xbrlChartData = data;
+                renderXBRLChart(data, _xbrlChartView);
+            })
+            .catch(() => {});
+        }
+
+        document.querySelectorAll('.xbrl-chart-tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                document.querySelectorAll('.xbrl-chart-tab').forEach(t => t.classList.remove('active'));
+                tab.classList.add('active');
+                if (_xbrlChartData) renderXBRLChart(_xbrlChartData, tab.dataset.view);
+            });
+        });
+
         // Tooltip
         (function() {
             const tbl = document.getElementById('xbrl-table');
@@ -1033,7 +1277,7 @@
                 if (d.flags && d.flags.length > 0) {
                     html += '<div class="tt-row tt-flags"><b>Flags:</b></div>';
                     d.flags.forEach(f => {
-                        const msg = (typeof f === 'object') ? f.msg : f;
+                        const msg = typeof f === 'object' ? (f.msg || f.message || '') : String(f);
                         html += '<div class="tt-row tt-flag-msg">&#8226; ' + xbrlEsc(msg) + '</div>';
                     });
                 }
@@ -1116,6 +1360,519 @@
             xbrlStatusEl.textContent = '';
             xbrlStatusEl.className = 'status hidden';
         }
+
+        // ===== Peer Comparison =====
+        (function () {
+            const ALL_LINE_ITEMS = [
+                "Revenue", "Cost of Revenue", "Gross Profit", "Operating Income", "Net Income",
+                "EPS Basic", "EPS Diluted",
+                "Shares Outstanding (Basic)", "Shares Outstanding (Diluted)",
+                "Total Assets", "Total Liabilities", "Total Equity",
+                "Cash and Equivalents", "Total Debt",
+            ];
+
+            // -- State --
+            let peerCompanies = [];   // [{cik, name}]
+            let peerResult    = null; // last comparison result (for export)
+            let peerES        = null; // EventSource
+            let peerExportFolder = null;
+
+            // -- DOM refs --
+            const peerInput    = document.getElementById('peer-company-input');
+            const peerDrop     = document.getElementById('peer-company-dropdown');
+            const peerAddBtn   = document.getElementById('peer-add-btn');
+            const peerChips    = document.getElementById('peer-chips');
+            const peerRunBtn   = document.getElementById('peer-run-btn');
+            const peerProgress = document.getElementById('peer-progress-wrap');
+            const peerProgBar  = document.getElementById('peer-progress-bar');
+            const peerProgLbl  = document.getElementById('peer-progress-label');
+            const peerStatusEl = document.getElementById('peer-status');
+            const peerResults  = document.getElementById('peer-results-section');
+            const peerExportBtn = document.getElementById('peer-export-btn');
+            const peerExportConfirm = document.getElementById('peer-export-confirm');
+            const peerExportLink = document.getElementById('peer-export-link');
+            const peerShowFolderBtn = document.getElementById('peer-show-folder-btn');
+            const peerScaleLabel = document.getElementById('peer-scale-label');
+
+            // -- Build line-item checkboxes --
+            const grid = document.getElementById('peer-items-grid');
+            ALL_LINE_ITEMS.forEach(li => {
+                const lbl = document.createElement('label');
+                const cb  = document.createElement('input');
+                cb.type = 'checkbox';
+                cb.value = li;
+                cb.checked = true;
+                cb.className = 'peer-item-cb';
+                lbl.appendChild(cb);
+                lbl.appendChild(document.createTextNode(' ' + li));
+                grid.appendChild(lbl);
+            });
+
+            document.getElementById('peer-select-all-items').addEventListener('click', () => {
+                document.querySelectorAll('.peer-item-cb').forEach(cb => cb.checked = true);
+            });
+            document.getElementById('peer-clear-all-items').addEventListener('click', () => {
+                document.querySelectorAll('.peer-item-cb').forEach(cb => cb.checked = false);
+            });
+
+            // -- Company autocomplete --
+            let peerPendingCompany = null;
+            let peerDebounce;
+
+            peerInput.addEventListener('input', () => {
+                peerPendingCompany = null;
+                peerAddBtn.disabled = true;
+                const q = peerInput.value.trim();
+                clearTimeout(peerDebounce);
+                if (q.length < 2) { peerDrop.classList.add('hidden'); return; }
+                peerDebounce = setTimeout(() => {
+                    fetch('/api/search?q=' + encodeURIComponent(q))
+                        .then(r => r.json())
+                        .then(data => {
+                            peerDrop.innerHTML = '';
+                            if (!data.length) { peerDrop.classList.add('hidden'); return; }
+                            data.forEach(r => {
+                                const li = document.createElement('li');
+                                li.textContent = r.company_name + (r.ticker ? ' [' + r.ticker + ']' : '');
+                                li.addEventListener('mousedown', () => {
+                                    peerInput.value = r.company_name;
+                                    peerPendingCompany = r;
+                                    peerAddBtn.disabled = false;
+                                    peerDrop.classList.add('hidden');
+                                });
+                                peerDrop.appendChild(li);
+                            });
+                            peerDrop.classList.remove('hidden');
+                        })
+                        .catch(() => peerDrop.classList.add('hidden'));
+                }, 250);
+            });
+
+            peerInput.addEventListener('blur', () => setTimeout(() => peerDrop.classList.add('hidden'), 150));
+
+            peerAddBtn.addEventListener('click', () => {
+                if (!peerPendingCompany) return;
+                const r = peerPendingCompany;
+                if (peerCompanies.some(c => c.cik === r.cik)) {
+                    peerInput.value = '';
+                    peerPendingCompany = null;
+                    peerAddBtn.disabled = true;
+                    return;
+                }
+                peerCompanies.push({ cik: r.cik, name: r.company_name });
+                peerInput.value = '';
+                peerPendingCompany = null;
+                peerAddBtn.disabled = true;
+                renderPeerChips();
+                peerRunBtn.disabled = peerCompanies.length < 2;
+            });
+
+            function renderPeerChips() {
+                peerChips.innerHTML = '';
+                peerCompanies.forEach((c, i) => {
+                    const chip = document.createElement('span');
+                    chip.className = 'peer-chip';
+                    chip.textContent = c.name;
+                    const rm = document.createElement('button');
+                    rm.className = 'peer-chip-remove';
+                    rm.textContent = '×';
+                    rm.title = 'Remove ' + c.name;
+                    rm.addEventListener('click', () => {
+                        peerCompanies.splice(i, 1);
+                        renderPeerChips();
+                        peerRunBtn.disabled = peerCompanies.length < 2;
+                    });
+                    chip.appendChild(rm);
+                    peerChips.appendChild(chip);
+                });
+            }
+
+            // -- Run comparison --
+            peerRunBtn.addEventListener('click', () => {
+                const selectedItems = Array.from(document.querySelectorAll('.peer-item-cb:checked')).map(cb => cb.value);
+                if (selectedItems.length === 0) {
+                    peerSetStatus('Select at least one line item.', 'error'); return;
+                }
+                if (peerCompanies.length < 2) {
+                    peerSetStatus('Add at least 2 companies.', 'error'); return;
+                }
+
+                if (peerES) { peerES.close(); peerES = null; }
+
+                const nPeriods = document.getElementById('peer-periods-select').value;
+                const params = new URLSearchParams();
+                peerCompanies.forEach(c => params.append('cik', c.cik));
+                params.set('n_periods', nPeriods);
+                selectedItems.forEach(li => params.append('line_items', li));
+
+                peerRunBtn.disabled = true;
+                peerResults.classList.add('hidden');
+                document.getElementById('peer-chart-area').classList.add('hidden');
+                peerProgress.classList.remove('hidden');
+                peerProgBar.value = 0;
+                peerProgLbl.textContent = 'Connecting…';
+                peerClearStatus();
+
+                peerES = new EventSource('/api/xbrl/peer-comparison/stream?' + params.toString());
+
+                peerES.onmessage = function(ev) {
+                    let msg;
+                    try { msg = JSON.parse(ev.data); } catch(e) { return; }
+
+                    if (msg.type === 'progress') {
+                        const pct = msg.total ? Math.round((msg.current / msg.total) * 100) : 0;
+                        peerProgBar.value = pct;
+                        const label = msg.name
+                            ? 'Fetched ' + msg.name + ' (' + msg.current + '/' + msg.total + ')'
+                            : 'Fetching company ' + (msg.current + 1) + ' of ' + msg.total + '…';
+                        peerProgLbl.textContent = label;
+
+                    } else if (msg.type === 'company_error') {
+                        peerSetStatus('Warning: could not load CIK ' + msg.cik + ': ' + msg.message, 'error');
+
+                    } else if (msg.type === 'result') {
+                        peerES.close(); peerES = null;
+                        peerProgress.classList.add('hidden');
+                        peerRunBtn.disabled = false;
+                        peerResult = msg.data;
+                        renderPeerTable(msg.data);
+                        fetchAndRenderPeerChart(msg.data);
+
+                    } else if (msg.type === 'error') {
+                        peerES.close(); peerES = null;
+                        peerProgress.classList.add('hidden');
+                        peerRunBtn.disabled = false;
+                        peerSetStatus('Error: ' + msg.message, 'error');
+                    }
+                };
+
+                peerES.onerror = function() {
+                    if (peerES) { peerES.close(); peerES = null; }
+                    peerProgress.classList.add('hidden');
+                    peerRunBtn.disabled = false;
+                    if (!peerResult) peerSetStatus('Connection error — try again.', 'error');
+                };
+            });
+
+            // -- Render table --
+            function renderPeerTable(data) {
+                const companies  = data.companies;
+                const line_items = data.line_items;
+                const n_periods  = data.n_periods;
+                const scale      = data.scale;
+
+                peerScaleLabel.textContent =
+                    'Dollar scale: ' + scale.dollar_label +
+                    '  |  Share scale: ' + scale.share_label + ' shares';
+
+                const thead = document.getElementById('peer-thead');
+                const tbody = document.getElementById('peer-tbody');
+                thead.innerHTML = '';
+                tbody.innerHTML = '';
+
+                // Header row 1: company names
+                const tr1 = document.createElement('tr');
+                const thCorner = document.createElement('th');
+                thCorner.className = 'peer-col-name';
+                thCorner.rowSpan = 2;
+                thCorner.textContent = 'Line Item';
+                tr1.appendChild(thCorner);
+                companies.forEach((c, ci) => {
+                    const th = document.createElement('th');
+                    th.className = 'peer-th-company' + (ci > 0 ? ' peer-company-divider' : '');
+                    th.colSpan = n_periods;
+                    th.textContent = c.name;
+                    tr1.appendChild(th);
+                });
+                thead.appendChild(tr1);
+
+                // Header row 2: period labels
+                const tr2 = document.createElement('tr');
+                companies.forEach((c, ci) => {
+                    for (let pi = 0; pi < n_periods; pi++) {
+                        const rel = pi === 0 ? 'FY0' : 'FY-' + pi;
+                        // Find actual date from first available line item
+                        let dateHint = '';
+                        for (const li of line_items) {
+                            const info = c.line_items[li];
+                            if (info && info.periods[pi] && info.periods[pi].period_end) {
+                                dateHint = info.periods[pi].period_end;
+                                break;
+                            }
+                        }
+                        const th = document.createElement('th');
+                        th.className = 'peer-th-period' + (pi === 0 && ci > 0 ? ' peer-company-divider' : '');
+                        th.textContent = rel;
+                        if (dateHint) th.title = dateHint;
+                        tr2.appendChild(th);
+                    }
+                });
+                thead.appendChild(tr2);
+
+                // Data rows
+                const DOLLAR_ITEMS = new Set(["Revenue","Cost of Revenue","Gross Profit",
+                    "Operating Income","Net Income","Total Assets","Total Liabilities",
+                    "Total Equity","Cash and Equivalents","Total Debt"]);
+                const EPS_ITEMS   = new Set(["EPS Basic","EPS Diluted"]);
+                const SHARE_ITEMS = new Set(["Shares Outstanding (Basic)","Shares Outstanding (Diluted)"]);
+
+                line_items.forEach(li => {
+                    const isDollar = DOLLAR_ITEMS.has(li);
+                    const isEps    = EPS_ITEMS.has(li);
+                    const isShare  = SHARE_ITEMS.has(li);
+                    const factor   = isDollar ? scale.dollar_factor : isShare ? scale.share_factor : 1;
+                    const suffix   = isDollar ? ' (' + scale.dollar_label + ')' :
+                                     isShare  ? ' (' + scale.share_label  + ')' : '';
+
+                    const tr = document.createElement('tr');
+                    const tdName = document.createElement('td');
+                    tdName.className = 'peer-col-name';
+                    tdName.textContent = li + suffix;
+                    tr.appendChild(tdName);
+
+                    companies.forEach((c, ci) => {
+                        const info    = c.line_items[li] || {};
+                        const periods = info.periods || [];
+                        for (let pi = 0; pi < n_periods; pi++) {
+                            const period = periods[pi];
+                            const td = document.createElement('td');
+                            td.className = 'peer-cell' + (pi === 0 && ci > 0 ? ' peer-company-divider' : '');
+
+                            if (!period || period.value === null) {
+                                td.classList.add('peer-na');
+                                td.textContent = 'N/A';
+                            } else {
+                                const val = period.value;
+                                let display;
+                                if (val === 0) {
+                                    display = '—'; // em dash — matches Excel "#,##0;(#,##0);"-"" zero section
+                                } else {
+                                    const scaled = factor !== 1 ? val / factor : val;
+                                    if (isEps) {
+                                        display = scaled.toFixed(2);
+                                    } else {
+                                        display = Math.round(scaled).toLocaleString('en-US');
+                                    }
+                                }
+                                td.textContent = display;
+
+                                if (period.flags && period.flags.length > 0) {
+                                    td.classList.add('peer-flagged');
+                                    const icon = document.createElement('span');
+                                    icon.className = 'peer-flag-icon';
+                                    icon.textContent = '⚠';
+                                    td.appendChild(icon);
+                                }
+
+                                // Tooltip data
+                                td.dataset.tooltip = JSON.stringify({
+                                    company: c.name,
+                                    tag: period.source_tag || info.tag_used,
+                                    start: period.period_start,
+                                    end: period.period_end,
+                                    value: val,
+                                    flags: period.flags || [],
+                                });
+                            }
+                            tr.appendChild(td);
+                        }
+                    });
+                    tbody.appendChild(tr);
+                });
+
+                peerResults.classList.remove('hidden');
+                peerExportConfirm.classList.add('hidden');
+            }
+
+            // --- Peer Chart ---
+            const PEER_COLORS = ['#1B6B5C','#0B1F3A','#6B5A4E','#4A7C9E','#7A6E63','#2C5F6E'];
+
+            let _peerChart     = null;
+            let _peerChartData = null;
+            let _peerChartView = 'revenue';
+
+            function renderPeerChart(chartData, view) {
+                const area = document.getElementById('peer-chart-area');
+                view = view || _peerChartView;
+                _peerChartView = view;
+
+                const labels = chartData.periods;
+                const isPct  = view === 'gross_margin_pct' || view === 'net_margin_pct';
+                const sc     = chartData.dollar_scale;
+                const yLabel = isPct ? '%' : (sc ? sc.label : '');
+
+                const datasets = chartData.companies.map((company, idx) => {
+                    const color = PEER_COLORS[idx % PEER_COLORS.length];
+                    const pts   = company.series[view];
+                    return {
+                        label: company.name,
+                        data:  pts.map(p => p.value),
+                        borderColor: color,
+                        backgroundColor: color + '22',
+                        pointBackgroundColor: _ptColors(pts, color),
+                        pointRadius: _ptRadius(pts),
+                        pointStyle:  _ptStyle(pts),
+                        spanGaps: false,
+                        _pts: pts,
+                    };
+                });
+
+                const ctx = document.getElementById('peer-chart').getContext('2d');
+                if (_peerChart) { _peerChart.destroy(); }
+                _peerChart = new Chart(ctx, {
+                    type: 'line',
+                    data: { labels, datasets },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        interaction: { mode: 'index', intersect: false },
+                        plugins: {
+                            legend: {
+                                position: 'top',
+                                labels: { color: '#0B1F3A', font: { family: 'IBM Plex Sans, sans-serif', size: 12 } },
+                            },
+                            tooltip: {
+                                callbacks: {
+                                    title: function(items) {
+                                        const pt = items[0].dataset._pts[items[0].dataIndex];
+                                        return pt.period_label + (pt.period_end ? '  (' + pt.period_end + ')' : '');
+                                    },
+                                    label: function(item) {
+                                        const pt = item.dataset._pts[item.dataIndex];
+                                        if (pt.value === null || pt.value === undefined) {
+                                            return item.dataset.label + ': —';
+                                        }
+                                        const val = isPct
+                                            ? pt.value.toFixed(1) + '%'
+                                            : pt.value.toLocaleString('en-US');
+                                        return item.dataset.label + ': ' + val
+                                            + (pt.flagged ? '  ⚠ Flagged for review' : '');
+                                    },
+                                },
+                            },
+                        },
+                        scales: {
+                            x: {
+                                grid: { display: false },
+                                ticks: { color: '#8A8378', font: { family: 'IBM Plex Sans, sans-serif', size: 11 } },
+                            },
+                            y: {
+                                title: { display: !!yLabel, text: yLabel, color: '#8A8378' },
+                                grid: { color: 'rgba(138, 131, 120, 0.15)' },
+                                ticks: { color: '#8A8378', font: { family: 'IBM Plex Sans, sans-serif', size: 11 } },
+                            },
+                        },
+                    },
+                });
+                area.classList.remove('hidden');
+            }
+
+            function fetchAndRenderPeerChart(comparisonResult) {
+                fetch('/api/xbrl/peer-comparison/chart-data', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ comparison_result: comparisonResult }),
+                })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.error) return;
+                    _peerChartData = data;
+                    renderPeerChart(data, _peerChartView);
+                })
+                .catch(() => {});
+            }
+
+            document.querySelectorAll('#peer-chart-area .xbrl-chart-tab').forEach(tab => {
+                tab.addEventListener('click', () => {
+                    document.querySelectorAll('#peer-chart-area .xbrl-chart-tab').forEach(t => t.classList.remove('active'));
+                    tab.classList.add('active');
+                    if (_peerChartData) renderPeerChart(_peerChartData, tab.dataset.view);
+                });
+            });
+
+            // -- Peer table tooltip (reuse xbrl-tooltip element) --
+            (function() {
+                const tbl = document.getElementById('peer-table');
+                const tt  = document.getElementById('xbrl-tooltip');
+                tbl.addEventListener('mousemove', e => {
+                    const td = e.target.closest('td[data-tooltip]');
+                    if (!td) { tt.classList.add('hidden'); return; }
+                    const d = JSON.parse(td.dataset.tooltip);
+                    let html = '';
+                    if (d.company) html += '<div class="tt-row"><b>' + xbrlEsc(d.company) + '</b></div>';
+                    if (d.tag)     html += '<div class="tt-row"><b>Tag:</b> ' + xbrlEsc(d.tag) + '</div>';
+                    if (d.start)
+                        html += '<div class="tt-row"><b>Period:</b> ' + d.start + ' — ' + d.end + '</div>';
+                    else if (d.end)
+                        html += '<div class="tt-row"><b>Date:</b> ' + d.end + '</div>';
+                    if (d.value !== null && d.value !== undefined) {
+                        html += '<div class="tt-row"><b>Value:</b> ' +
+                                Number(d.value).toLocaleString('en-US') + '</div>';
+                    }
+                    if (d.flags && d.flags.length > 0) {
+                        html += '<div class="tt-row tt-flags"><b>Flags:</b></div>';
+                        d.flags.forEach(f => {
+                            const msg = typeof f === 'object' ? (f.message || f.msg || '') : f;
+                            html += '<div class="tt-row tt-flag-msg">&#8226; ' + xbrlEsc(msg) + '</div>';
+                        });
+                    }
+                    tt.innerHTML = html;
+                    tt.classList.remove('hidden');
+                    const w = 284;
+                    let x = e.clientX + 14, y = e.clientY + 14;
+                    if (x + w > window.innerWidth - 10)  x = e.clientX - w - 14;
+                    if (y + 160 > window.innerHeight - 10) y = e.clientY - 160 - 10;
+                    tt.style.left = x + 'px';
+                    tt.style.top  = y + 'px';
+                });
+                tbl.addEventListener('mouseleave', () => tt.classList.add('hidden'));
+            })();
+
+            // -- Export --
+            peerExportBtn.addEventListener('click', () => {
+                if (!peerResult) return;
+                peerExportBtn.disabled = true;
+                peerExportBtn.textContent = 'Exporting…';
+                peerExportConfirm.classList.add('hidden');
+                fetch('/api/xbrl/peer-comparison/export', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ comparison_result: peerResult }),
+                })
+                .then(r => r.json())
+                .then(data => {
+                    peerExportBtn.disabled = false;
+                    peerExportBtn.textContent = 'Export to Excel';
+                    if (data.error) { peerSetStatus('Export failed: ' + data.error, 'error'); return; }
+                    peerExportLink.textContent = data.filename;
+                    peerExportLink.href = data.download_url;
+                    peerExportFolder = data.folder || null;
+                    peerExportConfirm.classList.remove('hidden');
+                })
+                .catch(err => {
+                    peerExportBtn.disabled = false;
+                    peerExportBtn.textContent = 'Export to Excel';
+                    peerSetStatus('Export failed: ' + err.message, 'error');
+                });
+            });
+
+            peerShowFolderBtn.addEventListener('click', () => {
+                fetch('/api/open-folder', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ folder: peerExportFolder }),
+                }).catch(() => {});
+            });
+
+            function peerSetStatus(msg, type) {
+                peerStatusEl.textContent = msg;
+                peerStatusEl.className = 'status ' + type;
+            }
+            function peerClearStatus() {
+                peerStatusEl.textContent = '';
+                peerStatusEl.className = 'status hidden';
+            }
+        })();
     </script>
     <div id="xbrl-tooltip" class="xbrl-tooltip hidden"></div>
 </body>

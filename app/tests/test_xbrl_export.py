@@ -299,9 +299,13 @@ def test_xlsx_values_are_numeric_not_strings():
                       shares=15_550_000_000)
     wb = _write_xlsx(rows)
     ws = wb.active
+    # Sanity-check rows (appended after data rows) contain string labels and "N/A" cells;
+    # skip any row whose first column is a sanity-check marker.
+    _SANITY_SKIP = {"Sanity Checks", "BS Check: Assets − Liabilities − Equity",
+                    "GP Check: Revenue − COGS − Gross Profit"}
     for row in ws.iter_rows(min_row=4):
         label = row[0].value
-        if not label:
+        if not label or label in _SANITY_SKIP or str(label).startswith("Sanity checks"):
             continue
         for cell in row[2:]:
             if cell.value in (None, "Not reported"):
@@ -402,7 +406,7 @@ def test_xlsx_freeze_panes_set():
     rows = _make_rows(revenue=2_000_000_000)
     wb = _write_xlsx(rows)
     ws = wb.active
-    assert ws.freeze_panes == "A4", "Should freeze rows 1-3 (title + blank + header)"
+    assert ws.freeze_panes == "B4", "Should freeze rows 1-3 and column A (label column)"
 
 
 def test_xlsx_numeric_columns_right_aligned():

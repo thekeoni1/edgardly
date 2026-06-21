@@ -110,8 +110,16 @@ def _ensure_cache():
 def _edgar_company_fallback(query):
     """
     Fallback: search EDGAR's full-text search (EFTS) for companies not in the
-    local ticker cache — handles recent IPOs and foreign filers.
-    Extracts CIK from the accession-number prefix in search hits.
+    local ticker cache — handles recent IPOs, foreign filers, and companies
+    whose names have changed since the local cache was built.
+
+    The EFTS search-index endpoint returns document-level hits whose _source
+    no longer reliably includes entity_name.  Instead we:
+      1. Extract CIKs from the leading segment of each accession-number hit id.
+      2. Deduplicate by CIK before making any further requests (many hits share
+         the same filer CIK, so deduplication keeps rate-limit exposure low).
+      3. Fetch each unique CIK's current name and ticker from the submissions
+         endpoint (≤10 calls; each respects the existing 0.1 s rate-limit delay).
     """
     url = (
         "https://efts.sec.gov/LATEST/search-index"
@@ -121,15 +129,13 @@ def _edgar_company_fallback(query):
         resp = _rate_limited_get(url)
         data = resp.json()
         hits = data.get('hits', {}).get('hits', [])
+
+        # Pass 1 — extract unique CIKs from accession-number prefixes.
+        # Accession format: XXXXXXXXXX-YY-ZZZZZZ[:document.htm]
+        # The first 10-digit segment is the filer's CIK.
         seen = set()
-        results = []
+        unique_ciks = []
         for hit in hits:
-            src = hit.get('_source', {})
-            name = src.get('entity_name', '')
-            if not name:
-                continue
-            # Accession number format: XXXXXXXXXX-YY-ZZZZZZ
-            # First segment is the filer's CIK (zero-padded to 10 digits)
             hit_id = hit.get('_id', '')
             try:
                 cik = int(hit_id.split('-')[0])
@@ -137,8 +143,28 @@ def _edgar_company_fallback(query):
                 continue
             if cik and cik not in seen:
                 seen.add(cik)
-                results.append({'cik': cik, 'ticker': '', 'company_name': name})
-        return results[:10]
+                unique_ciks.append(cik)
+
+        # Pass 2 — fetch company name + ticker from submissions endpoint.
+        # Cap at 10 unique CIKs to bound the number of extra HTTP calls.
+        results = []
+        for cik in unique_ciks[:10]:
+            try:
+                sub_url = "https://data.sec.gov/submissions/CIK{}.json".format(
+                    str(cik).zfill(10)
+                )
+                sub_resp = _rate_limited_get(sub_url)
+                sub_data = sub_resp.json()
+                name = sub_data.get('name') or ''
+                if not name:
+                    continue
+                tickers = sub_data.get('tickers') or []
+                ticker = tickers[0] if tickers else ''
+                results.append({'cik': cik, 'ticker': ticker, 'company_name': name})
+            except Exception:
+                continue
+
+        return results
     except Exception:
         return []
 
@@ -380,30 +406,6 @@ def _find_native_pdf_url(cik, accession_number):
     return None
 
 
-# Returns every element with a non-auto computed page-break value.
-# Call via page.evaluate() before and after the fix to verify transfers.
-_EDGAR_DEBUG_JS = """\
-(function () {
-    var found = [];
-    document.querySelectorAll('*').forEach(function (el) {
-        var cs  = window.getComputedStyle(el);
-        var ba  = cs.breakAfter  || cs.pageBreakAfter  || '';
-        var bb  = cs.breakBefore || cs.pageBreakBefore || '';
-        if (ba === 'always' || ba === 'page' || bb === 'always' || bb === 'page') {
-            var rect = el.getBoundingClientRect();
-            found.push({
-                tag:         el.tagName,
-                text:        (el.textContent || '').replace(/[\\s\\u00a0]+/g, ' ').trim().slice(0, 60),
-                breakAfter:  ba,
-                breakBefore: bb,
-                height:      Math.round(rect.height)
-            });
-        }
-    });
-    return found;
-}());
-"""
-
 # Fix EDGAR's [break-spacer][<hr>][break-spacer] pattern that creates near-blank
 # pages, while keeping all other section breaks (Part I, II, ...) intact.
 _EDGAR_PAGE_BREAK_FIX_JS = """\
@@ -521,7 +523,7 @@ _EDGAR_PAGE_BREAK_FIX_JS = """\
 """
 
 
-def _html_to_pdf_playwright(html_path, pdf_path, page=None, debug=False):
+def _html_to_pdf_playwright(html_path, pdf_path, page=None):
     """Convert a local HTML file to PDF using Playwright Chromium."""
     from playwright.sync_api import sync_playwright
 
@@ -535,22 +537,7 @@ def _html_to_pdf_playwright(html_path, pdf_path, page=None, debug=False):
 
     def _run(pg):
         pg.goto(file_url, wait_until='domcontentloaded', timeout=30000)
-        if debug:
-            before = pg.evaluate(_EDGAR_DEBUG_JS)
-            print(f'\n=== page-break elements BEFORE fix ({len(before)}) ===')
-            for item in before:
-                print(f"  <{item['tag']}> h={item['height']}px "
-                      f"after={item['breakAfter']!r} before={item['breakBefore']!r} "
-                      f"text={item['text']!r}")
         pg.evaluate(_EDGAR_PAGE_BREAK_FIX_JS)
-        if debug:
-            after = pg.evaluate(_EDGAR_DEBUG_JS)
-            print(f'=== page-break elements AFTER fix ({len(after)}) ===')
-            for item in after:
-                print(f"  <{item['tag']}> h={item['height']}px "
-                      f"after={item['breakAfter']!r} before={item['breakBefore']!r} "
-                      f"text={item['text']!r}")
-            print()
         pg.pdf(**pdf_opts)
 
     if page is not None:
