@@ -56,19 +56,19 @@ Edgardly was built around a few principles that came directly from the frustrati
 
 <!-- [SCREENSHOT: Filing search panel showing multi-filter search with company autocomplete, SIC code/sector selector, filer category chips, date range inputs, and results table with form type badges and download actions] -->
 
-![Filing search view](docs/screenshots/filing-search.png)
+![Filing search view](docs/screenshots/filing-search.jpg)
 
 ### XBRL Single-Company View
 
-<!-- [SCREENSHOT: XBRL financial data panel showing a single company's income statement and balance sheet data across multiple fiscal periods, with column headers, source XBRL tags, validation flag indicators on flagged rows, and the revenue/net income trend chart below] -->
+![XBRL financial data table](docs/screenshots/xbrl-single-company1.jpg)
 
-![XBRL single-company view with chart](docs/screenshots/xbrl-single-company.png)
+![XBRL chart and validation flags](docs/screenshots/xbrl-single-company2.jpg)
 
 ### Peer Comparison
 
-<!-- [SCREENSHOT: Peer comparison panel showing side-by-side XBRL data for three or more companies aligned by relative fiscal period, with the peer chart visible below the comparison table] -->
+![Peer comparison table](docs/screenshots/peer-comparison1.jpg)
 
-![Peer comparison view](docs/screenshots/peer-comparison.png)
+![Peer comparison chart](docs/screenshots/peer-comparison2.jpg)
 
 ---
 
