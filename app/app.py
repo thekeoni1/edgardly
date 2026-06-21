@@ -1546,10 +1546,10 @@ def _ensure_playwright_chromium():
 
 
 def open_browser():
-    webbrowser.open("http://localhost:5000")
+    webbrowser.open("http://localhost:5050")
 
 
 if __name__ == "__main__":
     _ensure_playwright_chromium()
     threading.Timer(1.0, open_browser).start()
-    app.run(debug=False, port=5000)
+    app.run(debug=False, port=5050)

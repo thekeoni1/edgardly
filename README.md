@@ -82,40 +82,65 @@ Edgardly was built around a few principles that came directly from the frustrati
 
 ## Installation
 
-```bash
+### Windows
+
+```bat
 git clone https://github.com/thekeoni1/edgardly.git
-cd edgardly/app
-
-# Create and activate a virtual environment (recommended)
-python -m venv env
-# Windows:
-env\Scripts\activate
-# macOS/Linux:
-source env/bin/activate
-
+cd edgardly\app
+python -m venv venv
+venv\Scripts\activate
 pip install -r requirements.txt
 playwright install chromium
 ```
+
+### macOS
+
+```bash
+git clone https://github.com/thekeoni1/edgardly.git
+cd edgardly/app
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+playwright install chromium
+```
+
+> **Note:** Use `python3` (not `python`) on macOS before the virtual environment is activated. Once the venv is active, `python` and `pip` will work as expected.
+
+### Troubleshooting: virtual environment errors
+
+If you encounter a "bad interpreter" error or other virtual environment issues, delete the venv folder and start fresh:
+
+```bash
+# macOS / Linux
+rm -rf venv
+
+# Windows
+rmdir /s venv
+```
+
+Then re-run the `python3 -m venv venv` (or `python -m venv venv` on Windows) step and continue from there.
 
 ---
 
 ## Running
 
-**Option 1 — double-click launcher (simplest)**
+**Option 1 — double-click launcher (simplest, no terminal needed)**
 
 - **Windows:** double-click `run.bat` in the project root
-- **Mac:** double-click `run.command` in the project root
+- **Mac:** right-click `run.command` → **Open** the first time
 
-  > First time on Mac: you may need to right-click → Open to bypass Gatekeeper's unidentified-developer warning, or run `chmod +x run.command` once in the terminal.
+  > On Mac, double-clicking `run.command` will be blocked by macOS Gatekeeper with an "unidentified developer" warning because the file isn't code-signed. Right-clicking and selecting **Open** bypasses this once — subsequent launches can be double-clicked normally. You can also run `chmod +x run.command` in Terminal first if preferred.
 
-The browser will open automatically to [http://localhost:5000](http://localhost:5000) when the server is ready. The terminal window stays open so you can see any errors.
+The browser will open automatically to [http://localhost:5050](http://localhost:5050) when the server is ready. The terminal window stays open so you can see any errors.
 
 **Option 2 — command line**
 
 ```bash
-cd app
+# from the edgardly/app directory, with venv activated:
 python app.py
 ```
+
+Open [http://localhost:5050](http://localhost:5050) in your browser.
 
 ---
 
