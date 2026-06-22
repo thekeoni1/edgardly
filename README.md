@@ -156,12 +156,6 @@ This tool uses EDGAR's public APIs in accordance with SEC rate-limiting guidelin
 
 ---
 
-## Disclaimer
-
-This tool is intended for research and informational purposes only. It is not financial advice. Always verify data against official SEC filings before making any investment or business decisions.
-
----
-
 ## License
 
 MIT. See [LICENSE](LICENSE) for details.
