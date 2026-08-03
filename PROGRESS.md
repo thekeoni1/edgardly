@@ -12,6 +12,9 @@ wrong, change it here with a dated note saying why.
 | --- | --- | --- |
 | 2026-08-03 | Plug rows are explicit derived formulas | Where tagged components do not sum to the reported total, the scaffold writes a visible plug row such as "Other current assets (plug to reported total)" as a live Excel formula. Never a filled number, never a silent guess. Any plug whose absolute value exceeds 10 percent of its statement total raises a flag saying this filer's XBRL is too sparse for a reliable scaffold. |
 | 2026-08-03 | Test suite is restored to the public repo | Commit 4e1d457 removed app/tests and app/pytest.ini in June 2026 with no stated rationale, and git history was the only surviving copy. Every later phase is gated on tests, so the suite lives with the code. |
+| 2026-08-03 | The registry holds 38 reported items, not 28 | V2_PLAN 1.1 said 28 but the list underneath it enumerates 38: 14 income statement, 16 balance sheet, 8 cash flow. The enumeration is the specification and the count was simply wrong, so both mentions in V2_PLAN now read 38. No item was added or dropped to reach the number. |
+| 2026-08-03 | Per-period resolution prefers chain position, then filing date | For a period reported by more than one tag in a chain, the earlier tag wins; within one tag, the most recently filed entry wins. Filing date does not outrank chain position, because chain order encodes which tag means what, and a later filing is often just a comparative in someone else's 10-K. Checked on Apple: every period where two revenue tags overlap, the two agree to the dollar, so the rule restates nothing. |
+| 2026-08-03 | The browser is served its classification by template injection | Not a fetch endpoint. The peer checkbox grid is built during page setup, so a request still in flight would render an empty grid. |
 
 ## Session log
 
@@ -22,6 +25,7 @@ open questions the next session needs to know about.
 | --- | --- | --- | --- | --- |
 | 2026-08-03 | Setup | Folded the planning output into the repo: risk register R1 through R10 as V2_PLAN Part 8, decisions log as Part 9, tasks 2.2b and 2.5 added to Phase 2, docs/SESSIONS.md created, this file created. Documentation only, no code changes. | n/a | None |
 | 2026-08-03 | 1 | F1 through F5, five commits in the prescribed order. README claims corrected, real SEC User-Agent contact, test suite restored from git history, Total Debt relabeled Long-Term Debt, line-item constants consolidated into app/line_items.py. | 0 | Three, listed below. |
+| 2026-08-03 | 2 | V2_PLAN 1.1, 1.2, part of 1.5, and the frontend half of the Session 1 consolidation. Five commits: session prompt amended, registry built, per-period stitching, fixture generator plus the Apple fixture, classification served to the browser. | 0 | Open question 2 closed; 1 and 3 still open; two new ones. |
 
 ### Session 1 detail
 
@@ -56,25 +60,86 @@ The User-Agent contact is thekeoni@gmail.com, the address already published in
 this repository's commit history and matching the GitHub account, rather than a
 new address the repo had never carried.
 
+### Session 2 detail
+
+Suite state: 370 tests, all passing, zero xfails. Session 1 left 307. The 63 new
+tests are 19 for the registry, 15 for per-period resolution on synthetic
+payloads, and 29 against the Apple fixture.
+
+The registry ships all 38 items V2_PLAN 1.1 enumerates, and every chain resolves
+against Apple except the thirteen tags Apple does not report at all. All 14
+displayed FY2023 values match the FY2023 10-K to the dollar, as do the cash flow
+items no view shows yet, and the balance sheet balances exactly rather than
+within the 5 percent tolerance the sanity check allows.
+
+Per-period stitching did what it was meant to and nothing else. Apple's revenue
+row runs FY2007 to FY2025 across three tag eras, where winner-takes-all started
+it at FY2017. Comparing the two resolvers over all 14 items on the live payload:
+19 years gained on Revenue, one on Long-Term Debt, none lost anywhere, and not a
+single value changed. The 2010 10-K/A that restated Apple's FY2007 revenue from
+24,006 to 24,578 million still wins, because latest-filed still decides within a
+tag.
+
+Judging which periods are annual turned out to be the subtle part. EDGAR stamps
+fiscal_period on the filing, not on the fact, so every comparative quarter inside
+a 10-K comes back labeled FY. Filtering on that label alone left Apple's FY2018
+and FY2019 rows non-adjacent in the sorted series, with quarterly entries between
+them, and the seam flag never fired. Full-year flows are now identified by a 10
+to 14 month span, the same test peer_comparison already used.
+
+The fixture is 1.1 MB against 3.8 MB live. Trimming is by tag only: no period,
+amendment, or unit inside a kept tag is touched, so the fixture can differ from
+the live API about which line items are present but never about a number. That
+matters more than a smaller file, because dropping filings would change what
+deduplication sees, which is exactly the R5 shadowing behavior Session 4 has to
+reproduce.
+
+The FY2018 revenue transition the session prompt names is real but sits one year
+off from where the prose implied. Apple's post-ASC-606 tag carries FY2017 and
+FY2018 as comparatives, so the old resolver truncated at FY2017, not FY2018, and
+the seam in the stitched series falls on FY2019, the first year reported only
+under the new tag. Both tags report FY2017 and FY2018 identically, so nothing
+was restated by preferring chain position.
+
 ## Open questions
 
 1. **LongTermDebt is not strictly non-current.** Honeywell resolves the Long-Term
    Debt row through the us-gaap LongTermDebt tag, whose definition can include
    current maturities, so for that filer the row is slightly broader than its
-   label. It is still honest in a way the old Total Debt row was not, but the
-   chain needs validating against real fixtures. Do this in Session 2 when the
-   registry lands, and again in Session 4 when Honeywell and Kroger fixtures
-   arrive.
+   label. Session 2 wrote the caveat into the registry entry itself, where anyone
+   editing the chain will see it, and into the Total Debt derivation note, since
+   summing a LongTermDebt row with Short-Term Debt double-counts the current
+   maturities. The Apple fixture cannot settle it: Apple reports
+   LongTermDebtNoncurrent, so it never exercises the fallback. Still needs the
+   Honeywell fixture in Session 4.
 
-2. **The frontend still duplicates the unit-class sets.** app/templates/index.html
-   carries its own DOLLAR_ITEMS, EPS_ITEMS, SHARE_ITEMS, and ALL_LINE_ITEMS lists.
-   Session 1 consolidated only the two Python copies, per the session prompt.
-   Removing the third copy needs the browser to read the classification from the
-   server, which is worth doing in Session 2 when the registry gives it something
-   worth serving.
+2. **Closed.** app/templates/index.html no longer carries its own DOLLAR_ITEMS,
+   EPS_ITEMS, SHARE_ITEMS, or ALL_LINE_ITEMS. The homepage injects
+   line_items.classification_for_client() and the page builds its sets from that.
+   A test reads the template source and fails if a hardcoded list reappears.
 
 3. **R5 shadowing is confirmed live, not theoretical.** Honeywell's 2025-12-31
    year-end balance sheet instant carries fiscal_period "Q2" because a later 10-Q
    overwrote the label, so the single-company path drops recent years that the
    peer path keeps. Session 4 is where this gets fixed; noting it here as
    confirmation the risk is real and reproducible with CIK 773840.
+
+4. **Short-Term Debt understates for filers that skip DebtCurrent.** Apple tags
+   no DebtCurrent, so the row falls through to LongTermDebtCurrent, which is
+   current maturities only, and misses the 5,985 million of commercial paper on
+   the FY2023 balance sheet. The derived Total Debt is short by exactly that
+   amount: 105,103 million against a real 111,088 million. A test asserts both
+   figures rather than hiding the gap. Closing it needs a summed derivation
+   (current maturities plus commercial paper plus short-term borrowings), not a
+   chain reorder, because a chain picks one tag and the components have to add.
+   Decide in Session 4 alongside the other chain corrections. Until then, no view
+   shows Total Debt, so nothing user-facing is wrong today.
+
+5. **tag_used names one tag for a row that may hold several.** A stitched series
+   can span three tags, as Apple's revenue does. tag_used now reports the tag
+   behind the most recent annual value, which is what the old field meant for
+   single-tag rows and what a reader asking "where does this row come from?"
+   expects. But the Excel Source Tags sheet prints it as though it covered the
+   whole row. Every data point already carries its own tag, and TAG_TRANSITION
+   marks the seams, so the information is there. Session 3's per-value provenance
+   is where the sheet should start using it instead.
