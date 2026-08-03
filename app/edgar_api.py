@@ -15,8 +15,10 @@ DB_PATH = os.path.join(DATA_DIR, "tickers.db")
 
 TICKERS_URL = "https://www.sec.gov/files/company_tickers.json"
 
+# SEC requires a User-Agent that identifies the requester and gives a working
+# contact address. See https://www.sec.gov/os/webmaster-faq#developers
 HEADERS = {
-    "User-Agent": "Edgardly/1.0 (research tool; contact@example.com)",
+    "User-Agent": "Edgardly/1.0 (research tool; thekeoni@gmail.com)",
     "Accept-Encoding": "gzip, deflate",
     "Accept": "application/json",
 }
