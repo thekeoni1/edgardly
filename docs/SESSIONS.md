@@ -70,21 +70,35 @@ PROGRESS.md updated.
 
 ## Session 3. Provenance and scope gate (1.3, 1.4)
 
-Read docs/V2_PLAN.md (Part 3) and PROGRESS.md first.
+Read docs/V2_PLAN.md (Part 3) and PROGRESS.md first, including open questions 1, 3, 4, and 5
+from Sessions 1 and 2.
 
-1. Implement the three-state provenance model per V2_PLAN 1.3: every value is reported (tag,
-   filed date, accession), derived (formula string), or missing (a flag plus a pointer URL
-   built from the accession number, naming the statement to check). Wire it through the API
-   payloads, the UI, and both Excel exports; the blue and black font split now reflects
-   reported versus derived for real.
-2. Implement the out-of-scope gate per V2_PLAN 1.4: SIC 6020 through 6199 and 6311 through
+0. Amend this Session 3 entry to match the steps below, so the doc reflects what the session
+   actually does. Commit separately or with step 1.
+1. Implement the three-state provenance model per V2_PLAN 1.3, per value, not per row: every
+   data point is reported (tag, filed date, accession -- the tag can differ across periods in
+   a stitched row), derived (formula string), or missing (a flag plus a pointer URL built
+   from the accession number, naming the statement to check). Wire it through the API
+   payloads, the UI, and both Excel exports. The Source Tags sheet must show per-period tags
+   and TAG_TRANSITION seams instead of one tag_used per row (PROGRESS.md open question 5).
+   The blue and black font split now reflects reported versus derived for real.
+2. Do not surface Total Debt in any view or export this session. Its derivation is knowingly
+   understated for filers that skip DebtCurrent (open question 4) and is fixed in Session 4.
+3. Implement the out-of-scope gate per V2_PLAN 1.4: SIC 6020 through 6199 and 6311 through
    6411 refused for scaffolds with the exact message in the plan doc; IFRS-only filers get
    their own message instead of a silent empty table. The puller and peer comparison still
-   work for these companies.
-3. Add fixtures: one bank (rejection test) and one IFRS filer (message test).
+   work for these companies. SIC codes come from the submissions API, not companyfacts;
+   extend scripts/make_fixture.py if the fixtures need that data captured.
+4. Add fixtures with scripts/make_fixture.py: one large bank (rejection test) and one
+   IFRS-only filer (message test). Verify the CIKs against the live ticker lookup before
+   committing; note the choices in PROGRESS.md.
 
-Exit criteria: suite green, provenance visible end to end for Apple, refusal messages
-tested, PROGRESS.md updated.
+Constraints: no network in tests; never guess values; existing 14-item UI behavior unchanged
+apart from provenance display.
+
+Exit criteria: suite green, provenance visible end to end for Apple including per-period tags
+in the Source Tags sheet, refusal messages tested against the new fixtures, PROGRESS.md
+updated.
 
 ## Session 4. Unify the period engine and finish Phase 1 (rest of 1.5, plus R5)
 
