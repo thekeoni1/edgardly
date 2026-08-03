@@ -262,6 +262,12 @@
         <p>Data sourced from SEC EDGAR &mdash; public domain</p>
     </footer>
 
+    <!-- Above the script, not below it: the script looks this element up as it
+         runs, and a tooltip declared after it was silently null, so hovering a
+         cell set innerHTML on nothing. Position is fixed, so where it sits in
+         the document does not affect layout. -->
+    <div id="xbrl-tooltip" class="xbrl-tooltip hidden"></div>
+
     <script>
         // Line-item classification, injected by the server from app/line_items.py.
         // Which items exist and which unit class each belongs to is decided in one
@@ -1947,6 +1953,5 @@
             }
         })();
     </script>
-    <div id="xbrl-tooltip" class="xbrl-tooltip hidden"></div>
 </body>
 </html>
