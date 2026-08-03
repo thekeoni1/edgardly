@@ -45,22 +45,28 @@ above, PROGRESS.md updated with the xfail count and any surprises.
 
 Read docs/V2_PLAN.md (Part 3) and PROGRESS.md first.
 
-1. Build the canonical line-item registry in app/line_items.py per V2_PLAN 1.1: 28 reported
-   items with fallback chains, statement, kind, and unit metadata, and derivation rules for
-   Total Debt and EBITDA. TAG_MAP moves here and xbrl_extractor imports it for
-   compatibility.
+1. Build the canonical line-item registry in app/line_items.py per V2_PLAN 1.1: every
+   reported item enumerated there, with fallback chains, statement, kind, and unit metadata,
+   and derivation rules for Total Debt and EBITDA. TAG_MAP moves here and xbrl_extractor
+   imports it for compatibility. In the Long-Term Debt entry, note that the LongTermDebt
+   fallback can include current maturities (see PROGRESS.md open question 1).
 2. Replace winner-takes-all tag resolution with per-period stitching per V2_PLAN 1.2,
    including the TAG_TRANSITION flag at seams. Peer comparison must keep working unchanged.
 3. Create scripts/make_fixture.py (downloads a companyfacts payload and trims it to registry
    tags) and commit the first fixture: Apple, CIK 320193. Add tests asserting real FY2023
    numbers from the fixture, the FY2018 revenue tag transition, and D&A resolving from the
    cash flow statement.
+4. Serve line-item classification from the server (small JSON endpoint or template injection
+   from app/line_items.py) and delete the duplicated DOLLAR_ITEMS, EPS_ITEMS, SHARE_ITEMS,
+   and ALL_LINE_ITEMS lists from app/templates/index.html, closing PROGRESS.md open
+   question 2.
 
 Constraints: no network in tests; never guess values; existing 14-item UI behavior
 unchanged.
 
 Exit criteria: suite green including the new fixture tests, Apple history no longer
-truncated at the tag switch, PROGRESS.md updated.
+truncated at the tag switch, index.html no longer holds its own line-item lists,
+PROGRESS.md updated.
 
 ## Session 3. Provenance and scope gate (1.3, 1.4)
 

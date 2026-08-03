@@ -155,7 +155,8 @@ kind (flow or instant), unit class (dollar, eps, shares), fallback tag chain, op
 derivation rule, sign convention note. `TAG_MAP` moves here; `xbrl_extractor` imports it
 for backward compatibility.
 
-Proposed registry (28 items reported, plus derived):
+Proposed registry (38 items reported, plus derived; the count read 28 until Session 2
+counted the list below):
 
 Income statement:
 - Revenue: Revenues, RevenueFromContractWithCustomerExcludingAssessedTax,
@@ -272,7 +273,7 @@ flow statement, and so on.
 Files: scripts/make_fixture.py (new), app/tests/fixtures/ (new),
 app/tests/test_real_filings.py (new).
 
-Phase 1 exit criteria: registry covers all 28 items with tests against real fixtures;
+Phase 1 exit criteria: registry covers all 38 items with tests against real fixtures;
 every value in the API payload and exports carries reported/derived/missing provenance;
 banks, insurers, and IFRS filers get explicit messages; existing single-company and peer
 features unchanged from the user's point of view except for honest labels.
