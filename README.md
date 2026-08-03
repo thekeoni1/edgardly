@@ -8,19 +8,19 @@
 
 SEC EDGAR makes every public company's filings available for free, but its interface was built for compliance lookup, not financial research. Finding a specific set of filings across companies, downloading them in bulk, and extracting structured financial data into a format useful for modeling requires stitching together multiple tools, paid data vendors, or a significant amount of custom scripting.
 
-Edgardly runs entirely on your machine and requires no API keys, no paid subscriptions, and no data sent to third-party services. It provides multi-filter filing search across the full EDGAR universe, bulk download with format options, and direct extraction of structured XBRL financial data, so you can get from a company name to a populated financial model without leaving your local environment.
+Edgardly runs entirely on your machine and requires no API keys, no paid subscriptions, and no data sent to third-party services. It provides filing search across the full EDGAR universe, bulk download with format options, and direct extraction of structured XBRL financial data, so you can get from a company name to a source-tagged historical dataset ready to drop into a model, without leaving your local environment.
 
 ---
 
 ## Features
 
-- **Multi-filter filing search:** search by company name or ticker, SIC code or sector, SEC filer category (Large Accelerated, Accelerated, Non-accelerated, Smaller Reporting, Emerging Growth), and date range. Supports 10-K, 10-K/A, 10-Q, 10-Q/A, 8-K, 8-K/A, DEF 14A, S-1, and S-1/A filing types.
+- **Filing search:** look up a company by name or ticker, then filter its filings by form type and date range. Supports 10-K, 10-K/A, 10-Q, 10-Q/A, 8-K, 8-K/A, DEF 14A, S-1, and S-1/A filing types. Companies not in the local ticker cache (recent IPOs, name changes, some foreign filers) are resolved through EDGAR full-text search as a fallback.
 
 - **Bulk download:** download individual filings or full result sets as HTML, PDF, or both. PDF conversion uses Playwright/headless Chromium for high-fidelity rendering; when a native PDF is available directly from EDGAR, it is used instead.
 
 - **Persistent downloads library:** a local library panel tracks all previously downloaded filings, organized by company and fiscal year, with search/filter and direct file access.
 
-- **Filing metadata export:** export search results as CSV or Excel with accession numbers, filing dates, form types, CIK, and direct EDGAR links.
+- **Filing metadata export:** export search results as CSV or Excel with accession numbers, filing dates, form types, CIK, SIC code and description, SEC filer category, and direct EDGAR links.
 
 - **XBRL structured financial data extraction (single-company):** extract financial statement line items directly from SEC XBRL data, with full source-tag transparency for every value. Extracted line items include:
   - Revenue, Cost of Goods Sold, Gross Profit, Operating Income, Net Income
@@ -30,11 +30,11 @@ Edgardly runs entirely on your machine and requires no API keys, no paid subscri
 
 - **Automated validation flags:** an independent validation layer checks extracted values for common data issues: negative revenue, balance sheet equation mismatches (Assets ≠ Liabilities + Equity), EPS-to-net-income reconciliation discrepancies, and extreme year-over-year changes. Flagged values are surfaced visually with full context; they are never silently hidden, auto-corrected, or excluded from exports.
 
-- **Peer comparison:** run side-by-side XBRL data extraction across a user-defined comp set. Results are aligned by relative fiscal period (LTM, FY0, FY-1, etc.) and scaled consistently across the entire comparison table. Validation flags carry through to the peer view.
+- **Peer comparison:** run side-by-side XBRL data extraction across a user-defined comp set. Results are aligned by relative fiscal year (FY0, FY-1, FY-2, and so on) rather than by calendar date, so companies with different fiscal year ends line up correctly, and every value in the table is scaled consistently. Validation flags carry through to the peer view.
 
 - **Interactive charts:** revenue/net income trends and margin analysis (gross margin %, net margin %) for both single-company and peer comparison views. Charts use explicit gaps for missing data points rather than interpolating across them, and render flagged data points with a distinct visual marker rather than suppressing them.
 
-- **Excel export with native charts:** exports from the XBRL and peer comparison views produce formatted Excel workbooks with: native Excel charts, parenthetical formatting for negative values, color-coded hardcoded vs. calculated cells, frozen panes, and a source-tag reference sheet mapping each line item to the XBRL concept it was drawn from.
+- **Excel export with native charts:** exports from the XBRL and peer comparison views produce formatted Excel workbooks with: native Excel charts, accounting number formats with negatives in parentheses, color coding that distinguishes values pulled from XBRL (blue) from flagged values (red) and values the company did not report (grey italic), frozen panes, and a source-tag reference sheet mapping each line item to the XBRL concept it was drawn from.
 
 ---
 
