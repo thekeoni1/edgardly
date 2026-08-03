@@ -203,7 +203,11 @@ _REGISTRY_ITEMS = [
         "ShortTermBorrowings",
     ], note="DebtCurrent is the whole current debt balance. The fallbacks are components "
             "of it: current maturities of long-term debt, and short-term borrowings. A "
-            "filer resolving through either fallback reports less than all current debt."),
+            "filer resolving through either fallback reports less than all current debt. "
+            "Apple is such a filer. It tags no DebtCurrent, so this row falls through to "
+            "LongTermDebtCurrent and misses the commercial paper it carries alongside "
+            "(5,985 million in FY2023). Closing that gap needs a summed derivation rather "
+            "than a chain edit, which is a Session 4 decision."),
 
     _item("Long-Term Debt", STATEMENT_BS, KIND_INSTANT, UNIT_DOLLAR, [
         "LongTermDebtNoncurrent",
