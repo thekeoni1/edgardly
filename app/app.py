@@ -878,7 +878,13 @@ def _xbrl_write_xlsx(filepath, entity, columns, rows, period_type):
 
 @app.route("/")
 def index():
-    return render_template("index.html")
+    # The page needs to know which line items exist and what units each carries.
+    # That is the registry's job, so it is injected here rather than typed out a
+    # second time in the template, where nothing would keep the two in step.
+    return render_template(
+        "index.html",
+        line_item_classification=line_items.classification_for_client(),
+    )
 
 
 @app.route("/api/search")

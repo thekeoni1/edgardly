@@ -293,3 +293,35 @@ def test_client_classification_is_json_serializable_and_stable():
     first = json.dumps(line_items.classification_for_client())
     second = json.dumps(line_items.classification_for_client())
     assert first == second
+
+
+def test_the_homepage_injects_the_classification():
+    client = app_module.app.test_client()
+    page = client.get("/").get_data(as_text=True)
+
+    assert "const LINE_ITEMS = " in page
+    for name in line_items.UI_LINE_ITEMS:
+        assert '"{}"'.format(name) in page, "{} never reached the page".format(name)
+    assert '"Long-Term Debt"' in page
+    # Registry items the existing views never show travel with the classification,
+    # so a future view knows their units without asking again.
+    assert '"Stock-Based Compensation"' in page
+
+
+def test_the_template_keeps_no_line_item_lists_of_its_own():
+    """The third copy is gone and must not come back.
+
+    app.py and peer_comparison.py were consolidated in Session 1; index.html
+    kept typing its own DOLLAR_ITEMS, EPS_ITEMS, SHARE_ITEMS, and
+    ALL_LINE_ITEMS, so the browser could disagree with the server about whether
+    a value is dollars, a per-share amount, or a share count.
+    """
+    template = os.path.join(os.path.dirname(__file__), "..", "templates", "index.html")
+    with open(template, encoding="utf-8") as handle:
+        source = handle.read()
+
+    assert "{{ line_item_classification|tojson }}" in source
+    assert 'new Set(["' not in source, "a hardcoded unit-class list is back in the template"
+    for name in ("EPS Basic", "EPS Diluted", "Cash and Equivalents", "Long-Term Debt",
+                 "Shares Outstanding (Basic)", "Total Liabilities"):
+        assert name not in source, "{} is hardcoded in the template".format(name)

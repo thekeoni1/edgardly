@@ -261,6 +261,15 @@
     </footer>
 
     <script>
+        // Line-item classification, injected by the server from app/line_items.py.
+        // Which items exist and which unit class each belongs to is decided in one
+        // place; this page reads that decision rather than restating it.
+        //   {ui_line_items: [...], dollar: [...], eps: [...], shares: [...]}
+        const LINE_ITEMS = {{ line_item_classification|tojson }};
+        const DOLLAR_ITEMS = new Set(LINE_ITEMS.dollar);
+        const EPS_ITEMS    = new Set(LINE_ITEMS.eps);
+        const SHARE_ITEMS  = new Set(LINE_ITEMS.shares);
+
         const companyInput = document.getElementById('company-input');
         const dropdown = document.getElementById('company-dropdown');
         const selectedCik = document.getElementById('selected-cik');
@@ -1363,13 +1372,7 @@
 
         // ===== Peer Comparison =====
         (function () {
-            const ALL_LINE_ITEMS = [
-                "Revenue", "Cost of Revenue", "Gross Profit", "Operating Income", "Net Income",
-                "EPS Basic", "EPS Diluted",
-                "Shares Outstanding (Basic)", "Shares Outstanding (Diluted)",
-                "Total Assets", "Total Liabilities", "Total Equity",
-                "Cash and Equivalents", "Long-Term Debt",
-            ];
+            const ALL_LINE_ITEMS = LINE_ITEMS.ui_line_items;
 
             // -- State --
             let peerCompanies = [];   // [{cik, name}]
@@ -1610,12 +1613,6 @@
                 thead.appendChild(tr2);
 
                 // Data rows
-                const DOLLAR_ITEMS = new Set(["Revenue","Cost of Revenue","Gross Profit",
-                    "Operating Income","Net Income","Total Assets","Total Liabilities",
-                    "Total Equity","Cash and Equivalents","Long-Term Debt"]);
-                const EPS_ITEMS   = new Set(["EPS Basic","EPS Diluted"]);
-                const SHARE_ITEMS = new Set(["Shares Outstanding (Basic)","Shares Outstanding (Diluted)"]);
-
                 line_items.forEach(li => {
                     const isDollar = DOLLAR_ITEMS.has(li);
                     const isEps    = EPS_ITEMS.has(li);
