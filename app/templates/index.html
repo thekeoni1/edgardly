@@ -137,6 +137,7 @@
                 </div>
             </div>
             <div id="xbrl-status" class="status hidden"></div>
+            <div id="xbrl-scope-notice" class="xbrl-scope-notice hidden"></div>
         </section>
 
         <section id="xbrl-results" class="xbrl-results-section hidden">
@@ -168,8 +169,9 @@
                 </div>
             </div>
             <p class="xbrl-legend">
-                <span class="xbrl-flag-pill">!</span> Flagged value &mdash; hover any data cell for tag, period dates, and flag details.
-                "Not reported" = no XBRL data for that period.
+                <span class="xbrl-flag-pill">!</span> Flagged value &mdash; hover any cell for its source.
+                Every value is one of three things: reported by the filer, <span class="xbrl-legend-derived">derived</span>
+                by Edgardly from reported values, or "Not reported", which hovers to say which statement of which filing to check.
             </p>
         </section>
         <!-- ===== Peer Comparison ===== -->
@@ -1029,8 +1031,16 @@
             .then(data => {
                 xbrlLoadBtn.disabled = false;
                 if (data.error) { xbrlSetStatus('Error: ' + data.error, 'error'); return; }
+                xbrlShowScopeNotice(data.scope);
                 if (!data.columns || data.columns.length === 0) {
-                    xbrlSetStatus('No data found for the selected period. Try a wider year range.', 'info');
+                    // An empty table for a filer Edgardly cannot read is not
+                    // "try a wider year range"; the scope verdict says why.
+                    const scope = data.scope;
+                    xbrlSetStatus(
+                        (scope && !scope.in_scope && scope.message)
+                            ? scope.message
+                            : 'No data found for the selected period. Try a wider year range.',
+                        'info');
                     return;
                 }
                 xbrlClearStatus();
@@ -1072,26 +1082,37 @@
                 nameDiv.className = 'xbrl-line-item-name';
                 nameDiv.textContent = row.line_item;
                 td0.appendChild(nameDiv);
-                if (row.tag_used) {
+                // A stitched row can span several tags, so the label under the
+                // name shows every tag its displayed values came from.
+                const rowTags = row.tag_summary || row.tag_used;
+                if (rowTags) {
                     const tagDiv = document.createElement('div');
                     tagDiv.className = 'xbrl-tag-label';
-                    tagDiv.textContent = row.tag_used;
-                    tagDiv.title = row.tag_used;
+                    tagDiv.textContent = rowTags;
+                    tagDiv.title = rowTags;
                     td0.appendChild(tagDiv);
                 }
                 tr.appendChild(td0);
 
                 data.columns.forEach(col => {
                     const cell = row.cells[col.key];
+                    const prov = (cell && cell.provenance) || null;
                     const td = document.createElement('td');
                     td.className = 'xbrl-cell';
-                    if (!cell) {
+                    if (!cell || cell.value === null) {
                         td.classList.add('xbrl-not-reported');
                         const s = document.createElement('span');
                         s.textContent = 'Not reported';
                         td.appendChild(s);
+                        // Missing is a state with an explanation, not a blank.
+                        if (prov) {
+                            td.dataset.tooltip = JSON.stringify({
+                                end: col.key, value: null, flags: [], provenance: prov,
+                            });
+                        }
                     } else {
                         if (cell.flags && cell.flags.length > 0) td.classList.add('xbrl-flagged');
+                        if (prov && prov.state === 'derived') td.classList.add('xbrl-derived');
                         const valSpan = document.createElement('span');
                         valSpan.className = 'xbrl-value';
                         valSpan.textContent = cell.formatted !== null ? cell.formatted : String(cell.value);
@@ -1110,6 +1131,7 @@
                             unit: cell.unit,
                             filed: cell.filed,
                             flags: cell.flags || [],
+                            provenance: prov,
                         });
                     }
                     tr.appendChild(td);
@@ -1274,15 +1296,17 @@
                 const td = e.target.closest('td[data-tooltip]');
                 if (!td) { xbrlTooltip.classList.add('hidden'); return; }
                 const d = JSON.parse(td.dataset.tooltip);
-                let html = '<div class="tt-row"><b>Tag:</b> ' + xbrlEsc(d.tag || '—') + '</div>';
-                html += d.start
-                    ? '<div class="tt-row"><b>Period:</b> ' + d.start + ' — ' + d.end + '</div>'
-                    : '<div class="tt-row"><b>Date:</b> ' + (d.end || '—') + '</div>';
-                const rawNum = (d.value !== null && d.value !== undefined)
-                    ? Number(d.value).toLocaleString('en-US') + (d.unit ? ' ' + d.unit : '')
-                    : 'N/A';
-                html += '<div class="tt-row"><b>Value:</b> ' + rawNum + '</div>';
-                if (d.filed) html += '<div class="tt-row"><b>Filed:</b> ' + d.filed + '</div>';
+                let html = xbrlProvenanceHtml(d.provenance, d.tag);
+                if (!d.provenance || d.provenance.state !== 'missing') {
+                    html += d.start
+                        ? '<div class="tt-row"><b>Period:</b> ' + d.start + ' — ' + d.end + '</div>'
+                        : '<div class="tt-row"><b>Date:</b> ' + (d.end || '—') + '</div>';
+                    const rawNum = (d.value !== null && d.value !== undefined)
+                        ? Number(d.value).toLocaleString('en-US') + (d.unit ? ' ' + d.unit : '')
+                        : 'N/A';
+                    html += '<div class="tt-row"><b>Value:</b> ' + rawNum + '</div>';
+                    if (d.filed) html += '<div class="tt-row"><b>Filed:</b> ' + d.filed + '</div>';
+                }
                 if (d.flags && d.flags.length > 0) {
                     html += '<div class="tt-row tt-flags"><b>Flags:</b></div>';
                     d.flags.forEach(f => {
@@ -1304,6 +1328,33 @@
 
         function xbrlEsc(s) {
             return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+        }
+
+        // Every value says which of the three states it is in: reported by the
+        // filer, derived by Edgardly from reported values, or missing with a
+        // pointer to the statement where a reader can find it by hand.
+        function xbrlProvenanceHtml(prov, fallbackTag) {
+            if (!prov) {
+                return '<div class="tt-row"><b>Tag:</b> ' + xbrlEsc(fallbackTag || '—') + '</div>';
+            }
+            if (prov.state === 'missing') {
+                let html = '<div class="tt-row tt-missing"><b>Not reported</b></div>';
+                html += '<div class="tt-row tt-missing-msg">' + xbrlEsc(prov.message || '') + '</div>';
+                return html;
+            }
+            if (prov.state === 'derived') {
+                let html = '<div class="tt-row"><b>Derived:</b> ' + xbrlEsc(prov.formula || '') + '</div>';
+                (prov.inputs || []).forEach(input => {
+                    html += '<div class="tt-row tt-derived-input">&#8226; ' + xbrlEsc(input.name)
+                          + (input.tag ? ' (' + xbrlEsc(input.tag) + ')' : '') + '</div>';
+                });
+                return html;
+            }
+            let html = '<div class="tt-row"><b>Tag:</b> ' + xbrlEsc(prov.tag || fallbackTag || '—') + '</div>';
+            if (prov.accession) {
+                html += '<div class="tt-row"><b>Accession:</b> ' + xbrlEsc(prov.accession) + '</div>';
+            }
+            return html;
         }
 
         // XBRL Export
@@ -1368,6 +1419,20 @@
         function xbrlClearStatus() {
             xbrlStatusEl.textContent = '';
             xbrlStatusEl.className = 'status hidden';
+        }
+
+        // The scope gate governs scaffolds, not the puller: a bank's extracted
+        // data is shown exactly as before, with a notice saying that no
+        // three-statement scaffold will be generated from it.
+        function xbrlShowScopeNotice(scope) {
+            const el = document.getElementById('xbrl-scope-notice');
+            if (!scope || scope.in_scope || !scope.message) {
+                el.textContent = '';
+                el.classList.add('hidden');
+                return;
+            }
+            el.textContent = scope.message;
+            el.classList.remove('hidden');
         }
 
         // ===== Peer Comparison =====
@@ -1635,9 +1700,16 @@
                             const td = document.createElement('td');
                             td.className = 'peer-cell' + (pi === 0 && ci > 0 ? ' peer-company-divider' : '');
 
+                            const prov = (period && period.provenance) || null;
                             if (!period || period.value === null) {
                                 td.classList.add('peer-na');
                                 td.textContent = 'N/A';
+                                if (prov) {
+                                    td.dataset.tooltip = JSON.stringify({
+                                        company: c.name, end: period.period_end,
+                                        value: null, flags: [], provenance: prov,
+                                    });
+                                }
                             } else {
                                 const val = period.value;
                                 let display;
@@ -1660,6 +1732,7 @@
                                     icon.textContent = '⚠';
                                     td.appendChild(icon);
                                 }
+                                if (prov && prov.state === 'derived') td.classList.add('peer-derived');
 
                                 // Tooltip data
                                 td.dataset.tooltip = JSON.stringify({
@@ -1669,6 +1742,7 @@
                                     end: period.period_end,
                                     value: val,
                                     flags: period.flags || [],
+                                    provenance: prov,
                                 });
                             }
                             tr.appendChild(td);
@@ -1797,14 +1871,16 @@
                     const d = JSON.parse(td.dataset.tooltip);
                     let html = '';
                     if (d.company) html += '<div class="tt-row"><b>' + xbrlEsc(d.company) + '</b></div>';
-                    if (d.tag)     html += '<div class="tt-row"><b>Tag:</b> ' + xbrlEsc(d.tag) + '</div>';
-                    if (d.start)
-                        html += '<div class="tt-row"><b>Period:</b> ' + d.start + ' — ' + d.end + '</div>';
-                    else if (d.end)
-                        html += '<div class="tt-row"><b>Date:</b> ' + d.end + '</div>';
-                    if (d.value !== null && d.value !== undefined) {
-                        html += '<div class="tt-row"><b>Value:</b> ' +
-                                Number(d.value).toLocaleString('en-US') + '</div>';
+                    if (d.provenance || d.tag) html += xbrlProvenanceHtml(d.provenance, d.tag);
+                    if (!d.provenance || d.provenance.state !== 'missing') {
+                        if (d.start)
+                            html += '<div class="tt-row"><b>Period:</b> ' + d.start + ' — ' + d.end + '</div>';
+                        else if (d.end)
+                            html += '<div class="tt-row"><b>Date:</b> ' + d.end + '</div>';
+                        if (d.value !== null && d.value !== undefined) {
+                            html += '<div class="tt-row"><b>Value:</b> ' +
+                                    Number(d.value).toLocaleString('en-US') + '</div>';
+                        }
                     }
                     if (d.flags && d.flags.length > 0) {
                         html += '<div class="tt-row tt-flags"><b>Flags:</b></div>';

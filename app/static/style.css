@@ -1103,6 +1103,31 @@ footer {
 .xbrl-tooltip .tt-row { margin: 0; }
 .xbrl-tooltip .tt-flags { color: var(--color-flag); margin-top: 3px; }
 .xbrl-tooltip .tt-flag-msg { color: var(--color-flag); padding-left: 6px; font-size: var(--text-xs); }
+.xbrl-tooltip .tt-missing-msg { font-size: var(--text-xs); opacity: 0.9; }
+.xbrl-tooltip .tt-derived-input { padding-left: 6px; font-size: var(--text-xs); opacity: 0.9; }
+
+/* Provenance: derived values are visibly not the filer's own number. */
+.xbrl-derived .xbrl-value,
+.peer-derived {
+    font-style: italic;
+    border-bottom: 1px dotted var(--color-gray-light);
+}
+
+.xbrl-legend-derived {
+    font-style: italic;
+    border-bottom: 1px dotted var(--color-gray-light);
+}
+
+/* Scope gate: a filer Edgardly will not scaffold says so above the table. */
+.xbrl-scope-notice {
+    margin: 0 var(--space-lg) var(--space-sm);
+    padding: 9px 12px;
+    border-left: 3px solid var(--color-flag);
+    background: var(--color-flag-bg);
+    color: var(--color-navy);
+    font-size: var(--text-sm);
+    line-height: 1.5;
+}
 
 /* ===== Peer Comparison ===== */
 .peer-companies-row {

@@ -27,6 +27,14 @@ STATEMENT_IS = "IS"   # income statement
 STATEMENT_BS = "BS"   # balance sheet
 STATEMENT_CF = "CF"   # cash flow statement
 
+# How to name a statement to a reader. A missing value's pointer says which
+# statement of the filing to go look at, so the code needs prose, not a code.
+STATEMENT_LABELS = {
+    STATEMENT_IS: "income statement",
+    STATEMENT_BS: "balance sheet",
+    STATEMENT_CF: "cash flow statement",
+}
+
 # Flow items cover a span of time and carry both a start and an end date.
 # Instants are measured at one date and carry an end only.
 KIND_FLOW = "flow"
@@ -388,6 +396,25 @@ def tags_for(name):
     return item.tags if item else ()
 
 
+def statement_of(name):
+    """Return the statement code an item belongs to, or None.
+
+    Derived-only names are covered too: they are on whichever statement their
+    result belongs to, which is not always where their inputs live (EBITDA is
+    an income statement figure built partly from a cash flow item).
+    """
+    item = REGISTRY.get(name)
+    if item is not None:
+        return item.statement
+    rule = DERIVATIONS.get(name)
+    return rule.statement if rule is not None else None
+
+
+def statement_label_of(name):
+    """Return the prose name of an item's statement, or an empty string."""
+    return STATEMENT_LABELS.get(statement_of(name), "")
+
+
 # ---------------------------------------------------------------------------
 # Unit classification
 #
@@ -461,3 +488,154 @@ def share_scale_for(value):
     if abs(value) > SHARE_MILLIONS_THRESHOLD:
         return 1_000_000, "mm"
     return 1_000, "000s"
+
+
+# ---------------------------------------------------------------------------
+# Scope gate
+#
+# Some filers do not fit the three-statement template, and the honest response
+# is to say so rather than to emit a scaffold that quietly means nothing. The
+# gate governs scaffold generation only. The puller and the peer comparison
+# read whatever these companies tag, exactly as before: a bank's revenue and
+# net income are perfectly good numbers, they just do not roll up into a
+# standard model.
+# ---------------------------------------------------------------------------
+
+# Banks and credit institutions, then insurance carriers and agents. Both
+# ranges are inclusive, and both come from the SEC's own SIC list.
+SIC_BANK_RANGE = (6020, 6199)
+SIC_INSURANCE_RANGE = (6311, 6411)
+
+# Reasons a verdict can carry. in_scope is the only one that permits a scaffold.
+SCOPE_IN = "in_scope"
+SCOPE_FINANCIAL_SIC = "financial_sic"
+SCOPE_FINANCIAL_SHAPE = "financial_shape"
+SCOPE_IFRS_ONLY = "ifrs_only"
+
+# The refusal text for financial filers, fixed by V2_PLAN 1.4. The heuristic
+# case appends its evidence to this sentence rather than replacing it, so the
+# reason for a refusal is always visible and a misclassification is arguable.
+REFUSAL_FINANCIAL = (
+    "Bank and insurance financial statements do not fit the standard "
+    "three-statement template; Edgardly will not generate a scaffold for "
+    "this company"
+)
+
+REFUSAL_IFRS_ONLY = (
+    "This company reports under IFRS, not US GAAP. Edgardly reads the us-gaap "
+    "XBRL taxonomy, so it can extract no line items for this filer and will "
+    "not generate a scaffold. The blank table is a limit of this tool, not a "
+    "gap in the company's filings"
+)
+
+# Tags that betray a financial institution the SIC code failed to catch. A
+# company reporting interest and dividend income as its operating revenue, and
+# tagging no revenue or cost of revenue at all, is running a bank's income
+# statement whatever its SIC says. make_fixture.py keeps these alongside the
+# registry's own tags so the heuristic can be tested offline.
+SCOPE_HEURISTIC_TAGS = ("InterestAndDividendIncomeOperating",)
+
+# in_scope answers the only question the caller has to act on; reason and
+# message explain it, and detail carries the evidence so a wrong verdict can be
+# argued with rather than just worked around.
+ScopeVerdict = namedtuple("ScopeVerdict", "in_scope reason message detail")
+
+
+def _sic_in(sic, low_high):
+    low, high = low_high
+    try:
+        code = int(str(sic).strip())
+    except (TypeError, ValueError):
+        return False
+    return low <= code <= high
+
+
+def _taxonomies(facts):
+    """Return the taxonomies a companyfacts payload actually reports facts in.
+
+    A taxonomy present but empty counts as absent. What matters is whether the
+    filer tagged anything in it, not whether the key exists.
+    """
+    if not isinstance(facts, dict):
+        return set()
+    blocks = facts.get("facts", {}) or {}
+    return {name for name, tags in blocks.items() if tags}
+
+
+def _has_financial_shape(facts):
+    """True when the tagged statements look like a bank's, whatever the SIC says.
+
+    The signal is a company that reports interest and dividend income as an
+    operating line while tagging neither revenue nor cost of revenue. An
+    operating company always has at least one of those two.
+    """
+    us_gaap = (facts or {}).get("facts", {}).get("us-gaap", {}) if isinstance(facts, dict) else {}
+    if not us_gaap:
+        return False
+    if not any(tag in us_gaap for tag in SCOPE_HEURISTIC_TAGS):
+        return False
+    for name in ("Revenue", "Cost of Revenue"):
+        if any(tag in us_gaap for tag in tags_for(name)):
+            return False
+    return True
+
+
+def is_in_scope(sic, facts):
+    """Decide whether a filer can be given a three-statement scaffold.
+
+    Three ways to fall out of scope, checked in this order:
+
+    1. SIC code inside the bank or insurance ranges. Deterministic and the
+       reason the ranges are in the plan.
+    2. Only an ifrs-full taxonomy, no us-gaap. Nothing to extract at all, so
+       this filer needs its own message rather than the financial one.
+    3. The statement-shape heuristic, for financials the SIC missed.
+
+    Every check that fired is recorded in detail["reasons"], even the ones that
+    did not decide the verdict, so a company refused for two reasons does not
+    look like it was refused for one.
+
+    sic may be None or unparseable; the gate then rests on the facts alone.
+    Returns a ScopeVerdict. in_scope is True only when nothing fired.
+    """
+    taxonomies = _taxonomies(facts)
+    is_bank_sic = _sic_in(sic, SIC_BANK_RANGE)
+    is_insurance_sic = _sic_in(sic, SIC_INSURANCE_RANGE)
+    ifrs_only = "ifrs-full" in taxonomies and "us-gaap" not in taxonomies
+    financial_shape = _has_financial_shape(facts)
+
+    reasons = []
+    if is_bank_sic or is_insurance_sic:
+        reasons.append(SCOPE_FINANCIAL_SIC)
+    if ifrs_only:
+        reasons.append(SCOPE_IFRS_ONLY)
+    if financial_shape:
+        reasons.append(SCOPE_FINANCIAL_SHAPE)
+
+    detail = {
+        "sic": str(sic) if sic not in (None, "") else None,
+        "sic_range": ("bank" if is_bank_sic else "insurance" if is_insurance_sic else None),
+        "taxonomies": sorted(taxonomies),
+        "heuristic_matched": financial_shape,
+        "reasons": reasons,
+    }
+
+    if not reasons:
+        return ScopeVerdict(True, SCOPE_IN, "", detail)
+
+    reason = reasons[0]
+    if reason == SCOPE_IFRS_ONLY:
+        message = REFUSAL_IFRS_ONLY + "."
+    elif reason == SCOPE_FINANCIAL_SIC:
+        message = "{}. SIC code {} is in the {} range.".format(
+            REFUSAL_FINANCIAL, detail["sic"], detail["sic_range"])
+    else:
+        message = (
+            "{}. This company's SIC code ({}) is not a financial one, but it tags "
+            "{} and no revenue or cost of revenue at all, which is a financial "
+            "institution's income statement.".format(
+                REFUSAL_FINANCIAL,
+                detail["sic"] or "not reported",
+                ", ".join(SCOPE_HEURISTIC_TAGS))
+        )
+    return ScopeVerdict(False, reason, message, detail)

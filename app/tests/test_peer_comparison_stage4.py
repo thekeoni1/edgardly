@@ -280,9 +280,14 @@ def test_excel_structure_flags_and_na():
 
 def test_source_tags_sheet_completeness():
     """
-    The 'Source Tags' sheet must list one row per (company × line item) pair,
-    with the correct company name, line item name, and XBRL tag.  For line
-    items with no tag found, the tag cell must say '— not found' (not blank).
+    The 'Source Tags' sheet must list one row per VALUE -- that is, per
+    (company × line item × period) -- not one per line item.  Per-period tag
+    resolution means one row of the comparison table can be stitched from
+    several tags, and a single 'tag used' cell would describe only whichever
+    period happened to come last.
+
+    A period with no value found says '— not found' in the tag column (not
+    blank) and is marked missing in the Source column.
     """
     result = _make_comparison_result()
 
@@ -294,25 +299,27 @@ def test_source_tags_sheet_completeness():
         wb  = openpyxl.load_workbook(fpath)
         ws2 = wb["Source Tags"]
 
-        # Build expected rows: (company_name, line_item, tag_or_placeholder)
+        # Expected: (company, line item, relative period, state, tag)
         expected = []
         for company in result["companies"]:
             for li in result["line_items"]:
-                info     = company["line_items"].get(li) or {}
-                tag_used = info.get("tag_used")
-                expected.append((
-                    company["name"],
-                    li,
-                    tag_used if tag_used else "— not found",
-                ))
+                info = company["line_items"].get(li) or {}
+                for period in info.get("periods", []):
+                    reported = period.get("value") is not None
+                    expected.append((
+                        company["name"],
+                        li,
+                        period["relative_period"],
+                        "reported" if reported else "missing",
+                        period.get("source_tag") or "— not found",
+                    ))
 
         # Collect actual rows (skip header row 1)
         actual = []
         for row in ws2.iter_rows(min_row=2, values_only=True):
-            company_cell, li_cell, tag_cell = row[0], row[1], row[2]
-            if company_cell is None and li_cell is None:
+            if row[0] is None and row[1] is None:
                 break
-            actual.append((company_cell, li_cell, tag_cell))
+            actual.append((row[0], row[1], row[2], row[3], row[4]))
 
         print(f"\nExpected {len(expected)} source-tag rows:")
         for r in expected:
@@ -324,33 +331,150 @@ def test_source_tags_sheet_completeness():
         assert len(actual) == len(expected), (
             f"Expected {len(expected)} rows in Source Tags sheet; got {len(actual)}"
         )
+        assert actual == expected
 
-        for i, (exp, act) in enumerate(zip(expected, actual)):
-            exp_company, exp_li, exp_tag = exp
-            act_company, act_li, act_tag = act
-
-            assert act_company == exp_company, (
-                f"Row {i+2}: expected company '{exp_company}'; got '{act_company}'"
-            )
-            assert act_li == exp_li, (
-                f"Row {i+2}: expected line item '{exp_li}'; got '{act_li}'"
-            )
-            assert act_tag == exp_tag, (
-                f"Row {i+2}: expected tag '{exp_tag}'; got '{act_tag}'"
-            )
-
-        # Confirm columns exist: Company (A), Line Item (B), XBRL Tag Used (C)
-        header_a = ws2.cell(1, 1).value
-        header_b = ws2.cell(1, 2).value
-        header_c = ws2.cell(1, 3).value
-        assert header_a == "Company",       f"Col A header should be 'Company'; got '{header_a}'"
-        assert header_b == "Line Item",     f"Col B header should be 'Line Item'; got '{header_b}'"
-        assert header_c == "XBRL Tag Used", f"Col C header should be 'XBRL Tag Used'; got '{header_c}'"
+        headers = [ws2.cell(1, ci).value for ci in range(1, 9)]
+        assert headers == [
+            "Company", "Line Item", "Period", "Source",
+            "XBRL Tag", "Filed", "Accession", "Notes",
+        ], f"Unexpected Source Tags headers: {headers}"
 
     finally:
         os.unlink(fpath)
 
     print("\ntest_source_tags_sheet_completeness PASSED")
+
+
+def test_source_tags_sheet_shows_per_period_tags_and_seams():
+    """
+    A row stitched from two tags must show both, each against its own period,
+    and the TAG_TRANSITION seam must be visible on the first period of the new
+    tag.  This is the whole point of the sheet: the reader can see that FY-1
+    and FY0 of one row do not come from the same tag.
+    """
+    seam_message = (
+        "Revenue switches XBRL tag here: the period ending 2018-09-29 comes from "
+        "Revenues, this one from RevenueFromContractWithCustomerExcludingAssessedTax. "
+        "The two tags may not cover exactly the same items"
+    )
+    result = {
+        "companies": [{
+            "name": "Apple Inc.",
+            "cik": APPLE_CIK,
+            "line_items": {
+                "Revenue": {
+                    "tag_used": "RevenueFromContractWithCustomerExcludingAssessedTax",
+                    "periods": [
+                        {
+                            "relative_period": "FY0",
+                            "period_end": "2019-09-28",
+                            "period_start": "2018-09-30",
+                            "value": 260_174_000_000,
+                            "source_tag": "RevenueFromContractWithCustomerExcludingAssessedTax",
+                            "flags": [{"flag_type": "TAG_TRANSITION", "message": seam_message}],
+                            "provenance": {
+                                "state": "reported",
+                                "tag": "RevenueFromContractWithCustomerExcludingAssessedTax",
+                                "filed": "2019-10-31",
+                                "accession": "0000320193-19-000119",
+                                "form": "10-K",
+                            },
+                        },
+                        {
+                            "relative_period": "FY-1",
+                            "period_end": "2018-09-29",
+                            "period_start": "2017-10-01",
+                            "value": 265_595_000_000,
+                            "source_tag": "Revenues",
+                            "flags": [],
+                            "provenance": {
+                                "state": "reported",
+                                "tag": "Revenues",
+                                "filed": "2018-11-05",
+                                "accession": "0000320193-18-000145",
+                                "form": "10-K",
+                            },
+                        },
+                    ],
+                },
+                "Gross Profit": {
+                    "tag_used": None,
+                    "periods": [
+                        {
+                            "relative_period": "FY0",
+                            "period_end": "2019-09-28",
+                            "period_start": "2018-09-30",
+                            "value": 98_392_000_000,
+                            "source_tag": None,
+                            "flags": [],
+                            "provenance": {
+                                "state": "derived",
+                                "formula": "Revenue - Cost of Revenue",
+                                "inputs": [],
+                            },
+                        },
+                        {
+                            "relative_period": "FY-1",
+                            "period_end": "2018-09-29",
+                            "period_start": None,
+                            "value": None,
+                            "source_tag": None,
+                            "flags": [],
+                            "provenance": {
+                                "state": "missing",
+                                "flag": "NOT_TAGGED",
+                                "message": ("Not tagged in XBRL. Check the income statement "
+                                            "of the FY2018 10-K: "
+                                            "https://www.sec.gov/Archives/edgar/data/320193/"
+                                            "000032019318000145/."),
+                                "statement": "income statement",
+                                "period": "FY2018",
+                                "form": "10-K",
+                                "accession": "0000320193-18-000145",
+                                "url": ("https://www.sec.gov/Archives/edgar/data/320193/"
+                                        "000032019318000145/"),
+                            },
+                        },
+                    ],
+                },
+            },
+        }],
+        "line_items": ["Revenue", "Gross Profit"],
+        "n_periods": 2,
+    }
+
+    with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as f:
+        fpath = f.name
+
+    try:
+        _peer_write_xlsx(fpath, result)
+        ws2 = openpyxl.load_workbook(fpath)["Source Tags"]
+        rows = {(r[1], r[2]): r for r in ws2.iter_rows(min_row=2, values_only=True)
+                if r[0] is not None}
+
+        # Two periods of one row, two different tags, each with its own filing.
+        assert rows[("Revenue", "FY0")][4] == (
+            "RevenueFromContractWithCustomerExcludingAssessedTax")
+        assert rows[("Revenue", "FY-1")][4] == "Revenues"
+        assert rows[("Revenue", "FY0")][5] == "2019-10-31"
+        assert rows[("Revenue", "FY-1")][6] == "0000320193-18-000145"
+
+        # The seam is called out on the first period of the new tag, and only there.
+        assert "switches XBRL tag" in rows[("Revenue", "FY0")][7]
+        assert not rows[("Revenue", "FY-1")][7]   # openpyxl reads an empty cell as None
+
+        # Derived carries its formula; missing carries its pointer.
+        assert rows[("Gross Profit", "FY0")][3] == "derived"
+        assert rows[("Gross Profit", "FY0")][7] == "Derived: Revenue - Cost of Revenue"
+        assert rows[("Gross Profit", "FY-1")][3] == "missing"
+        assert "Check the income statement of the FY2018 10-K" in (
+            rows[("Gross Profit", "FY-1")][7])
+        assert "sec.gov/Archives/edgar/data/320193" in rows[("Gross Profit", "FY-1")][7]
+
+    finally:
+        os.unlink(fpath)
+
+    print("\ntest_source_tags_sheet_shows_per_period_tags_and_seams PASSED")
 
 
 # ---------------------------------------------------------------------------

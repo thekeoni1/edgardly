@@ -658,6 +658,185 @@ def validate_financials(deduped_line_items):
     return flags
 
 
+# ---------------------------------------------------------------------------
+# Stage 4 -- Provenance on every value
+#
+# Every number Edgardly shows is exactly one of three things, and it says which:
+#
+#   reported  the filer tagged it. Carries the tag, the filed date, and the
+#             accession number of the filing it came from. Because resolution
+#             is per period, two cells in one row can name different tags, and
+#             the provenance of each says which.
+#   derived   Edgardly computed it from reported values. Carries the formula
+#             and the provenance of every input, so the arithmetic can be
+#             checked without leaving the page.
+#   missing   nobody tagged it. Carries a pointer to the statement of the
+#             filing where a reader can go find it by hand. Never a zero,
+#             never a guess.
+#
+# The pointer is built out of data already in hand: the accession number of the
+# filing that reported the period, and the statement the registry says the item
+# lives on.
+# ---------------------------------------------------------------------------
+
+PROVENANCE_REPORTED = "reported"
+PROVENANCE_DERIVED = "derived"
+PROVENANCE_MISSING = "missing"
+
+# The flags a missing value can carry. Distinct from the validation flags
+# above: those describe a number that looks wrong, these describe the absence
+# of one, and they do not mean the same thing.
+#
+# NOT_TAGGED       the filer never tagged this item for this period.
+# PERIOD_UNRESOLVED the tag holds a value carrying this end date, but not one
+#                  Edgardly could confirm covers the period. EDGAR stamps the
+#                  fiscal-period label on the filing rather than the fact, so a
+#                  later 10-Q can overwrite a year-end balance sheet's label
+#                  (PROGRESS.md open question 3). Saying "not tagged" here
+#                  would be false, and the difference matters to anyone
+#                  deciding whether to go read the filing.
+FLAG_NOT_TAGGED = "NOT_TAGGED"
+FLAG_PERIOD_UNRESOLVED = "PERIOD_UNRESOLVED"
+
+SEC_ARCHIVES_BASE = "https://www.sec.gov/Archives/edgar/data"
+
+# Annual forms, in the order a pointer prefers them.
+_ANNUAL_FORMS = ("10-K", "10-K/A", "20-F", "40-F")
+
+
+def filing_index_url(cik, accession):
+    """Return the EDGAR filing index URL for an accession number, or None.
+
+    The archive path wants the accession with its dashes stripped and the CIK
+    without leading zeros, which is not the shape either arrives in.
+    """
+    if not cik or not accession:
+        return None
+    digits = str(accession).replace("-", "").strip()
+    if not digits:
+        return None
+    try:
+        cik_part = str(int(str(cik).strip()))
+    except (TypeError, ValueError):
+        return None
+    return "{}/{}/{}/".format(SEC_ARCHIVES_BASE, cik_part, digits)
+
+
+def filing_pointers(facts_data):
+    """Map each period end date to the filing a reader should go look at.
+
+    A missing value has no data point of its own to point at, so the pointer
+    comes from whatever else the filer did tag for the same period. Annual
+    forms win over interim ones, and among those the EARLIEST filed wins: a
+    period's own 10-K is the filing that reported it first, while every later
+    10-K carries it only as a comparative.
+
+    Reads the companyfacts payload rather than a resolved series, and reads
+    every tag in it rather than only the registry's. Resolution already keeps
+    one entry per period per tag, the most recently filed, which discards the
+    very filing this function exists to find: point Apple's FY2023 hole at a
+    resolved series and it names the FY2024 10-K.
+
+    Returns {period_end: {"accn", "form", "filed"}}.
+    """
+    us_gaap = ((facts_data or {}).get("facts", {}) or {}).get("us-gaap", {}) or {}
+    best = {}
+    for tag_data in us_gaap.values():
+        for entries in (tag_data.get("units", {}) or {}).values():
+            for entry in entries:
+                end = entry.get("end")
+                accn = entry.get("accn")
+                if not end or not accn:
+                    continue
+                form = entry.get("form") or ""
+                rank = (_ANNUAL_FORMS.index(form) if form in _ANNUAL_FORMS
+                        else len(_ANNUAL_FORMS))
+                key = (rank, entry.get("filed") or "9999-99-99")
+                incumbent = best.get(end)
+                if incumbent is None or key < incumbent[0]:
+                    best[end] = (key, {"accn": accn, "form": form,
+                                       "filed": entry.get("filed")})
+    return {end: pointer for end, (_key, pointer) in best.items()}
+
+
+def reported_provenance(dp):
+    """Provenance for a value the filer tagged."""
+    return {
+        "state": PROVENANCE_REPORTED,
+        "tag": dp.get("tag"),
+        "filed": dp.get("filed"),
+        "accession": dp.get("accn"),
+        "form": dp.get("form"),
+    }
+
+
+def derived_provenance(formula, inputs):
+    """Provenance for a value Edgardly computed.
+
+    inputs is a list of {"name", "value", "tag", "filed", "accession"} dicts,
+    one per input, in the order the formula names them. Carrying the inputs and
+    not just the formula string is the difference between showing the work and
+    asserting it.
+    """
+    return {
+        "state": PROVENANCE_DERIVED,
+        "formula": formula,
+        "inputs": list(inputs),
+    }
+
+
+def missing_provenance(line_item, period_label, cik=None, pointer=None,
+                       flag=FLAG_NOT_TAGGED):
+    """Provenance for a value that is not there, with a pointer to go find it.
+
+    pointer is one entry from filing_pointers, or None when no filing for the
+    period could be identified, in which case the message names the statement
+    but has no link to offer.
+
+    flag says which kind of absence this is; both send the reader to the same
+    place, and only one of them claims the filer never tagged the item.
+    """
+    pointer = pointer or {}
+    statement = line_items.statement_label_of(line_item)
+    form = pointer.get("form") or "10-K"
+    url = filing_index_url(cik, pointer.get("accn"))
+
+    where = "the {} of the".format(statement) if statement else "the"
+    target = " ".join(part for part in (where, period_label, form) if part)
+    if flag == FLAG_PERIOD_UNRESOLVED:
+        opening = ("Tagged in XBRL, but not for a period Edgardly could confirm "
+                   "as {}".format(period_label or "this period"))
+    else:
+        opening = "Not tagged in XBRL"
+    message = "{}. Check {}".format(opening, target)
+    message += ": {}.".format(url) if url else "."
+
+    return {
+        "state": PROVENANCE_MISSING,
+        "flag": flag,
+        "message": message,
+        "statement": statement,
+        "period": period_label,
+        "form": form,
+        "accession": pointer.get("accn"),
+        "url": url,
+    }
+
+
+def period_label(period_end, fiscal_period=None, period_type="annual"):
+    """Name a period the way the tables name it: FY2023, or Q3 2023.
+
+    The year comes from the period end date rather than from EDGAR's fy field,
+    which labels the filing rather than the fact.
+    """
+    if not period_end:
+        return ""
+    year = str(period_end)[:4]
+    if period_type == "annual" or not fiscal_period or fiscal_period == "FY":
+        return "FY{}".format(year)
+    return "{} {}".format(fiscal_period, year)
+
+
 def flag_summary(all_flags):
     """
     Return a list of (line_item, flag) tuples for every raised flag, sorted

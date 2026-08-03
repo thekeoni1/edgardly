@@ -97,6 +97,66 @@ def _collect_fy_ends(deduped, line_items):
     return flow_fy_ends | bs_fy_ends
 
 
+# Items this table may fill by arithmetic when the filer tags no value of its
+# own, kept identical to the single-company table's list so the two views can
+# never disagree about what a number is. Total Debt is deliberately not here;
+# see the note in app.py.
+_DERIVED_ITEMS = ("Gross Profit",)
+
+
+def _fill_derived_periods(result_items):
+    """Compute the values the filer left untagged but the table can prove.
+
+    Same rule as the single-company path: every input must be reported, for the
+    same period, or the value stays missing. Written as a module-level function
+    because fetch_peer_data's own parameter shadows the line_items module.
+    """
+    for name in _DERIVED_ITEMS:
+        rule = line_items.DERIVATIONS.get(name)
+        target = result_items.get(name)
+        if rule is None or target is None:
+            continue
+        sources = [(input_name, result_items.get(input_name))
+                   for input_name, _sign in rule.inputs]
+        if any(info is None for _name, info in sources):
+            continue
+
+        for idx, period in enumerate(target.get("periods", [])):
+            if period.get("value") is not None:
+                continue
+
+            inputs = []
+            for input_name, info in sources:
+                candidates = info.get("periods", [])
+                source = candidates[idx] if idx < len(candidates) else None
+                state = (source or {}).get("provenance", {}).get("state")
+                if (source is None or source.get("value") is None
+                        or state != xbrl.PROVENANCE_REPORTED
+                        or source.get("period_end") != period.get("period_end")):
+                    inputs = None
+                    break
+                inputs.append((input_name, source))
+            if not inputs:
+                continue
+
+            value = line_items.derive(name, {n: p["value"] for n, p in inputs})
+            if value is None:
+                continue
+
+            period["value"] = value
+            period["period_start"] = inputs[0][1].get("period_start")
+            period["provenance"] = xbrl.derived_provenance(rule.formula, [
+                {
+                    "name": n,
+                    "value": p.get("value"),
+                    "tag": p.get("source_tag"),
+                    "filed": (p.get("provenance") or {}).get("filed"),
+                    "accession": (p.get("provenance") or {}).get("accession"),
+                }
+                for n, p in inputs
+            ])
+
+
 def _best_dp_for_end(dps, end_date):
     """
     Among data points with a specific end date, return the one with the longest
@@ -169,6 +229,11 @@ def fetch_peer_data(cik, line_items, n_periods=5):
     fy_ends = _collect_fy_ends(deduped, line_items)
     sorted_ends = sorted(fy_ends, reverse=True)[:n_periods]
 
+    # Where to send a reader who wants a value nobody tagged. Built from the
+    # payload rather than the resolved series, which keeps only whichever
+    # filing reported each period last.
+    pointers = xbrl.filing_pointers(facts)
+
     result_items = {}
     for li in line_items:
         info = deduped.get(li) or {}
@@ -201,6 +266,11 @@ def fetch_peer_data(cik, line_items, n_periods=5):
             rel_label = "FY0" if i == 0 else "FY-{}".format(i)
             dp = _best_dp_for_end(annual_dps, end)
             if dp is None:
+                # A value carrying this end date that did not survive the
+                # annual filter is not an untagged item, and does not get told
+                # it is one.
+                tagged = any(other.get("end") == end and other.get("value") is not None
+                             for other in all_dps)
                 periods.append({
                     "relative_period": rel_label,
                     "period_end": end,
@@ -208,6 +278,9 @@ def fetch_peer_data(cik, line_items, n_periods=5):
                     "value": None,
                     "source_tag": None,
                     "flags": [],
+                    "provenance": xbrl.missing_provenance(
+                        li, xbrl.period_label(end), cik, pointers.get(end),
+                        xbrl.FLAG_PERIOD_UNRESOLVED if tagged else xbrl.FLAG_NOT_TAGGED),
                 })
             else:
                 period_flags = [
@@ -222,9 +295,12 @@ def fetch_peer_data(cik, line_items, n_periods=5):
                     "value": dp["value"],
                     "source_tag": dp.get("tag"),
                     "flags": period_flags,
+                    "provenance": xbrl.reported_provenance(dp),
                 })
 
         result_items[li] = {"tag_used": tag_used, "periods": periods}
+
+    _fill_derived_periods(result_items)
 
     return {"name": entity, "cik": cik, "line_items": result_items}
 

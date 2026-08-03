@@ -224,9 +224,190 @@ def _detect_share_scale(rows, columns):
     return line_items.DEFAULT_SHARE_SCALE
 
 
+# Items the existing tables may fill by arithmetic when the filer tags no value
+# of its own. Gross Profit is the only one: Revenue minus Cost of Revenue is
+# the definition of the line, and both inputs sit in the same table.
+#
+# Total Debt is deliberately absent, and is absent from the displayed items as
+# well. Its derivation is Short-Term Debt plus Long-Term Debt, and for a filer
+# that tags no DebtCurrent the short-term row is current maturities only, so
+# the sum understates real debt (PROGRESS.md open question 4). Showing a number
+# that is knowingly short is worse than showing none; Session 4 fixes the
+# derivation and then it can surface.
+_DERIVED_UI_ITEMS = ("Gross Profit",)
+
+
+def _company_scope(cik, facts):
+    """Run the scope gate for a company, JSON-ready.
+
+    The SIC code lives in the submissions API, not in companyfacts, so this is
+    a second lookup. It is cached and it is allowed to fail: a scope verdict is
+    advisory for the puller, and a company should still load with its SIC
+    unknown rather than not load at all.
+    """
+    sic = None
+    lookup = "submissions"
+    try:
+        sic = (edgar_api.get_company_meta(cik) or {}).get("sic") or None
+    except Exception:
+        lookup = "unavailable"
+
+    verdict = line_items.is_in_scope(sic, facts)
+    detail = dict(verdict.detail)
+    detail["sic_lookup"] = lookup
+    return {
+        "in_scope": verdict.in_scope,
+        "reason": verdict.reason,
+        "message": verdict.message,
+        "detail": detail,
+    }
+
+
+def _reported_cell(dp, end, fp):
+    return {
+        "value": dp["value"],
+        "formatted": _xbrl_format_value(dp["value"], dp.get("unit", "")),
+        "unit": dp.get("unit"),
+        "start": dp.get("start"),
+        "end": end,
+        "fp": fp,
+        "tag": dp.get("tag"),
+        "filed": dp.get("filed"),
+        "flags": [],
+        "provenance": xbrl.reported_provenance(dp),
+    }
+
+
+def _fill_derived_cells(rows, columns):
+    """Compute the values the filer left untagged but the table can prove.
+
+    A derived value is arithmetic on reported values and nothing else. Every
+    input must be reported for that same period, in the same unit: a derivation
+    built on another derivation, or on a value from a different period, would
+    be a chain of inference presented as a fact. A period that fails any of
+    those conditions stays missing.
+    """
+    by_item = {row["line_item"]: row for row in rows}
+
+    for name in _DERIVED_UI_ITEMS:
+        rule = line_items.DERIVATIONS.get(name)
+        target = by_item.get(name)
+        if rule is None or target is None:
+            continue
+        sources = [(input_name, by_item.get(input_name)) for input_name, _sign in rule.inputs]
+        if any(row is None for _name, row in sources):
+            continue
+
+        for col in columns:
+            key = col["key"]
+            existing = target["cells"].get(key)
+            if existing is not None and existing.get("value") is not None:
+                continue
+
+            input_cells = []
+            for input_name, row in sources:
+                cell = row["cells"].get(key)
+                prov = (cell or {}).get("provenance") or {}
+                if (cell is None or cell.get("value") is None
+                        or prov.get("state") != xbrl.PROVENANCE_REPORTED):
+                    input_cells = None
+                    break
+                input_cells.append((input_name, cell))
+            if not input_cells:
+                continue
+
+            units = {cell.get("unit") for _name, cell in input_cells}
+            if len(units) != 1:
+                continue
+            unit = units.pop()
+
+            value = line_items.derive(name, {n: c["value"] for n, c in input_cells})
+            if value is None:
+                continue
+
+            target["cells"][key] = {
+                "value": value,
+                "formatted": _xbrl_format_value(value, unit),
+                "unit": unit,
+                "start": input_cells[0][1].get("start"),
+                "end": key,
+                "fp": col.get("fp"),
+                "tag": None,
+                "filed": None,
+                "flags": [],
+                "provenance": xbrl.derived_provenance(rule.formula, [
+                    {
+                        "name": n,
+                        "value": c.get("value"),
+                        "tag": c.get("tag"),
+                        "filed": c.get("filed"),
+                        "accession": (c.get("provenance") or {}).get("accession"),
+                    }
+                    for n, c in input_cells
+                ]),
+            }
+
+
+def _fill_missing_cells(rows, columns, cik, pointers, period_type, tagged_ends=None):
+    """Give every remaining hole a pointer to where the number would be.
+
+    After this runs, every (row, column) in the table is exactly one of the
+    three provenance states. A hole is a fact about the filing, so it says
+    which statement of which filing to open rather than rendering as nothing.
+
+    tagged_ends maps a line item to the period end dates the filer tagged it
+    for at all. A hole whose end date is in that set is not an untagged item:
+    it is a value this table could not confirm covers the period, which is a
+    different sentence and a true one.
+    """
+    tagged_ends = tagged_ends or {}
+    for row in rows:
+        tagged = tagged_ends.get(row["line_item"], ())
+        for col in columns:
+            key = col["key"]
+            if row["cells"].get(key) is not None:
+                continue
+            label = xbrl.period_label(key, col.get("fp"), period_type)
+            flag = (xbrl.FLAG_PERIOD_UNRESOLVED if key in tagged
+                    else xbrl.FLAG_NOT_TAGGED)
+            row["cells"][key] = {
+                "value": None,
+                "formatted": None,
+                "unit": None,
+                "start": None,
+                "end": key,
+                "fp": col.get("fp"),
+                "tag": None,
+                "filed": None,
+                "flags": [],
+                "provenance": xbrl.missing_provenance(
+                    row["line_item"], label, cik, pointers.get(key), flag),
+            }
+
+
+def _tag_summary(row, columns):
+    """Name every tag the displayed values in one row came from, oldest first.
+
+    A stitched row can span tag eras, and one tag_used cannot describe it
+    honestly. Where a row has only one tag this reads exactly as it always did.
+    """
+    tags = []
+    for col in columns:
+        prov = (row["cells"].get(col["key"]) or {}).get("provenance") or {}
+        if prov.get("state") != xbrl.PROVENANCE_REPORTED:
+            continue
+        tag = prov.get("tag")
+        if tag and tag not in tags:
+            tags.append(tag)
+    if not tags:
+        return row.get("tag_used") or ""
+    return " -> ".join(tags)
+
+
 def _build_xbrl_result(cik, start_year, end_year, period_type):
     facts = xbrl.fetch_company_facts(cik)
     entity = facts.get("entityName", str(cik))
+    scope = _company_scope(cik, facts)
     raw = xbrl.extract_all_line_items(facts)
     deduped = xbrl.deduplicate_all_line_items(raw)
     all_flags = xbrl.validate_financials(deduped)
@@ -289,20 +470,25 @@ def _build_xbrl_result(cik, start_year, end_year, period_type):
                 {"type": f["flag_type"], "msg": f["message"]}
                 for f in item_flags if f.get("period_end") == end
             ]
-            cells[end] = {
-                "value": dp["value"],
-                "formatted": _xbrl_format_value(dp["value"], dp.get("unit", "")),
-                "unit": dp.get("unit"),
-                "start": dp.get("start"),
-                "end": end,
-                "fp": fp,
-                "tag": dp.get("tag"),
-                "filed": dp.get("filed"),
-                "flags": period_flags,
-            }
+            cells[end] = _reported_cell(dp, end, fp)
+            cells[end]["flags"] = period_flags
             cell_days[end] = days
         rows.append({"line_item": line_item, "tag_used": tag_used, "cells": cells})
-    return entity, columns, rows
+
+    # Provenance: derive what can be proven from reported values, then give
+    # every remaining hole a pointer. Order matters -- a derivable period is a
+    # derived value, not a missing one.
+    _fill_derived_cells(rows, columns)
+    tagged_ends = {
+        name: {dp.get("end") for dp in info.get("data", []) if dp.get("value") is not None}
+        for name, info in deduped.items()
+    }
+    _fill_missing_cells(rows, columns, cik, xbrl.filing_pointers(facts), period_type,
+                        tagged_ends)
+    for row in rows:
+        row["tag_summary"] = _tag_summary(row, columns)
+
+    return entity, columns, rows, scope
 
 
 def _build_chart_data(entity, columns, rows, dollar_factor, dollar_label):
@@ -527,20 +713,21 @@ def _xbrl_write_csv(filepath, entity, columns, rows, period_type):
             all_row_flags = []
             for col in columns:
                 cell = row["cells"].get(col["key"])
-                if cell is None:
+                val = cell.get("value") if cell else None
+                if val is None:
                     cells_out.append("Not reported")
+                elif line_item in _EPS_LINE_ITEMS:
+                    cells_out.append("{:.2f}".format(val))
                 else:
-                    val = cell.get("value")
-                    if val is None:
-                        cells_out.append("")
-                    elif line_item in _EPS_LINE_ITEMS:
-                        cells_out.append("{:.2f}".format(val))
-                    else:
-                        scaled = val / factor if factor != 1 else val
-                        cells_out.append("{:,.0f}".format(scaled))
+                    scaled = val / factor if factor != 1 else val
+                    cells_out.append("{:,.0f}".format(scaled))
+                if cell:
                     all_row_flags.extend(f["msg"] for f in cell.get("flags", []))
             flags_str = "; ".join(sorted(set(all_row_flags))) if all_row_flags else ""
-            writer.writerow([label, row["tag_used"] or ""] + cells_out + [flags_str])
+            # The Source Tag column names every tag the row's values came from,
+            # in period order, because a stitched row can span more than one.
+            source = row.get("tag_summary") or row.get("tag_used") or ""
+            writer.writerow([label, source] + cells_out + [flags_str])
 
 
 def _xbrl_add_chart_sheet(wb, entity, columns, rows, dollar_factor, dollar_label):
@@ -720,6 +907,79 @@ def _peer_add_chart_sheet(wb, comparison_result):
         ws.add_chart(c, "A{}".format(chart_start + idx * 26))
 
 
+_PROVENANCE_SHEET_HEADERS = (
+    ("Line Item", 28), ("Period", 12), ("Source", 11), ("XBRL Tag", 46),
+    ("Filed", 12), ("Accession", 22), ("Notes", 80),
+)
+
+
+def _xbrl_add_source_tags_sheet(wb, columns, rows, BF):
+    """Add a 'Source Tags' sheet holding one line per value, not per row.
+
+    A row of a stitched series can span several tags, so a single tag_used
+    column on the data sheet cannot say where any particular number came from.
+    This sheet answers that per period: which of the three states the value is
+    in, which tag reported it, when it was filed and under which accession, the
+    formula behind a derived value, and where to go look for a missing one.
+    Tag seams are called out on the first period of the new tag.
+    """
+    from openpyxl.styles import Font, PatternFill
+
+    ws = wb.create_sheet("Source Tags")
+    ws.sheet_properties.tabColor = "888888"
+
+    hdr_font = Font(name=BF, color="FFFFFF", bold=True, size=11)
+    hdr_fill = PatternFill("solid", fgColor="003366")
+    base_font = Font(name=BF, size=11)
+    tag_font = Font(name=BF, color="888888", size=10)
+    missing_font = Font(name=BF, color="AAAAAA", italic=True, size=11)
+    note_font = Font(name=BF, color="666666", size=10)
+    seam_font = Font(name=BF, color="856404", size=10)
+
+    for ci, (text, width) in enumerate(_PROVENANCE_SHEET_HEADERS, start=1):
+        cell = ws.cell(1, ci, text)
+        cell.font = hdr_font
+        cell.fill = hdr_fill
+        ws.column_dimensions[cell.column_letter].width = width
+
+    out_row = 2
+    for row in rows:
+        for col in columns:
+            cell = row["cells"].get(col["key"]) or {}
+            prov = cell.get("provenance") or {}
+            state = prov.get("state") or xbrl.PROVENANCE_MISSING
+
+            note = ""
+            if state == xbrl.PROVENANCE_DERIVED:
+                note = "Derived: {}".format(prov.get("formula", ""))
+            elif state == xbrl.PROVENANCE_MISSING:
+                note = prov.get("message", "")
+            else:
+                seam = next((f for f in cell.get("flags", [])
+                             if f.get("type") == xbrl.FLAG_TAG_TRANSITION), None)
+                if seam:
+                    note = seam.get("msg", "")
+
+            ws.cell(out_row, 1, row["line_item"]).font = base_font
+            ws.cell(out_row, 2, col["label"]).font = base_font
+            ws.cell(out_row, 3, state).font = (
+                missing_font if state == xbrl.PROVENANCE_MISSING else base_font)
+            ws.cell(out_row, 4, prov.get("tag") or "").font = tag_font
+            ws.cell(out_row, 5, prov.get("filed") or "").font = tag_font
+            ws.cell(out_row, 6, prov.get("accession") or "").font = tag_font
+            ws.cell(out_row, 7, note).font = seam_font if note.startswith(
+                row["line_item"] + " switches") else note_font
+            out_row += 1
+
+    ws.freeze_panes = "A2"
+    ws.cell(out_row + 1, 1,
+            "One line per value. reported = the filer tagged it; derived = "
+            "Edgardly computed it from reported values, formula in Notes; "
+            "missing = nobody tagged it, Notes says where to look."
+            ).font = Font(name=BF, color="666666", italic=True, size=10)
+    return ws
+
+
 def _xbrl_write_xlsx(filepath, entity, columns, rows, period_type):
     try:
         import openpyxl
@@ -793,15 +1053,12 @@ def _xbrl_write_xlsx(filepath, entity, columns, rows, period_type):
         else:
             factor, suffix, num_fmt = 1, "", _XLSX_FMT_DOLLAR
 
-        is_extracted = is_dollar or is_eps or is_shares
-        value_font = extracted_font if is_extracted else calc_font
-
         label = line_item + suffix
         c = ws.cell(ri, 1, label)
         c.font = base_font
         col_widths[1] = min(42, max(col_widths.get(1, 0), len(label)))
 
-        tag_val = row["tag_used"] or ""
+        tag_val = row.get("tag_summary") or row.get("tag_used") or ""
         c = ws.cell(ri, 2, tag_val)
         c.font = tag_font
         col_widths[2] = min(52, max(col_widths.get(2, 0), len(tag_val)))
@@ -811,34 +1068,34 @@ def _xbrl_write_xlsx(filepath, entity, columns, rows, period_type):
         for ci, col in enumerate(columns, start=3):
             cell = row["cells"].get(col["key"])
             c = ws.cell(ri, ci)
-            if cell is None:
+            raw_val = cell.get("value") if cell else None
+            if raw_val is None:
                 c.value = "Not reported"
                 c.font = missing_font
                 c.alignment = Alignment(horizontal="right")
             else:
-                raw_val = cell.get("value")
-                if raw_val is not None:
-                    scaled = raw_val / factor if factor != 1 else raw_val
-                    # Write as int when the scaled value has no fractional part (except EPS)
-                    if is_eps:
-                        c.value = float(scaled)
-                    elif isinstance(scaled, float) and scaled == int(scaled):
-                        c.value = int(scaled)
-                    else:
-                        c.value = float(scaled)
-                    c.number_format = num_fmt
-                    abs_s = abs(scaled)
-                    dstr = "{:,.2f}".format(abs_s) if is_eps else "{:,.0f}".format(abs_s)
-                    col_widths[ci] = max(col_widths.get(ci, 0), len(dstr) + 3)
-                    if cell.get("flags"):
-                        c.fill = flag_fill
-                        c.font = flag_data_font
-                        all_row_flags.extend(f["msg"] for f in cell["flags"])
-                    else:
-                        c.font = value_font
+                scaled = raw_val / factor if factor != 1 else raw_val
+                # Write as int when the scaled value has no fractional part (except EPS)
+                if is_eps:
+                    c.value = float(scaled)
+                elif isinstance(scaled, float) and scaled == int(scaled):
+                    c.value = int(scaled)
                 else:
-                    c.value = "Not reported"
-                    c.font = missing_font
+                    c.value = float(scaled)
+                c.number_format = num_fmt
+                abs_s = abs(scaled)
+                dstr = "{:,.2f}".format(abs_s) if is_eps else "{:,.0f}".format(abs_s)
+                col_widths[ci] = max(col_widths.get(ci, 0), len(dstr) + 3)
+                if cell.get("flags"):
+                    c.fill = flag_fill
+                    c.font = flag_data_font
+                    all_row_flags.extend(f["msg"] for f in cell["flags"])
+                else:
+                    # Blue for a value the filer reported, black for one
+                    # Edgardly computed. The split is per value, because one
+                    # row can hold both.
+                    state = (cell.get("provenance") or {}).get("state")
+                    c.font = calc_font if state == xbrl.PROVENANCE_DERIVED else extracted_font
                 c.alignment = Alignment(horizontal="right")
 
         # Bottom border: single under subtotals, double under final total
@@ -868,10 +1125,17 @@ def _xbrl_write_xlsx(filepath, entity, columns, rows, period_type):
     # Sanity-check rows (one blank separator row, then BS and GP reconciliation)
     _row_map = {row["line_item"]: (hrow + 1 + ri) for ri, row in enumerate(rows)}
     _data_col_idxs = list(range(3, 3 + len(columns)))
-    _write_xlsx_sanity_checks(
+    _legend_row = _write_xlsx_sanity_checks(
         ws, hrow + len(rows) + 2, _row_map, _data_col_idxs, dollar_label, BF
     )
 
+    ws.cell(_legend_row, 1,
+            "Blue = reported by the filer.  Black = derived by Edgardly, formula on the "
+            "Source Tags sheet.  Grey \"Not reported\" = nobody tagged it, and the Source "
+            "Tags sheet says which statement of which filing to check."
+            ).font = Font(name=BF, color="666666", italic=True, size=10)
+
+    _xbrl_add_source_tags_sheet(wb, columns, rows, BF)
     _xbrl_add_chart_sheet(wb, entity, columns, rows, dollar_factor, dollar_label)
     wb.save(filepath)
 
@@ -1060,8 +1324,11 @@ def api_xbrl_extract():
     if period_type not in ("annual", "quarterly"):
         return jsonify({"error": "period_type must be 'annual' or 'quarterly'"}), 400
     try:
-        entity, columns, rows = _build_xbrl_result(cik, start_year, end_year, period_type)
-        return jsonify({"entity": entity, "columns": columns, "rows": rows})
+        entity, columns, rows, scope = _build_xbrl_result(
+            cik, start_year, end_year, period_type)
+        return jsonify({
+            "entity": entity, "columns": columns, "rows": rows, "scope": scope,
+        })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -1083,7 +1350,8 @@ def api_xbrl_chart_data():
     if period_type not in ("annual", "quarterly"):
         return jsonify({"error": "period_type must be 'annual' or 'quarterly'"}), 400
     try:
-        entity, columns, rows = _build_xbrl_result(cik, start_year, end_year, period_type)
+        entity, columns, rows, _scope = _build_xbrl_result(
+            cik, start_year, end_year, period_type)
         dollar_factor, dollar_label = _detect_dollar_scale(rows, columns)
         return jsonify(_build_chart_data(entity, columns, rows, dollar_factor, dollar_label))
     except Exception as e:
@@ -1108,7 +1376,8 @@ def api_xbrl_export():
     if fmt not in ("csv", "xlsx"):
         return jsonify({"error": "format must be 'csv' or 'xlsx'"}), 400
     try:
-        entity, columns, rows = _build_xbrl_result(cik, start_year, end_year, period_type)
+        entity, columns, rows, _scope = _build_xbrl_result(
+            cik, start_year, end_year, period_type)
         safe = "".join(c if c.isalnum() or c in " -_" else "" for c in entity)[:40].strip()
         company_folder = os.path.join(EXPORTS_DIR, safe.replace(" ", "_") or cik)
         os.makedirs(company_folder, exist_ok=True)
@@ -1177,6 +1446,7 @@ def _peer_write_xlsx(filepath, comparison_result):
     FLAG_FONT  = Font(name=BF, color="856404", size=11)   # kept for flag-details text
     FLAG_DATA_FONT = Font(name=BF, color="CC0000", size=11)  # red font on flagged data cells
     EXTRACTED_FONT = Font(name=BF, color="0066CC", size=11)  # blue: XBRL-sourced values
+    CALC_FONT  = Font(name=BF, size=11)                      # black: derived values
     FLAG_BORDER = Border(
         left=Side(style="medium", color="DC3545"),
     )
@@ -1296,7 +1566,10 @@ def _peer_write_xlsx(filepath, comparison_result):
                         c.font   = FLAG_DATA_FONT
                         c.number_format = num_fmt
                     else:
-                        c.font = EXTRACTED_FONT
+                        # Blue reported, black derived, per value.
+                        state = (period or {}).get("provenance", {}).get("state")
+                        c.font = (CALC_FONT if state == xbrl.PROVENANCE_DERIVED
+                                  else EXTRACTED_FONT)
 
         # Bottom border: single under subtotals, double under Net Income
         if li in _SINGLE_BORDER_ROW_ITEMS:
@@ -1372,30 +1645,68 @@ def _peer_write_xlsx(filepath, comparison_result):
         ws.column_dimensions["D"].width = min(80, max_msg_len + 4)
 
     # ---- Sheet 2: Source Tags ----
+    # One line per value rather than per line item. Per-period resolution means
+    # a company's row can span several tags, and a single "tag used" cell would
+    # be describing only whichever period happened to come last.
     ws2 = wb.create_sheet("Source Tags")
     ws2.sheet_properties.tabColor = "888888"
-    ws2.cell(1, 1, "Company").font  = HDR_FONT
-    ws2.cell(1, 1).fill             = HDR_FILL
-    ws2.cell(1, 2, "Line Item").font = HDR_FONT
-    ws2.cell(1, 2).fill              = HDR_FILL
-    ws2.cell(1, 3, "XBRL Tag Used").font = HDR_FONT
-    ws2.cell(1, 3).fill                   = HDR_FILL
+
+    NOTE_FONT = Font(name=BF, color="666666", size=10)
+    SEAM_FONT = Font(name=BF, color="856404", size=10)
+
+    tag_headers = [
+        ("Company", 30), ("Line Item", 28), ("Period", 10), ("Source", 11),
+        ("XBRL Tag", 46), ("Filed", 12), ("Accession", 22), ("Notes", 80),
+    ]
+    for ci, (text, width) in enumerate(tag_headers, start=1):
+        hc = ws2.cell(1, ci, text)
+        hc.font = HDR_FONT
+        hc.fill = HDR_FILL
+        ws2.column_dimensions[hc.column_letter].width = width
 
     tag_row = 2
     for company in companies:
         for li in line_items:
             item_info = company["line_items"].get(li) or {}
-            tag_used  = item_info.get("tag_used")
-            ws2.cell(tag_row, 1, company["name"]).font = BASE_FONT
-            ws2.cell(tag_row, 2, li).font              = BASE_FONT
-            ws2.cell(tag_row, 3, tag_used or "— not found").font = (
-                BASE_FONT if tag_used else MISS_FONT
-            )
-            tag_row += 1
+            for period in item_info.get("periods", []):
+                prov = period.get("provenance") or {}
+                state = prov.get("state")
+                if state is None:
+                    # A caller that predates provenance still gets an honest
+                    # sheet: value present means reported, absent means missing.
+                    state = (xbrl.PROVENANCE_REPORTED if period.get("value") is not None
+                             else xbrl.PROVENANCE_MISSING)
 
-    ws2.column_dimensions["A"].width = 30
-    ws2.column_dimensions["B"].width = 28
-    ws2.column_dimensions["C"].width = 60
+                note = ""
+                if state == xbrl.PROVENANCE_DERIVED:
+                    note = "Derived: {}".format(prov.get("formula", ""))
+                elif state == xbrl.PROVENANCE_MISSING:
+                    note = prov.get("message", "")
+                else:
+                    seam = next((f for f in period.get("flags", [])
+                                 if f.get("flag_type") == xbrl.FLAG_TAG_TRANSITION), None)
+                    if seam:
+                        note = seam.get("message", "")
+
+                tag = prov.get("tag") or period.get("source_tag") or ""
+                ws2.cell(tag_row, 1, company["name"]).font = BASE_FONT
+                ws2.cell(tag_row, 2, li).font = BASE_FONT
+                ws2.cell(tag_row, 3, period.get("relative_period", "")).font = BASE_FONT
+                ws2.cell(tag_row, 4, state).font = (
+                    MISS_FONT if state == xbrl.PROVENANCE_MISSING else BASE_FONT)
+                ws2.cell(tag_row, 5, tag or "— not found").font = (
+                    TAG_FONT if tag else MISS_FONT)
+                ws2.cell(tag_row, 6, prov.get("filed") or "").font = TAG_FONT
+                ws2.cell(tag_row, 7, prov.get("accession") or "").font = TAG_FONT
+                ws2.cell(tag_row, 8, note).font = SEAM_FONT if "switches XBRL tag" in note else NOTE_FONT
+                tag_row += 1
+
+    ws2.freeze_panes = "A2"
+    ws2.cell(tag_row + 1, 1,
+             "One line per value. reported = the filer tagged it; derived = Edgardly "
+             "computed it from reported values, formula in Notes; missing = nobody "
+             "tagged it, Notes says where to look."
+             ).font = Font(name=BF, color="666666", italic=True, size=10)
 
     _peer_add_chart_sheet(wb, comparison_result)
     wb.save(filepath)

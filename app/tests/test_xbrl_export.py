@@ -476,3 +476,104 @@ def test_csv_revenue_value_is_scaled(tmp_path):
             break
     else:
         pytest.fail("Revenue ($mm) row not found in CSV")
+
+
+# ---------------------------------------------------------------------------
+# 10. Provenance: the blue/black font split, and the Source Tags sheet
+# ---------------------------------------------------------------------------
+
+BLUE = "0066CC"
+
+
+def _provenance_rows():
+    """One reported value and one derived value, side by side in the same table."""
+    reported = _make_cell(1_200_000_000)
+    reported["provenance"] = {
+        "state": "reported", "tag": "Revenues", "filed": "2024-02-01",
+        "accession": "0000000000-24-000001", "form": "10-K",
+    }
+    derived = _make_cell(500_000_000)
+    derived["tag"] = None
+    derived["provenance"] = {
+        "state": "derived",
+        "formula": "Revenue - Cost of Revenue",
+        "inputs": [{"name": "Revenue", "value": 1_200_000_000, "tag": "Revenues",
+                    "filed": "2024-02-01", "accession": "0000000000-24-000001"}],
+    }
+    missing = _make_cell(None)
+    missing["tag"] = None
+    missing["provenance"] = {
+        "state": "missing", "flag": "NOT_TAGGED",
+        "message": ("Not tagged in XBRL. Check the income statement of the FY2023 "
+                    "10-K: https://www.sec.gov/Archives/edgar/data/1/x/."),
+        "statement": "income statement", "period": "FY2023", "form": "10-K",
+        "accession": "0000000000-24-000001",
+        "url": "https://www.sec.gov/Archives/edgar/data/1/x/",
+    }
+
+    cells = {"Revenue": reported, "Gross Profit": derived, "Net Income": missing}
+    rows = []
+    for line_item in _make_rows():
+        name = line_item["line_item"]
+        cell = cells.get(name)
+        rows.append({
+            "line_item": name,
+            "tag_used": "Revenues" if name == "Revenue" else None,
+            "tag_summary": "Revenues" if name == "Revenue" else "",
+            "cells": {"2023-12-31": cell} if cell else {},
+        })
+    return rows
+
+
+def test_reported_values_are_blue_and_derived_values_are_black():
+    """The split existed as styling and meant nothing; now it marks provenance."""
+    wb = _write_xlsx(_provenance_rows())
+    ws = wb.active
+
+    reported = _get_data_cell(ws, "Revenue ($mm)")
+    derived = _get_data_cell(ws, "Gross Profit ($mm)")
+
+    assert reported.value == 1_200
+    assert reported.font.color.rgb.endswith(BLUE)
+
+    assert derived.value == 500
+    assert derived.font.color is None or not derived.font.color.rgb.endswith(BLUE)
+
+
+def test_a_missing_value_stays_grey_and_says_not_reported():
+    wb = _write_xlsx(_provenance_rows())
+    cell = _get_data_cell(wb.active, "Net Income ($mm)")
+
+    assert cell.value == "Not reported"
+    assert cell.font.italic is True
+
+
+def test_the_source_tags_sheet_records_all_three_states():
+    wb = _write_xlsx(_provenance_rows())
+    ws = wb["Source Tags"]
+    sheet = {(r[0], r[1]): r for r in ws.iter_rows(min_row=2, values_only=True)
+             if r[0] is not None and r[1] is not None}
+
+    reported = sheet[("Revenue", "FY2023")]
+    assert reported[2] == "reported"
+    assert reported[3] == "Revenues"
+    assert reported[4] == "2024-02-01"
+    assert reported[5] == "0000000000-24-000001"
+
+    assert sheet[("Gross Profit", "FY2023")][2] == "derived"
+    assert sheet[("Gross Profit", "FY2023")][6] == "Derived: Revenue - Cost of Revenue"
+
+    missing = sheet[("Net Income", "FY2023")]
+    assert missing[2] == "missing"
+    assert "Check the income statement of the FY2023 10-K" in missing[6]
+
+
+def test_a_row_with_no_cells_at_all_still_appears_in_the_source_tags_sheet():
+    """Every value in the grid gets a line, including the ones that are holes."""
+    rows = _provenance_rows()
+    wb = _write_xlsx(rows)
+    ws = wb["Source Tags"]
+    values = [r for r in ws.iter_rows(min_row=2, values_only=True)
+              if r[0] is not None and r[1] is not None]
+    assert len(values) == len(rows)
+    assert {r[2] for r in values} == {"reported", "derived", "missing"}

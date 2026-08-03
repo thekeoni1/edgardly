@@ -20,11 +20,14 @@ Values are checked against Apple's FY2023 Form 10-K for the fiscal year ended
 import json
 import os
 import sys
+import tempfile
 
 import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+import app as flask_app
+import edgar_api
 import line_items
 import peer_comparison as pc
 import xbrl_extractor as xbrl
@@ -333,6 +336,181 @@ def test_total_debt_sums_both_components_and_still_misses_commercial_paper(apple
 # ---------------------------------------------------------------------------
 # Peer comparison keeps working
 # ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# Provenance, end to end, on the real payload
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def apple_table(apple_facts, monkeypatch):
+    """The table the UI renders and the exports write, FY2015 to FY2025."""
+    monkeypatch.setattr(xbrl, "fetch_company_facts", lambda cik: apple_facts)
+    monkeypatch.setattr(edgar_api, "get_company_meta",
+                        lambda cik: {"sic": "3571", "sic_description": "Electronic Computers"})
+    entity, columns, rows, scope = flask_app._build_xbrl_result(320193, 2015, 2025, "annual")
+    return entity, columns, {row["line_item"]: row for row in rows}, scope
+
+
+def test_every_apple_value_declares_a_state(apple_table):
+    """The whole grid, 14 items by 11 years, with nothing unaccounted for."""
+    _entity, columns, rows, _scope = apple_table
+    counts = {}
+    for row in rows.values():
+        for col in columns:
+            state = row["cells"][col["key"]]["provenance"]["state"]
+            counts[state] = counts.get(state, 0) + 1
+
+    assert sum(counts.values()) == len(line_items.UI_LINE_ITEMS) * len(columns)
+    assert counts["reported"] == 147
+    assert counts.get("derived", 0) == 0      # Apple tags GrossProfit itself
+
+
+def test_apples_fy2023_revenue_names_the_filing_it_came_from(apple_table):
+    _entity, _columns, rows, _scope = apple_table
+    prov = rows["Revenue"]["cells"][FY2023_END]["provenance"]
+
+    assert prov["state"] == "reported"
+    assert prov["tag"] == "RevenueFromContractWithCustomerExcludingAssessedTax"
+    assert prov["form"] == "10-K"
+    # Latest filed wins within a tag, so this value comes from a later 10-K
+    # carrying FY2023 as a comparative, and the provenance says which one
+    # rather than implying it came from the FY2023 filing.
+    assert prov["accession"] == "0000320193-25-000079"
+    assert prov["filed"] == "2025-10-31"
+
+
+def test_one_apple_row_carries_three_different_tags(apple_table):
+    """Provenance is per value: the revenue row spans three tag eras."""
+    _entity, _columns, rows, _scope = apple_table
+    revenue = rows["Revenue"]
+
+    tags = {end: cell["provenance"]["tag"] for end, cell in revenue["cells"].items()}
+    assert tags["2015-09-26"] == "SalesRevenueNet"
+    assert tags[FY2018_END] == "Revenues"
+    assert tags[FY2019_END] == "RevenueFromContractWithCustomerExcludingAssessedTax"
+
+    assert revenue["tag_summary"] == (
+        "SalesRevenueNet -> Revenues -> "
+        "RevenueFromContractWithCustomerExcludingAssessedTax")
+
+
+def test_the_seam_is_on_the_value_that_crosses_it(apple_table):
+    """FY2019 is the first year reported only under the new tag."""
+    _entity, _columns, rows, _scope = apple_table
+    revenue = rows["Revenue"]["cells"]
+
+    seams = [f for f in revenue[FY2019_END]["flags"]
+             if f["type"] == xbrl.FLAG_TAG_TRANSITION]
+    assert len(seams) == 1
+    assert "switches XBRL tag" in seams[0]["msg"]
+    assert revenue[FY2018_END]["flags"] == []
+
+
+def test_an_apple_hole_says_which_filing_to_open(apple_table):
+    """Apple's FY2025 balance sheet instants do not survive the fp filter.
+
+    That is PROGRESS.md open question 3, the R5 shadowing a later 10-Q causes,
+    and Session 4 fixes it. Until then the cell says what is true: the value is
+    tagged, this table could not confirm it covers FY2025, and here is the
+    filing to check. It does not say the filer failed to tag it.
+    """
+    _entity, _columns, rows, _scope = apple_table
+    cell = rows["Total Assets"]["cells"]["2025-09-27"]
+
+    assert cell["value"] is None
+    prov = cell["provenance"]
+    assert prov["state"] == "missing"
+    assert prov["flag"] == xbrl.FLAG_PERIOD_UNRESOLVED
+    assert prov["statement"] == "balance sheet"
+    assert prov["message"] == (
+        "Tagged in XBRL, but not for a period Edgardly could confirm as FY2025. "
+        "Check the balance sheet of the FY2025 10-K: "
+        "https://www.sec.gov/Archives/edgar/data/320193/000032019325000079/.")
+
+
+def test_apple_is_in_scope(apple_table):
+    """A computer manufacturer that files us-gaap: nothing to refuse."""
+    _entity, _columns, _rows, scope = apple_table
+    assert scope["in_scope"] is True
+    assert scope["message"] == ""
+    assert scope["detail"]["taxonomies"] == ["dei", "us-gaap"]
+
+
+# ---------------------------------------------------------------------------
+# The Excel export carries it too
+# ---------------------------------------------------------------------------
+
+def test_the_source_tags_sheet_shows_apples_tags_period_by_period(apple_table):
+    """PROGRESS.md open question 5: one tag_used per row could not say this."""
+    openpyxl = pytest.importorskip("openpyxl")
+    entity, columns, rows_by_item, _scope = apple_table
+    rows = list(rows_by_item.values())
+
+    with tempfile.TemporaryDirectory() as tmp:
+        path = os.path.join(tmp, "apple.xlsx")
+        flask_app._xbrl_write_xlsx(path, entity, columns, rows, "annual")
+        wb = openpyxl.load_workbook(path)
+
+        assert "Source Tags" in wb.sheetnames
+        ws = wb["Source Tags"]
+        assert [ws.cell(1, ci).value for ci in range(1, 8)] == [
+            "Line Item", "Period", "Source", "XBRL Tag", "Filed", "Accession", "Notes"]
+
+        # Rows with a period are values; the last line is the legend.
+        sheet = {(r[0], r[1]): r for r in ws.iter_rows(min_row=2, values_only=True)
+                 if r[0] is not None and r[1] is not None}
+
+        # One line per value, not one per row.
+        assert len(sheet) == len(rows) * len(columns)
+
+        assert sheet[("Revenue", "FY2018")][3] == "Revenues"
+        assert sheet[("Revenue", "FY2019")][3] == (
+            "RevenueFromContractWithCustomerExcludingAssessedTax")
+        assert sheet[("Revenue", "FY2018")][5] == "0000320193-18-000145"
+        assert "switches XBRL tag" in sheet[("Revenue", "FY2019")][6]
+
+        # And the hole says where to look.
+        assert sheet[("Total Assets", "FY2025")][2] == "missing"
+        assert "Check the balance sheet of the FY2025 10-K" in (
+            sheet[("Total Assets", "FY2025")][6])
+
+
+def test_reported_apple_values_are_written_in_the_reported_colour(apple_table):
+    """The blue font finally means something: it marks the filer's own numbers."""
+    openpyxl = pytest.importorskip("openpyxl")
+    entity, columns, rows_by_item, _scope = apple_table
+    rows = list(rows_by_item.values())
+
+    with tempfile.TemporaryDirectory() as tmp:
+        path = os.path.join(tmp, "apple.xlsx")
+        flask_app._xbrl_write_xlsx(path, entity, columns, rows, "annual")
+        ws = openpyxl.load_workbook(path)["Financial Data"]
+
+        by_label = {row[0].value: row for row in ws.iter_rows(min_row=4)}
+        revenue = next(row for label, row in by_label.items()
+                       if label and label.startswith("Revenue "))
+        fy2023_col = 3 + [c["key"] for c in columns].index(FY2023_END)
+
+        assert revenue[fy2023_col - 1].value == 383_285
+        assert revenue[fy2023_col - 1].font.color.rgb.endswith("0066CC")
+
+
+def test_the_csv_source_tag_column_names_every_tag_the_row_used(apple_table):
+    import csv
+
+    entity, columns, rows_by_item, _scope = apple_table
+    with tempfile.TemporaryDirectory() as tmp:
+        path = os.path.join(tmp, "apple.csv")
+        flask_app._xbrl_write_csv(path, entity, columns, list(rows_by_item.values()),
+                                  "annual")
+        with open(path, encoding="utf-8") as handle:
+            table = {row[0].split(" (")[0]: row for row in csv.reader(handle)}
+
+    assert table["Revenue"][1] == (
+        "SalesRevenueNet -> Revenues -> "
+        "RevenueFromContractWithCustomerExcludingAssessedTax")
+    assert table["Net Income"][1] == "NetIncomeLoss"
+
 
 def test_peer_comparison_reads_the_same_stitched_series(apple_facts, monkeypatch):
     """Both paths run through resolve_line_item, so both gained the same history."""
