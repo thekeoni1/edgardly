@@ -1,13 +1,17 @@
-"""test_line_items.py -- automated tests for the shared line-item constants.
+"""test_line_items.py -- automated tests for the line-item registry.
 
-Two things are under test:
+Four things are under test:
   - the scale functions map a magnitude to the right (factor, label) pair,
     including at the threshold boundaries
-  - app.py and peer_comparison.py really do share one definition, so the
-    single-company table and the peer table can never disagree about units
+  - every caller really does share one definition, so the single-company table,
+    the peer table, and the browser can never disagree about units
+  - the registry is structurally sound: every entry classified, every chain
+    non-empty, no tag claimed twice
+  - derivations compute what their formula says, and go missing rather than
+    guessing when an input is absent
 
-That second group is the reason this module exists; the constants were
-duplicated in both callers before.
+Whether a chain resolves to the right number for a real filer is a separate
+question, answered against committed fixtures in test_real_filings.py.
 """
 
 import sys
@@ -29,29 +33,25 @@ def test_the_three_unit_sets_are_disjoint():
     assert not (line_items.EPS_LINE_ITEMS & line_items.SHARE_LINE_ITEMS)
 
 
-def test_every_extracted_line_item_has_a_unit_class():
+def _classified():
+    return (
+        line_items.DOLLAR_LINE_ITEMS
+        | line_items.EPS_LINE_ITEMS
+        | line_items.SHARE_LINE_ITEMS
+    )
+
+
+def test_every_registry_line_item_has_a_unit_class():
     """No line item may render without a known unit, or it would be shown unscaled."""
-    import xbrl_extractor as xbrl
-
-    classified = (
-        line_items.DOLLAR_LINE_ITEMS
-        | line_items.EPS_LINE_ITEMS
-        | line_items.SHARE_LINE_ITEMS
-    )
-    unclassified = set(xbrl.TAG_MAP) - classified
-    assert not unclassified, "TAG_MAP items with no unit class: {}".format(unclassified)
+    known = set(line_items.REGISTRY) | set(line_items.DERIVATIONS)
+    unclassified = known - _classified()
+    assert not unclassified, "Registry items with no unit class: {}".format(unclassified)
 
 
-def test_no_unit_class_names_an_item_that_is_not_extracted():
-    import xbrl_extractor as xbrl
-
-    classified = (
-        line_items.DOLLAR_LINE_ITEMS
-        | line_items.EPS_LINE_ITEMS
-        | line_items.SHARE_LINE_ITEMS
-    )
-    stale = classified - set(xbrl.TAG_MAP)
-    assert not stale, "Unit classes name line items that are never extracted: {}".format(stale)
+def test_no_unit_class_names_an_item_the_registry_does_not_define():
+    known = set(line_items.REGISTRY) | set(line_items.DERIVATIONS)
+    stale = _classified() - known
+    assert not stale, "Unit classes name line items that do not exist: {}".format(stale)
 
 
 # ---------------------------------------------------------------------------
@@ -128,3 +128,168 @@ def test_share_scale_ignores_sign():
 def test_defaults_are_valid_scales():
     assert line_items.DEFAULT_DOLLAR_SCALE == (1, "$")
     assert line_items.DEFAULT_SHARE_SCALE == (1_000, "000s")
+
+
+# ---------------------------------------------------------------------------
+# The registry
+#
+# Structural checks only. Whether a chain resolves to the right number for a
+# real filer is what the fixtures in test_real_filings.py are for.
+# ---------------------------------------------------------------------------
+
+def test_registry_covers_every_item_the_plan_enumerates():
+    """V2_PLAN 1.1: 14 income statement, 16 balance sheet, 8 cash flow."""
+    by_statement = {}
+    for item in line_items.REGISTRY.values():
+        by_statement.setdefault(item.statement, []).append(item.name)
+
+    assert len(by_statement[line_items.STATEMENT_IS]) == 14
+    assert len(by_statement[line_items.STATEMENT_BS]) == 16
+    assert len(by_statement[line_items.STATEMENT_CF]) == 8
+    assert len(line_items.REGISTRY) == 38
+
+
+def test_every_registry_entry_is_well_formed():
+    statements = {line_items.STATEMENT_IS, line_items.STATEMENT_BS, line_items.STATEMENT_CF}
+    kinds = {line_items.KIND_FLOW, line_items.KIND_INSTANT}
+    units = {line_items.UNIT_DOLLAR, line_items.UNIT_EPS, line_items.UNIT_SHARES}
+
+    for name, item in line_items.REGISTRY.items():
+        assert item.name == name, "registry key and entry name disagree: {}".format(name)
+        assert item.statement in statements, name
+        assert item.kind in kinds, name
+        assert item.unit in units, name
+        assert item.tags, "{} has no tag chain".format(name)
+        assert len(set(item.tags)) == len(item.tags), "{} repeats a tag".format(name)
+
+
+def test_balance_sheet_items_are_instants_and_the_rest_are_flows():
+    """Wrong kind means wrong period key, which silently mixes up a series."""
+    for name, item in line_items.REGISTRY.items():
+        if item.statement == line_items.STATEMENT_BS:
+            assert item.kind == line_items.KIND_INSTANT, name
+        else:
+            assert item.kind == line_items.KIND_FLOW, name
+
+
+def test_no_tag_is_claimed_by_two_line_items():
+    """One tag feeding two rows would double-count it somewhere downstream."""
+    owner = {}
+    for name, item in line_items.REGISTRY.items():
+        for tag in item.tags:
+            assert tag not in owner, "{} is claimed by both {} and {}".format(
+                tag, owner.get(tag), name)
+            owner[tag] = name
+
+
+def test_long_term_debt_entry_records_the_current_maturities_caveat():
+    """PROGRESS.md open question 1 lives where the chain is written, not only in a doc."""
+    note = line_items.REGISTRY["Long-Term Debt"].note
+    assert "current maturities" in note
+    assert "LongTermDebt" in note
+
+
+def test_tags_for_reaches_past_the_extraction_set():
+    """Registry items outside TAG_MAP still resolve; that is what makes it a superset."""
+    assert "D&A" not in line_items.TAG_MAP
+    assert line_items.tags_for("D&A")[0] == "DepreciationDepletionAndAmortization"
+    assert line_items.tags_for("Revenue")[0] == "Revenues"
+    assert line_items.tags_for("Total Debt") == ()      # derived, never a tag
+    assert line_items.tags_for("No Such Item") == ()
+
+
+# ---------------------------------------------------------------------------
+# The extraction set stays where it was
+# ---------------------------------------------------------------------------
+
+def test_tag_map_is_the_fourteen_displayed_items_in_display_order():
+    assert list(line_items.TAG_MAP) == list(line_items.UI_LINE_ITEMS)
+    assert list(line_items.TAG_MAP) == [
+        "Revenue", "Cost of Revenue", "Gross Profit", "Operating Income", "Net Income",
+        "EPS Basic", "EPS Diluted",
+        "Shares Outstanding (Basic)", "Shares Outstanding (Diluted)",
+        "Total Assets", "Total Liabilities", "Total Equity",
+        "Cash and Equivalents", "Long-Term Debt",
+    ]
+
+
+def test_tag_map_chains_come_from_the_registry():
+    for name, tags in line_items.TAG_MAP.items():
+        assert tags == list(line_items.REGISTRY[name].tags)
+
+
+def test_xbrl_extractor_reexports_the_registry_tag_map():
+    """One dict, not a copy, so the chains can never drift apart."""
+    import xbrl_extractor as xbrl
+
+    assert xbrl.TAG_MAP is line_items.TAG_MAP
+
+
+# ---------------------------------------------------------------------------
+# Derivation rules
+# ---------------------------------------------------------------------------
+
+def test_total_debt_is_the_sum_of_both_components():
+    value = line_items.derive("Total Debt", {
+        "Short-Term Debt": 15_000, "Long-Term Debt": 95_281,
+    })
+    assert value == 110_281
+    assert line_items.DERIVATIONS["Total Debt"].formula == "Short-Term Debt + Long-Term Debt"
+
+
+def test_ebitda_adds_back_d_and_a():
+    value = line_items.derive("EBITDA", {"Operating Income": 114_301, "D&A": 11_519})
+    assert value == 125_820
+
+
+def test_gross_profit_derivation_subtracts_cost_of_revenue():
+    value = line_items.derive("Gross Profit", {"Revenue": 383_285, "Cost of Revenue": 214_137})
+    assert value == 169_148
+
+
+def test_a_missing_input_makes_the_result_missing_never_zero():
+    """The inviolable rule: never guess or auto-fill a financial value."""
+    assert line_items.derive("Total Debt", {"Short-Term Debt": None,
+                                            "Long-Term Debt": 95_281}) is None
+    assert line_items.derive("Total Debt", {"Long-Term Debt": 95_281}) is None
+    assert line_items.derive("EBITDA", {"Operating Income": 114_301}) is None
+
+
+def test_every_derivation_names_its_inputs_in_its_formula():
+    for name, rule in line_items.DERIVATIONS.items():
+        assert rule.inputs, "{} derives from nothing".format(name)
+        for input_name, sign in rule.inputs:
+            assert sign in (1, -1), name
+            assert input_name in rule.formula, (
+                "{} formula does not name its input {}".format(name, input_name))
+
+
+def test_derivation_inputs_are_registry_items_or_documented_raw_tags():
+    """A derivation pointing at a name nothing resolves would silently never fire."""
+    for name, rule in line_items.DERIVATIONS.items():
+        for input_name, _ in rule.inputs:
+            if name == "D&A":
+                continue  # its inputs are raw tags; see DA_COMPONENT_TAGS
+            assert input_name in line_items.REGISTRY, (
+                "{} derives from unknown item {}".format(name, input_name))
+
+
+# ---------------------------------------------------------------------------
+# What the browser is served
+# ---------------------------------------------------------------------------
+
+def test_client_classification_matches_the_python_sets():
+    payload = line_items.classification_for_client()
+
+    assert payload["ui_line_items"] == list(line_items.UI_LINE_ITEMS)
+    assert set(payload["dollar"]) == set(line_items.DOLLAR_LINE_ITEMS)
+    assert set(payload["eps"]) == set(line_items.EPS_LINE_ITEMS)
+    assert set(payload["shares"]) == set(line_items.SHARE_LINE_ITEMS)
+
+
+def test_client_classification_is_json_serializable_and_stable():
+    import json
+
+    first = json.dumps(line_items.classification_for_client())
+    second = json.dumps(line_items.classification_for_client())
+    assert first == second

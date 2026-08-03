@@ -1,35 +1,423 @@
-"""line_items.py -- canonical line-item classification and display scaling.
+"""line_items.py -- the canonical line-item registry.
 
 Single home for the facts that describe what a line item IS, independent of how
-any one view renders it: which unit class it belongs to, and how a magnitude maps
-to a display scale.
+any one view renders it: which statement it belongs to, whether it is a flow or
+an instant, which unit class it carries, which XBRL tags report it, and how it is
+derived when no tag reports it at all.
 
-These sets and thresholds previously lived in both app.py and peer_comparison.py.
-Two copies meant the single-company table and the peer table could silently
-disagree about whether a value is dollars, a per-share amount, or a share count.
+The registry is a superset of what the UI shows. TAG_MAP, the extraction set the
+single-company table and the peer table have always driven off, stays at the same
+14 items it has always held; UI_LINE_ITEMS names them and fixes their display
+order. Everything else in the registry is available to callers that ask for it by
+name (the scaffold engine will) without appearing in any existing view.
 
-The v2 line-item registry (canonical names, XBRL tag chains, statement, flow vs
-instant, derivation rules) lands in this module next; these constants are the
-first piece of it.
+Nothing here reads EDGAR. Tag resolution lives in xbrl_extractor, which imports
+TAG_MAP and tags_for from this module.
 """
+
+from collections import namedtuple
+
+
+# ---------------------------------------------------------------------------
+# Vocabulary
+# ---------------------------------------------------------------------------
+
+# Statement the item belongs to.
+STATEMENT_IS = "IS"   # income statement
+STATEMENT_BS = "BS"   # balance sheet
+STATEMENT_CF = "CF"   # cash flow statement
+
+# Flow items cover a span of time and carry both a start and an end date.
+# Instants are measured at one date and carry an end only.
+KIND_FLOW = "flow"
+KIND_INSTANT = "instant"
+
+# Unit class. Drives number formats, scale factors, and the column headers that
+# name the units. Every item is in exactly one class.
+UNIT_DOLLAR = "dollar"
+UNIT_EPS = "eps"
+UNIT_SHARES = "shares"
+
+
+# sign records the convention a reader needs to use the number correctly (an
+# expense reported positive, a payment that is really an outflow). note records
+# what the chain does not say: which fallback is broader than its label, why a
+# source was chosen. Both are empty when there is nothing worth saying.
+LineItem = namedtuple("LineItem", "name statement kind unit tags sign note")
+
+# inputs is a tuple of (line-item name, sign) pairs; formula is the human-readable
+# string that ships with the value as its provenance.
+Derivation = namedtuple("Derivation", "name statement kind unit inputs formula note")
+
+
+def _item(name, statement, kind, unit, tags, sign="", note=""):
+    return LineItem(name, statement, kind, unit, tuple(tags), sign, note)
+
+
+# ---------------------------------------------------------------------------
+# Reported items
+#
+# Each entry's tag list is a fallback chain in preference order. Resolution is
+# per period, not per series: for any one period the earliest tag in the chain
+# that reports that period wins, so a company that switched tags mid-history
+# keeps both eras. Correcting a chain is a one-line edit here.
+#
+# Chains are validated against the committed fixtures in
+# app/tests/test_real_filings.py. A chain that has not yet met a fixture is a
+# proposal, not a verified fact.
+# ---------------------------------------------------------------------------
+
+_REGISTRY_ITEMS = [
+
+    # -- Income statement -------------------------------------------------
+    _item("Revenue", STATEMENT_IS, KIND_FLOW, UNIT_DOLLAR, [
+        "Revenues",
+        "RevenueFromContractWithCustomerExcludingAssessedTax",
+        "RevenueFromContractWithCustomerIncludingAssessedTax",
+        "SalesRevenueNet",
+        "SalesRevenueGoodsNet",
+    ], note="ASC 606 moved most filers off Revenues to the "
+            "RevenueFromContractWithCustomer tags around FY2018. Both eras are kept."),
+
+    _item("Cost of Revenue", STATEMENT_IS, KIND_FLOW, UNIT_DOLLAR, [
+        "CostOfRevenue",
+        "CostOfGoodsAndServicesSold",
+        "CostOfGoodsSold",
+        "CostOfServices",
+    ]),
+
+    _item("Gross Profit", STATEMENT_IS, KIND_FLOW, UNIT_DOLLAR, [
+        "GrossProfit",
+    ], note="Filers that report no GrossProfit tag can be derived: see "
+            "DERIVATIONS['Gross Profit']."),
+
+    _item("SG&A", STATEMENT_IS, KIND_FLOW, UNIT_DOLLAR, [
+        "SellingGeneralAndAdministrativeExpense",
+        "GeneralAndAdministrativeExpense",
+    ], sign="Positive as an expense.",
+       note="The second tag excludes selling costs, so a filer resolving through it "
+            "reports a narrower figure than the label promises."),
+
+    _item("R&D", STATEMENT_IS, KIND_FLOW, UNIT_DOLLAR, [
+        "ResearchAndDevelopmentExpense",
+    ], sign="Positive as an expense."),
+
+    _item("Operating Income", STATEMENT_IS, KIND_FLOW, UNIT_DOLLAR, [
+        "OperatingIncomeLoss",
+    ]),
+
+    _item("Interest Expense", STATEMENT_IS, KIND_FLOW, UNIT_DOLLAR, [
+        "InterestExpense",
+        "InterestExpenseDebt",
+        "InterestIncomeExpenseNet",
+    ], sign="Positive as an expense, except through InterestIncomeExpenseNet, which is "
+            "a net figure and is positive when interest income exceeds interest expense."),
+
+    _item("Pretax Income", STATEMENT_IS, KIND_FLOW, UNIT_DOLLAR, [
+        "IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest",
+        "IncomeLossFromContinuingOperationsBeforeIncomeTaxesMinorityInterestAndIncomeLossFromEquityMethodInvestments",
+    ], note="Continuing operations only. A filer with discontinued operations reports a "
+            "different total on the face of the income statement."),
+
+    _item("Income Tax Expense", STATEMENT_IS, KIND_FLOW, UNIT_DOLLAR, [
+        "IncomeTaxExpenseBenefit",
+    ], sign="Positive as an expense; negative when the period records a net benefit."),
+
+    _item("Net Income", STATEMENT_IS, KIND_FLOW, UNIT_DOLLAR, [
+        "NetIncomeLoss",
+        "ProfitLoss",
+    ], note="NetIncomeLoss is attributable to the parent; ProfitLoss includes "
+            "noncontrolling interests."),
+
+    _item("EPS Basic", STATEMENT_IS, KIND_FLOW, UNIT_EPS, [
+        "EarningsPerShareBasic",
+    ]),
+
+    _item("EPS Diluted", STATEMENT_IS, KIND_FLOW, UNIT_EPS, [
+        "EarningsPerShareDiluted",
+    ]),
+
+    _item("Shares Outstanding (Basic)", STATEMENT_IS, KIND_FLOW, UNIT_SHARES, [
+        "WeightedAverageNumberOfSharesOutstandingBasic",
+    ], note="Weighted average over the period, not the count on the balance sheet date."),
+
+    _item("Shares Outstanding (Diluted)", STATEMENT_IS, KIND_FLOW, UNIT_SHARES, [
+        "WeightedAverageNumberOfDilutedSharesOutstanding",
+    ], note="Weighted average over the period, not the count on the balance sheet date."),
+
+    # -- Balance sheet ----------------------------------------------------
+    _item("Cash and Equivalents", STATEMENT_BS, KIND_INSTANT, UNIT_DOLLAR, [
+        "CashAndCashEquivalentsAtCarryingValue",
+        "CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents",
+    ], note="The fallback includes restricted cash, so a filer resolving through it "
+            "reports more than unrestricted cash."),
+
+    _item("Short-Term Investments", STATEMENT_BS, KIND_INSTANT, UNIT_DOLLAR, [
+        "ShortTermInvestments",
+        "MarketableSecuritiesCurrent",
+    ]),
+
+    _item("Accounts Receivable", STATEMENT_BS, KIND_INSTANT, UNIT_DOLLAR, [
+        "AccountsReceivableNetCurrent",
+        "ReceivablesNetCurrent",
+    ], note="Net of allowance. The fallback covers receivables beyond trade accounts."),
+
+    _item("Inventory", STATEMENT_BS, KIND_INSTANT, UNIT_DOLLAR, [
+        "InventoryNet",
+    ]),
+
+    _item("Total Current Assets", STATEMENT_BS, KIND_INSTANT, UNIT_DOLLAR, [
+        "AssetsCurrent",
+    ], note="Absent for filers using an unclassified balance sheet."),
+
+    _item("PP&E Net", STATEMENT_BS, KIND_INSTANT, UNIT_DOLLAR, [
+        "PropertyPlantAndEquipmentNet",
+    ]),
+
+    _item("Goodwill", STATEMENT_BS, KIND_INSTANT, UNIT_DOLLAR, [
+        "Goodwill",
+    ]),
+
+    _item("Intangibles", STATEMENT_BS, KIND_INSTANT, UNIT_DOLLAR, [
+        "FiniteLivedIntangibleAssetsNet",
+        "IntangibleAssetsNetExcludingGoodwill",
+    ], note="Excludes goodwill. The first tag also excludes indefinite-lived intangibles, "
+            "which the second one includes."),
+
+    _item("Total Assets", STATEMENT_BS, KIND_INSTANT, UNIT_DOLLAR, [
+        "Assets",
+    ]),
+
+    _item("Accounts Payable", STATEMENT_BS, KIND_INSTANT, UNIT_DOLLAR, [
+        "AccountsPayableCurrent",
+        "AccountsPayableAndAccruedLiabilitiesCurrent",
+    ], note="The fallback bundles accrued liabilities in with payables."),
+
+    _item("Total Current Liabilities", STATEMENT_BS, KIND_INSTANT, UNIT_DOLLAR, [
+        "LiabilitiesCurrent",
+    ], note="Absent for filers using an unclassified balance sheet."),
+
+    _item("Short-Term Debt", STATEMENT_BS, KIND_INSTANT, UNIT_DOLLAR, [
+        "DebtCurrent",
+        "LongTermDebtCurrent",
+        "ShortTermBorrowings",
+    ], note="DebtCurrent is the whole current debt balance. The fallbacks are components "
+            "of it: current maturities of long-term debt, and short-term borrowings. A "
+            "filer resolving through either fallback reports less than all current debt."),
+
+    _item("Long-Term Debt", STATEMENT_BS, KIND_INSTANT, UNIT_DOLLAR, [
+        "LongTermDebtNoncurrent",
+        "LongTermDebt",
+    ], note="LongTermDebt is not strictly non-current: its definition covers the whole "
+            "long-term debt balance including current maturities, so a filer resolving "
+            "through the fallback reports a row slightly broader than its label. "
+            "Honeywell (CIK 773840) is such a filer; it has no LongTermDebtNoncurrent at "
+            "all. This is PROGRESS.md open question 1 and needs a Honeywell fixture in "
+            "Session 4 to settle. Summing this row with Short-Term Debt for that filer "
+            "would double-count the current maturities."),
+
+    _item("Total Liabilities", STATEMENT_BS, KIND_INSTANT, UNIT_DOLLAR, [
+        "Liabilities",
+    ]),
+
+    _item("Total Equity", STATEMENT_BS, KIND_INSTANT, UNIT_DOLLAR, [
+        "StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest",
+        "StockholdersEquity",
+    ], note="The first tag includes noncontrolling interests and so balances against "
+            "Assets minus Liabilities; the fallback excludes them."),
+
+    _item("Retained Earnings", STATEMENT_BS, KIND_INSTANT, UNIT_DOLLAR, [
+        "RetainedEarningsAccumulatedDeficit",
+    ], sign="Negative when the filer carries an accumulated deficit."),
+
+    # -- Cash flow statement ----------------------------------------------
+    _item("Cash from Operations", STATEMENT_CF, KIND_FLOW, UNIT_DOLLAR, [
+        "NetCashProvidedByUsedInOperatingActivities",
+        "NetCashProvidedByUsedInOperatingActivitiesContinuingOperations",
+    ], sign="Positive when operations provided cash."),
+
+    _item("D&A", STATEMENT_CF, KIND_FLOW, UNIT_DOLLAR, [
+        "DepreciationDepletionAndAmortization",
+        "DepreciationAmortizationAndAccretionNet",
+    ], sign="Positive as an add-back to net income.",
+       note="Taken from the cash flow statement rather than the income statement: for "
+            "most filers D&A is buried inside cost of revenue and operating expenses and "
+            "is never tagged separately on the income statement. Filers that report only "
+            "the components can be derived: see DERIVATIONS['D&A']."),
+
+    _item("Stock-Based Compensation", STATEMENT_CF, KIND_FLOW, UNIT_DOLLAR, [
+        "ShareBasedCompensation",
+    ], sign="Positive as an add-back to net income."),
+
+    _item("Capex", STATEMENT_CF, KIND_FLOW, UNIT_DOLLAR, [
+        "PaymentsToAcquirePropertyPlantAndEquipment",
+        "PaymentsToAcquireProductiveAssets",
+    ], sign="Reported positive as a payment, which is a cash outflow. Subtract it, never "
+            "add it."),
+
+    _item("Cash from Investing", STATEMENT_CF, KIND_FLOW, UNIT_DOLLAR, [
+        "NetCashProvidedByUsedInInvestingActivities",
+    ], sign="Negative in the ordinary case, where investing consumed cash."),
+
+    _item("Cash from Financing", STATEMENT_CF, KIND_FLOW, UNIT_DOLLAR, [
+        "NetCashProvidedByUsedInFinancingActivities",
+    ], sign="Negative in the ordinary case, where financing consumed cash."),
+
+    _item("Dividends Paid", STATEMENT_CF, KIND_FLOW, UNIT_DOLLAR, [
+        "PaymentsOfDividends",
+        "PaymentsOfDividendsCommonStock",
+    ], sign="Reported positive as a payment, which is a cash outflow.",
+       note="The fallback covers common dividends only, excluding preferred."),
+
+    _item("Buybacks", STATEMENT_CF, KIND_FLOW, UNIT_DOLLAR, [
+        "PaymentsForRepurchaseOfCommonStock",
+    ], sign="Reported positive as a payment, which is a cash outflow."),
+]
+
+REGISTRY = {item.name: item for item in _REGISTRY_ITEMS}
+
+
+# ---------------------------------------------------------------------------
+# Derivation rules
+#
+# A derived value is never a reported tag and never a guess. It is arithmetic on
+# reported inputs, and it carries its formula so a reader can check the work.
+# Every input is required: one missing input makes the result missing, not zero.
+# ---------------------------------------------------------------------------
+
+DERIVATIONS = {
+    "Total Debt": Derivation(
+        "Total Debt", STATEMENT_BS, KIND_INSTANT, UNIT_DOLLAR,
+        inputs=(("Short-Term Debt", 1), ("Long-Term Debt", 1)),
+        formula="Short-Term Debt + Long-Term Debt",
+        note="The row the old extractor labeled Total Debt was one of these two, never "
+             "the sum. Both components are required: a filer reporting only long-term "
+             "debt gets no Total Debt, because a missing short-term balance is unknown, "
+             "not zero. Watch the Long-Term Debt note: a filer resolving that row "
+             "through LongTermDebt may already include its current maturities here.",
+    ),
+    "EBITDA": Derivation(
+        "EBITDA", STATEMENT_IS, KIND_FLOW, UNIT_DOLLAR,
+        inputs=(("Operating Income", 1), ("D&A", 1)),
+        formula="Operating Income + D&A",
+        note="D&A comes off the cash flow statement, so this is the standard "
+             "approximation, not a figure any filer reports. It differs from a filer's "
+             "own adjusted EBITDA, which usually adds back more.",
+    ),
+    "Gross Profit": Derivation(
+        "Gross Profit", STATEMENT_IS, KIND_FLOW, UNIT_DOLLAR,
+        inputs=(("Revenue", 1), ("Cost of Revenue", -1)),
+        formula="Revenue - Cost of Revenue",
+        note="A fallback, not the primary source. Used only for periods where the filer "
+             "reports no GrossProfit tag.",
+    ),
+    "D&A": Derivation(
+        "D&A", STATEMENT_CF, KIND_FLOW, UNIT_DOLLAR,
+        inputs=(("Depreciation", 1), ("Amortization of Intangibles", 1)),
+        formula="Depreciation + Amortization of Intangibles",
+        note="A fallback for filers that tag only the components. Its inputs are the raw "
+             "tags Depreciation and AmortizationOfIntangibleAssets, which are not "
+             "registry items of their own; the resolver reads them directly.",
+    ),
+}
+
+# Raw tags behind the D&A component fallback, in the order the formula sums them.
+DA_COMPONENT_TAGS = ("Depreciation", "AmortizationOfIntangibleAssets")
+
+
+def derive(name, values):
+    """Apply a derivation rule to a dict of already-resolved input values.
+
+    values maps input name to a number or None. Returns the derived number, or
+    None when any input is missing. Missing inputs never become zero: a value
+    Edgardly cannot compute is reported as absent, never guessed.
+
+    Raises KeyError for a name with no derivation rule.
+    """
+    rule = DERIVATIONS[name]
+    total = 0
+    for input_name, sign in rule.inputs:
+        value = values.get(input_name)
+        if value is None:
+            return None
+        total += sign * value
+    return total
+
+
+# ---------------------------------------------------------------------------
+# Extraction set
+#
+# The 14 items the single-company table, the CSV, and both Excel exports have
+# always shown, in the order they are displayed. TAG_MAP is built from the
+# registry so the chains cannot drift apart, and keeps the shape callers expect:
+# a plain dict of canonical name to an ordered list of us-gaap tags.
+# ---------------------------------------------------------------------------
+
+UI_LINE_ITEMS = (
+    "Revenue",
+    "Cost of Revenue",
+    "Gross Profit",
+    "Operating Income",
+    "Net Income",
+    "EPS Basic",
+    "EPS Diluted",
+    "Shares Outstanding (Basic)",
+    "Shares Outstanding (Diluted)",
+    "Total Assets",
+    "Total Liabilities",
+    "Total Equity",
+    "Cash and Equivalents",
+    "Long-Term Debt",
+)
+
+TAG_MAP = {name: list(REGISTRY[name].tags) for name in UI_LINE_ITEMS}
+
+
+def tags_for(name):
+    """Return the fallback tag chain for a line item, or an empty tuple.
+
+    Accepts any registry name, not just the ones in TAG_MAP, so callers can ask
+    for a line item the UI does not show. Derived-only names have no chain and
+    come back empty.
+    """
+    item = REGISTRY.get(name)
+    return item.tags if item else ()
+
 
 # ---------------------------------------------------------------------------
 # Unit classification
 #
-# Every line item currently extracted falls into exactly one of these three
-# sets. The classification drives number formats, scale factors, and the
-# column headers that name the units.
+# Derived from the registry, so a new item is classified by the unit field on
+# its own entry and nowhere else. Derived items are classified too: a consumer
+# asking about Total Debt needs to know it is dollars.
 # ---------------------------------------------------------------------------
 
-DOLLAR_LINE_ITEMS = frozenset({
-    "Revenue", "Cost of Revenue", "Gross Profit", "Operating Income", "Net Income",
-    "Total Assets", "Total Liabilities", "Total Equity", "Cash and Equivalents",
-    "Long-Term Debt",
-})
+def _names_with_unit(unit):
+    names = {name for name, item in REGISTRY.items() if item.unit == unit}
+    names |= {name for name, rule in DERIVATIONS.items() if rule.unit == unit}
+    return frozenset(names)
 
-EPS_LINE_ITEMS = frozenset({"EPS Basic", "EPS Diluted"})
 
-SHARE_LINE_ITEMS = frozenset({"Shares Outstanding (Basic)", "Shares Outstanding (Diluted)"})
+DOLLAR_LINE_ITEMS = _names_with_unit(UNIT_DOLLAR)
+EPS_LINE_ITEMS = _names_with_unit(UNIT_EPS)
+SHARE_LINE_ITEMS = _names_with_unit(UNIT_SHARES)
+
+
+def classification_for_client():
+    """Return the line-item classification the browser needs, JSON-ready.
+
+    The peer-comparison UI builds its checkbox grid and picks its per-row scale
+    factors from these lists. They used to be typed out a second time in
+    index.html, where nothing kept them in step with the Python. Sorted lists,
+    not sets, so the payload is stable between requests; ui_line_items keeps
+    registry order because it drives display order.
+    """
+    return {
+        "ui_line_items": list(UI_LINE_ITEMS),
+        "dollar": sorted(DOLLAR_LINE_ITEMS),
+        "eps": sorted(EPS_LINE_ITEMS),
+        "shares": sorted(SHARE_LINE_ITEMS),
+    }
 
 
 # ---------------------------------------------------------------------------

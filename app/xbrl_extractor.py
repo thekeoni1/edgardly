@@ -5,75 +5,24 @@ Stage 2: deduplication and clean period time-series.
 Reuses _rate_limited_get from edgar_api for consistent rate limiting and User-Agent.
 """
 
+import line_items
 from edgar_api import _rate_limited_get
 
 XBRL_BASE = "https://data.sec.gov/api/xbrl"
 
 # ---------------------------------------------------------------------------
-# Tag-mapping dictionary
-# Each key is a canonical line-item name.
-# Value is an ordered list of us-gaap XBRL tags -- first found wins.
-# Add new line items here without changing any other code.
+# Tag mapping
+#
+# The tag chains now live in the line-item registry in line_items.py, which
+# holds the whole vocabulary the models need. TAG_MAP is the subset the existing
+# views extract and display: the same 14 items, in the same order, as a plain
+# dict of canonical name to ordered tag list. Re-exported here because callers
+# already reach for xbrl.TAG_MAP.
+#
+# Add a line item to line_items.REGISTRY; add it to line_items.UI_LINE_ITEMS
+# only if it should appear in the existing tables.
 # ---------------------------------------------------------------------------
-TAG_MAP = {
-    "Revenue": [
-        "Revenues",
-        "RevenueFromContractWithCustomerExcludingAssessedTax",
-        "RevenueFromContractWithCustomerIncludingAssessedTax",
-        "SalesRevenueNet",
-    ],
-    "Cost of Revenue": [
-        "CostOfRevenue",
-        "CostOfGoodsAndServicesSold",
-        "CostOfGoodsSold",
-    ],
-    "Gross Profit": [
-        "GrossProfit",
-    ],
-    "Operating Income": [
-        "OperatingIncomeLoss",
-    ],
-    "Net Income": [
-        "NetIncomeLoss",
-        "ProfitLoss",
-    ],
-    "EPS Basic": [
-        "EarningsPerShareBasic",
-    ],
-    "EPS Diluted": [
-        "EarningsPerShareDiluted",
-    ],
-    "Shares Outstanding (Basic)": [
-        "WeightedAverageNumberOfSharesOutstandingBasic",
-    ],
-    "Shares Outstanding (Diluted)": [
-        "WeightedAverageNumberOfDilutedSharesOutstanding",
-    ],
-    "Total Assets": [
-        "Assets",
-    ],
-    "Total Liabilities": [
-        "Liabilities",
-    ],
-    "Total Equity": [
-        "StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest",
-        "StockholdersEquity",
-    ],
-    "Cash and Equivalents": [
-        "CashAndCashEquivalentsAtCarryingValue",
-    ],
-    # Labeled "Long-Term Debt", not "Total Debt": resolve_line_item picks ONE
-    # winning tag per line item, but total debt is the SUM of short-term and
-    # long-term components. The old "Total Debt" row chained DebtCurrent,
-    # LongTermDebt, and DebtLongtermAndShorttermCombinedAmount and showed
-    # whichever won, so it could report current debt alone under a total's name.
-    # A short-term debt row and a derived Total Debt = short + long arrive with
-    # the line-item registry.
-    "Long-Term Debt": [
-        "LongTermDebtNoncurrent",
-        "LongTermDebt",
-    ],
-}
+TAG_MAP = line_items.TAG_MAP
 
 
 def fetch_company_facts(cik):
