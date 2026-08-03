@@ -144,6 +144,21 @@ Open [http://localhost:5050](http://localhost:5050) in your browser.
 
 ---
 
+## Tests
+
+The test suite lives in `app/tests/` and runs with pytest from the `app` directory:
+
+```bash
+# from the edgardly/app directory, with venv activated:
+python -m pytest -m "not integration"
+```
+
+Most tests are fully mocked and need no network access. Tests marked `integration` hit the
+live SEC EDGAR API or start a real browser, so they are slower and require a connection; run
+the whole suite with `python -m pytest` when you want those too.
+
+---
+
 ## Data Sources
 
 All data is sourced directly from SEC EDGAR public APIs:
