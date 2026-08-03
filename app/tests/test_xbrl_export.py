@@ -55,7 +55,7 @@ def _make_rows(revenue=None, net_income=None, eps=None, shares=None, equity=None
         "EPS Basic", "EPS Diluted",
         "Shares Outstanding (Basic)", "Shares Outstanding (Diluted)",
         "Total Assets", "Total Liabilities", "Total Equity",
-        "Cash and Equivalents", "Total Debt",
+        "Cash and Equivalents", "Long-Term Debt",
     ]:
         val = None
         if line_item == "Revenue":

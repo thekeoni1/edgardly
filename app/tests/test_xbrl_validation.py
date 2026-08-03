@@ -214,10 +214,10 @@ def test_zero_among_nonzero_cash_not_checked():
     assert not flags, "Cash is not in the whitelist -- zero should not flag"
 
 
-def test_zero_among_nonzero_total_debt_not_checked():
-    pts = _zero_series("Total Debt")
-    flags = _check_zero_among_nonzero("Total Debt", pts)
-    assert not flags, "Total Debt is not in the whitelist -- zero should not flag"
+def test_zero_among_nonzero_long_term_debt_not_checked():
+    pts = _zero_series("Long-Term Debt")
+    flags = _check_zero_among_nonzero("Long-Term Debt", pts)
+    assert not flags, "Long-Term Debt is not in the whitelist -- zero should not flag"
 
 
 def test_zero_among_nonzero_no_flag_when_all_zero():

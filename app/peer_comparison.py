@@ -18,7 +18,8 @@ _MIN_ANNUAL_DAYS = 300
 # Kept here to avoid a circular import (app.py will import peer_comparison).
 DOLLAR_LINE_ITEMS = frozenset({
     "Revenue", "Cost of Revenue", "Gross Profit", "Operating Income", "Net Income",
-    "Total Assets", "Total Liabilities", "Total Equity", "Cash and Equivalents", "Total Debt",
+    "Total Assets", "Total Liabilities", "Total Equity", "Cash and Equivalents",
+    "Long-Term Debt",
 })
 EPS_LINE_ITEMS = frozenset({"EPS Basic", "EPS Diluted"})
 SHARE_LINE_ITEMS = frozenset({"Shares Outstanding (Basic)", "Shares Outstanding (Diluted)"})

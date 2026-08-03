@@ -62,10 +62,16 @@ TAG_MAP = {
     "Cash and Equivalents": [
         "CashAndCashEquivalentsAtCarryingValue",
     ],
-    "Total Debt": [
-        "DebtCurrent",
+    # Labeled "Long-Term Debt", not "Total Debt": resolve_line_item picks ONE
+    # winning tag per line item, but total debt is the SUM of short-term and
+    # long-term components. The old "Total Debt" row chained DebtCurrent,
+    # LongTermDebt, and DebtLongtermAndShorttermCombinedAmount and showed
+    # whichever won, so it could report current debt alone under a total's name.
+    # A short-term debt row and a derived Total Debt = short + long arrive with
+    # the line-item registry.
+    "Long-Term Debt": [
+        "LongTermDebtNoncurrent",
         "LongTermDebt",
-        "DebtLongtermAndShorttermCombinedAmount",
     ],
 }
 
@@ -375,7 +381,7 @@ def _check_balance_sheet_equation(assets_pts, liabilities_pts, equity_pts):
 
 
 # Line items where an exact-zero value is suspicious given non-zero peers.
-# Total Debt and Cash are excluded -- a company paying off all debt, or
+# Long-Term Debt and Cash are excluded -- a company paying off all debt, or
 # burning through cash, are legitimate business outcomes, not data errors.
 _ZERO_CHECK_LINE_ITEMS = frozenset({
     "Revenue", "Net Income", "Total Assets", "Total Liabilities",
@@ -388,7 +394,7 @@ def _check_zero_among_nonzero(line_item_name, data_points):
     substantial nonzero values.
 
     Restricted to line items where zero is genuinely suspicious (Revenue,
-    Net Income, Total Assets, Total Liabilities). Cash and Total Debt are
+    Net Income, Total Assets, Total Liabilities). Cash and Long-Term Debt are
     excluded because legitimate business events routinely produce zero there.
     """
     if line_item_name not in _ZERO_CHECK_LINE_ITEMS:

@@ -62,7 +62,8 @@ def _xbrl_format_value(value, unit):
 
 _DOLLAR_LINE_ITEMS = frozenset({
     "Revenue", "Cost of Revenue", "Gross Profit", "Operating Income", "Net Income",
-    "Total Assets", "Total Liabilities", "Total Equity", "Cash and Equivalents", "Total Debt",
+    "Total Assets", "Total Liabilities", "Total Equity", "Cash and Equivalents",
+    "Long-Term Debt",
 })
 _EPS_LINE_ITEMS = frozenset({"EPS Basic", "EPS Diluted"})
 _SHARE_LINE_ITEMS = frozenset({"Shares Outstanding (Basic)", "Shares Outstanding (Diluted)"})

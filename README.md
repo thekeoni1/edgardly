@@ -26,7 +26,7 @@ Edgardly runs entirely on your machine and requires no API keys, no paid subscri
   - Revenue, Cost of Goods Sold, Gross Profit, Operating Income, Net Income
   - Basic and Diluted EPS, Shares Outstanding
   - Total Assets, Total Liabilities, Total Equity
-  - Cash and Equivalents, Total Debt
+  - Cash and Equivalents, Long-Term Debt
 
 - **Automated validation flags:** an independent validation layer checks extracted values for common data issues: negative revenue, balance sheet equation mismatches (Assets ≠ Liabilities + Equity), EPS-to-net-income reconciliation discrepancies, and extreme year-over-year changes. Flagged values are surfaced visually with full context; they are never silently hidden, auto-corrected, or excluded from exports.
 
