@@ -9,20 +9,17 @@ edgar_api._rate_limited_get (0.1 s/call, proper User-Agent, 429 back-off).
 """
 
 import datetime
+import line_items
 import xbrl_extractor as xbrl
 
 # Minimum period length (days) for a flow item to count as a full fiscal year.
 _MIN_ANNUAL_DAYS = 300
 
-# Line item type classification -- mirrors the constants in app.py.
-# Kept here to avoid a circular import (app.py will import peer_comparison).
-DOLLAR_LINE_ITEMS = frozenset({
-    "Revenue", "Cost of Revenue", "Gross Profit", "Operating Income", "Net Income",
-    "Total Assets", "Total Liabilities", "Total Equity", "Cash and Equivalents",
-    "Long-Term Debt",
-})
-EPS_LINE_ITEMS = frozenset({"EPS Basic", "EPS Diluted"})
-SHARE_LINE_ITEMS = frozenset({"Shares Outstanding (Basic)", "Shares Outstanding (Diluted)"})
+# Canonical definitions live in line_items.py, shared with app.py.
+# Re-exported here because callers already reach for pc.DOLLAR_LINE_ITEMS.
+DOLLAR_LINE_ITEMS = line_items.DOLLAR_LINE_ITEMS
+EPS_LINE_ITEMS = line_items.EPS_LINE_ITEMS
+SHARE_LINE_ITEMS = line_items.SHARE_LINE_ITEMS
 
 
 def _is_valid_annual_flow(dp):
@@ -291,7 +288,8 @@ def select_peer_scale(comparison_result):
 
     EPS items are never scaled (they are per-share values).
 
-    Thresholds match app.py _detect_dollar_scale:
+    Thresholds come from line_items.dollar_scale_for, the same function the
+    single-company table uses:
         Revenue > $1 B  →  $mm   (factor = 1_000_000)
         Revenue > $10 M →  $000s (factor = 1_000)
         Revenue ≤ $10 M →  $     (factor = 1)
@@ -307,14 +305,6 @@ def select_peer_scale(comparison_result):
             "share_label":   str,   -- "mm" or "000s"
         }
     """
-    def _dollar_scale(val):
-        v = abs(val)
-        if v > 1_000_000_000:
-            return 1_000_000, "$mm"
-        if v > 10_000_000:
-            return 1_000, "$000s"
-        return 1, "$"
-
     def _fy0_value(company, line_item):
         """Return FY0 value for a line item, or None if absent."""
         info = company["line_items"].get(line_item) or {}
@@ -343,7 +333,7 @@ def select_peer_scale(comparison_result):
         )
 
     if max_rev is not None:
-        dollar_factor, dollar_label = _dollar_scale(max_rev)
+        dollar_factor, dollar_label = line_items.dollar_scale_for(max_rev)
     else:
         dollar_factor, dollar_label = 1_000_000, "$mm"  # sensible default
 
@@ -359,10 +349,10 @@ def select_peer_scale(comparison_result):
             max_shares = max(candidates)
             break  # diluted takes priority; only fall back to basic if no diluted
 
-    if max_shares is not None and max_shares > 1_000_000_000:
-        share_factor, share_label = 1_000_000, "mm"
+    if max_shares is not None:
+        share_factor, share_label = line_items.share_scale_for(max_shares)
     else:
-        share_factor, share_label = 1_000, "000s"
+        share_factor, share_label = line_items.DEFAULT_SHARE_SCALE
 
     return {
         "dollar_factor": dollar_factor,

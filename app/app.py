@@ -6,6 +6,7 @@ import threading
 import datetime
 import json
 import edgar_api
+import line_items
 import xbrl_extractor as xbrl
 import peer_comparison as pc
 from flask import Flask, render_template, request, jsonify, send_from_directory, Response, stream_with_context
@@ -60,13 +61,11 @@ def _xbrl_format_value(value, unit):
 # XBRL export: line-item classification and Excel format constants
 # ---------------------------------------------------------------------------
 
-_DOLLAR_LINE_ITEMS = frozenset({
-    "Revenue", "Cost of Revenue", "Gross Profit", "Operating Income", "Net Income",
-    "Total Assets", "Total Liabilities", "Total Equity", "Cash and Equivalents",
-    "Long-Term Debt",
-})
-_EPS_LINE_ITEMS = frozenset({"EPS Basic", "EPS Diluted"})
-_SHARE_LINE_ITEMS = frozenset({"Shares Outstanding (Basic)", "Shares Outstanding (Diluted)"})
+# Canonical definitions live in line_items.py, shared with peer_comparison.
+# Re-exported under the private names the rest of this module already uses.
+_DOLLAR_LINE_ITEMS = line_items.DOLLAR_LINE_ITEMS
+_EPS_LINE_ITEMS = line_items.EPS_LINE_ITEMS
+_SHARE_LINE_ITEMS = line_items.SHARE_LINE_ITEMS
 
 # Accounting-style format: positives with trailing space (aligns with closing paren on negatives),
 # negatives in parentheses, zero as dash.
@@ -203,22 +202,14 @@ def _detect_dollar_scale(rows, columns):
     (this can happen when a company switched XBRL revenue tags mid-history and the
     older tag only covers pre-filter years).
     """
-    def _scale_from_value(val):
-        val = abs(val)
-        if val > 1_000_000_000:
-            return 1_000_000, "$mm"
-        if val > 10_000_000:
-            return 1_000, "$000s"
-        return 1, "$"
-
     for candidate in ("Revenue", "Total Assets"):
         for row in rows:
             if row["line_item"] == candidate:
                 for col in reversed(columns):
                     cell = row["cells"].get(col["key"])
                     if cell and cell.get("value") is not None:
-                        return _scale_from_value(cell["value"])
-    return 1, "$"
+                        return line_items.dollar_scale_for(cell["value"])
+    return line_items.DEFAULT_DOLLAR_SCALE
 
 
 def _detect_share_scale(rows, columns):
@@ -229,10 +220,8 @@ def _detect_share_scale(rows, columns):
                 for col in reversed(columns):
                     cell = row["cells"].get(col["key"])
                     if cell and cell.get("value") is not None:
-                        if abs(cell["value"]) > 1_000_000_000:
-                            return 1_000_000, "mm"
-                        return 1_000, "000s"
-    return 1_000, "000s"
+                        return line_items.share_scale_for(cell["value"])
+    return line_items.DEFAULT_SHARE_SCALE
 
 
 def _build_xbrl_result(cik, start_year, end_year, period_type):
