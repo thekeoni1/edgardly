@@ -15,6 +15,9 @@ wrong, change it here with a dated note saying why.
 | 2026-08-03 | The registry holds 38 reported items, not 28 | V2_PLAN 1.1 said 28 but the list underneath it enumerates 38: 14 income statement, 16 balance sheet, 8 cash flow. The enumeration is the specification and the count was simply wrong, so both mentions in V2_PLAN now read 38. No item was added or dropped to reach the number. |
 | 2026-08-03 | Per-period resolution prefers chain position, then filing date | For a period reported by more than one tag in a chain, the earlier tag wins; within one tag, the most recently filed entry wins. Filing date does not outrank chain position, because chain order encodes which tag means what, and a later filing is often just a comparative in someone else's 10-K. Checked on Apple: every period where two revenue tags overlap, the two agree to the dollar, so the rule restates nothing. |
 | 2026-08-03 | The browser is served its classification by template injection | Not a fetch endpoint. The peer checkbox grid is built during page setup, so a request still in flight would render an empty grid. |
+| 2026-08-03 | A derived value needs reported inputs, same period, same unit | Anything else stays missing. No derivation is ever built on another derivation, on a value from a neighbouring period, or across units. This is what keeps "derived" a claim a reader can check rather than a chain of inference. |
+| 2026-08-03 | Missing carries two flags, not one | NOT_TAGGED means the filer never tagged the item for the period. PERIOD_UNRESOLVED means a value with that end date exists but no filter could confirm it covers the period, which is what R5 shadowing produces. Telling a reader "not tagged in XBRL" when the filer did tag it would be a false statement, and the two cases warrant different levels of suspicion. |
+| 2026-08-03 | Filing pointers are read from the payload, never from a resolved series | Resolution keeps one entry per period per tag, the most recently filed. Pointed at that, a missing FY2023 value cites the FY2024 10-K, which reported FY2023 only as a comparative. The pointer needs the filings resolution discarded. |
 
 ## Session log
 
@@ -26,6 +29,7 @@ open questions the next session needs to know about.
 | 2026-08-03 | Setup | Folded the planning output into the repo: risk register R1 through R10 as V2_PLAN Part 8, decisions log as Part 9, tasks 2.2b and 2.5 added to Phase 2, docs/SESSIONS.md created, this file created. Documentation only, no code changes. | n/a | None |
 | 2026-08-03 | 1 | F1 through F5, five commits in the prescribed order. README claims corrected, real SEC User-Agent contact, test suite restored from git history, Total Debt relabeled Long-Term Debt, line-item constants consolidated into app/line_items.py. | 0 | Three, listed below. |
 | 2026-08-03 | 2 | V2_PLAN 1.1, 1.2, part of 1.5, and the frontend half of the Session 1 consolidation. Five commits: session prompt amended, registry built, per-period stitching, fixture generator plus the Apple fixture, classification served to the browser. | 0 | Open question 2 closed; 1 and 3 still open; two new ones. |
+| 2026-08-03 | 3 | V2_PLAN 1.3 and 1.4, and the rest of 1.5. Four commits: session prompt amended, fixture generator extended plus the JPMorgan and SAP fixtures, provenance and the scope gate, tooltip element moved. | 0 | Open question 5 closed, 3 partly addressed; 1, 3, and 4 still open; one new one. |
 
 ### Session 1 detail
 
@@ -101,6 +105,68 @@ the seam in the stitched series falls on FY2019, the first year reported only
 under the new tag. Both tags report FY2017 and FY2018 identically, so nothing
 was restated by preferring chain position.
 
+### Session 3 detail
+
+Suite state: 438 tests, all passing, zero xfails. Session 2 left 370. The 68 new
+tests are 20 for the provenance primitives and the payloads, 34 for the scope gate
+and the two new fixtures, 9 more in the Apple real-filing module, 4 for the font
+split and the Source Tags sheet in the single-company export, and 1 for the peer
+export's.
+
+Provenance is per value, and Apple demonstrates why that matters. Displayed from
+FY2015 to FY2025, the revenue row is stitched from three tags, and each cell names
+its own: SalesRevenueNet for FY2015, Revenues for FY2018, the ASC 606 tag from
+FY2019. The row label under the line item name now reads all three, the Source Tags
+sheet gives one line per value rather than one per row, and the seam is marked on
+FY2019 where the tag changes. That is open question 5 closed.
+
+Of Apple's 154 displayed values, 147 are reported and 7 are holes. All seven are
+balance-sheet instants whose fiscal-period label a later 10-Q overwrote, which is
+open question 3 showing up in the single-company table exactly as predicted. This
+is why the missing state has two flags: saying "not tagged in XBRL" about Apple's
+FY2025 total assets would be false, because Apple tagged it and this table's fp
+filter dropped it. Those cells now say so and point at the filing. Session 4 makes
+them disappear rather than explaining themselves.
+
+Gross Profit is the first value either table has ever derived. Apple never exercises
+it, since Apple tags GrossProfit itself; a filer that does not gets Revenue minus
+Cost of Revenue, black rather than blue, italic in the browser, with the formula and
+both input tags in the tooltip and on the Source Tags sheet. Both the single-company
+and the peer path apply the identical rule so the two views cannot disagree.
+
+The scope gate ships with two real filers behind it. JPMorgan Chase, CIK 19617,
+SIC 6021, is refused by the SIC range; its statement-shape heuristic stays quiet
+because JPMorgan does tag Revenues, so only the deterministic gate fires, which is
+the honest outcome. SAP SE, CIK 1000184, SIC 7372, is a software company the SIC
+gate would happily accept and is refused only because it reports no us-gaap facts at
+all. Both CIKs were confirmed against the live ticker lookup before use. The heuristic
+itself is exercised synthetically, because a correctly classified bank cannot test a
+misclassification.
+
+Neither refusal touches the puller. JPMorgan's FY2023 table still loads with total
+assets of 3,875,393 million, and its balance sheet ties to the dollar. SAP's table
+is still empty, but it now says why instead of suggesting a wider year range.
+
+Three things turned up that the plan did not anticipate:
+
+- Filing pointers cannot be built from resolved data. Resolution keeps one entry per
+  period per tag, so Apple's FY2023 pointer came back naming the FY2024 10-K, which
+  carried FY2023 only as a comparative. Reading the payload directly fixes it, and
+  the pointers now name each period's own filing.
+- The trim was inventing an empty us-gaap block for filers that have none, which read
+  to the gate as a us-gaap filer with nothing tagged. SAP came back in scope on the
+  first attempt. Both the trim and the gate now treat an empty taxonomy as absent.
+- The tooltip element sat after the script that looks it up, so it had always been
+  null and no tooltip in the app had ever rendered. Found by driving the real page
+  against the fixtures rather than trusting the tests, which never touch it.
+
+That check ran the actual UI offline against the committed fixtures: all three
+provenance states reach the screen, the IFRS refusal replaces the empty-table
+message, and the browser console is clean.
+
+The first full-suite run of the session hit the cold-Chromium timeout Session 1
+documented; the rerun was clean and every later run has been.
+
 ## Open questions
 
 1. **LongTermDebt is not strictly non-current.** Honeywell resolves the Long-Term
@@ -122,7 +188,12 @@ was restated by preferring chain position.
    year-end balance sheet instant carries fiscal_period "Q2" because a later 10-Q
    overwrote the label, so the single-company path drops recent years that the
    peer path keeps. Session 4 is where this gets fixed; noting it here as
-   confirmation the risk is real and reproducible with CIK 773840.
+   confirmation the risk is real and reproducible with CIK 773840. Session 3
+   found the same thing in the Apple fixture: seven of the fourteen displayed
+   rows lose a balance-sheet year to it, including FY2025 total assets. Those
+   cells are no longer silent. They carry the PERIOD_UNRESOLVED flag, which says
+   the value is tagged but could not be confirmed to cover the period, and they
+   point at the filing. That is a description of the bug, not a fix for it.
 
 4. **Short-Term Debt understates for filers that skip DebtCurrent.** Apple tags
    no DebtCurrent, so the row falls through to LongTermDebtCurrent, which is
@@ -133,13 +204,26 @@ was restated by preferring chain position.
    (current maturities plus commercial paper plus short-term borrowings), not a
    chain reorder, because a chain picks one tag and the components have to add.
    Decide in Session 4 alongside the other chain corrections. Until then, no view
-   shows Total Debt, so nothing user-facing is wrong today.
+   shows Total Debt, so nothing user-facing is wrong today. Session 3 kept it that
+   way deliberately and left a test that fails the moment Total Debt appears in a
+   payload, so the next session has to fix the derivation before surfacing it.
 
-5. **tag_used names one tag for a row that may hold several.** A stitched series
-   can span three tags, as Apple's revenue does. tag_used now reports the tag
-   behind the most recent annual value, which is what the old field meant for
-   single-tag rows and what a reader asking "where does this row come from?"
-   expects. But the Excel Source Tags sheet prints it as though it covered the
-   whole row. Every data point already carries its own tag, and TAG_TRANSITION
-   marks the seams, so the information is there. Session 3's per-value provenance
-   is where the sheet should start using it instead.
+5. **Closed.** The Excel Source Tags sheet is one line per value, in both the
+   single-company and the peer workbook: line item, period, state, tag, filed
+   date, accession, and a note carrying the derivation formula, the missing
+   pointer, or the TAG_TRANSITION seam. The row-level Source Tag column, which is
+   all the CSV can hold, now names every tag the row used in period order rather
+   than one standing in for all of them.
+
+6. **A proxy statement outranks the 10-K it restates nothing in.** Three JPMorgan
+   10-Ks report FY2023 net income as 49,552 million. A DEF 14A filed in April 2026
+   repeats the same period rounded to 49,600 million, and because deduplication
+   keeps the most recently filed entry, the proxy wins. Five years of the row are
+   affected the same way. The rule was written for 10-K/A restatements, where a
+   later filing genuinely is better information; a proxy statement is not a
+   restatement. The fix is to rank annual report forms above everything else
+   before falling back to filing date, in both resolve_line_item and
+   deduplicate_period. It was left alone in Session 3 because changing resolution
+   semantics moves numbers for every company and belongs with the period-engine
+   work and the full fixture validation in Session 4. A test in
+   test_scope_gate.py asserts both figures, so the change announces itself.
