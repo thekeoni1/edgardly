@@ -5,6 +5,8 @@ Stage 2: deduplication and clean period time-series.
 Reuses _rate_limited_get from edgar_api for consistent rate limiting and User-Agent.
 """
 
+import datetime
+
 import line_items
 from edgar_api import _rate_limited_get
 
@@ -79,60 +81,88 @@ def _extract_tag_data(facts_data, tag):
     return result
 
 
+def _primary_tag(data_points):
+    """Return the tag behind the most recent annual data point in a series.
+
+    A stitched series can hold more than one tag, so no single tag speaks for
+    all of it. This is the tag a reader asking "where does this row come from?"
+    means: the one reporting the latest full year. Every data point still
+    carries its own tag, which is what the per-value provenance uses.
+
+    Falls back to the whole series when no data point is labeled annual.
+    """
+    annual = [dp for dp in data_points if dp.get("fiscal_period") == "FY"]
+    pool = annual or data_points
+    newest = max(pool, key=lambda dp: (dp.get("end") or "", dp.get("filed") or ""))
+    return newest.get("tag")
+
+
 def resolve_line_item(facts_data, line_item):
     """
-    Given companyfacts data and a canonical line-item name, return the tag whose
-    most recent annual (FY / 10-K) data point is the latest.  This handles
-    companies that changed XBRL reporting tags over time (e.g. Apple switching
-    from Revenues to RevenueFromContractWithCustomerExcludingAssessedTax after
-    FY2018); the old tag has data but it's stale, so the newer tag wins.
+    Given companyfacts data and a canonical line-item name, stitch one series
+    together from every tag in the item's fallback chain.
 
-    Falls back to the first tag that has ANY data when no tag has annual data.
+    Resolution is per period, not per series.  For each reported period, the
+    earliest tag in the chain that reports it wins; within one tag, the most
+    recently filed entry wins (a 10-K/A restating a year beats the original).
+    A period reported only by a later tag in the chain is kept rather than
+    dropped.
+
+    This replaces winner-takes-all resolution, which picked the single tag whose
+    most recent annual data point was newest and used that tag for the entire
+    history.  That truncated history at a tag switch: when Apple moved from
+    Revenues to RevenueFromContractWithCustomerExcludingAssessedTax at FY2018,
+    only the years the new tag happened to carry as comparatives survived, even
+    though the older years sat in the same companyfacts response.
+
+    Mixing tags across eras is honest, not a fudge: each data point records the
+    tag it came from, and validate_financials raises TAG_TRANSITION on the
+    boundary year so the seam is visible.
+
+    Accepts any name in the line-item registry, not only the ones in TAG_MAP.
 
     Returns:
-        (list[dict], str)   -- data points and the winning tag
-        ([], None)          -- if no mapped tag has any data
+        (list[dict], str)   -- data points sorted by end date, and the tag
+                               behind the most recent annual value
+        ([], None)          -- if no tag in the chain has any data
     """
-    tags = TAG_MAP.get(line_item, [])
-    best_tag = None
-    best_data = []
-    best_end = ""
-    first_tag = None
-    first_data = []
+    winners = {}
+    for tag in line_items.tags_for(line_item):
+        from_this_tag = {}
+        for dp in _extract_tag_data(facts_data, tag):
+            key = _period_key(dp)
+            if key in winners:
+                continue  # an earlier tag in the chain already reports this period
+            incumbent = from_this_tag.get(key)
+            if incumbent is None or (dp.get("filed") or "") > (incumbent.get("filed") or ""):
+                from_this_tag[key] = dp
+        winners.update(from_this_tag)
 
-    for tag in tags:
-        data = _extract_tag_data(facts_data, tag)
-        if not data:
-            continue
-        if first_tag is None:
-            first_tag, first_data = tag, data
-        annual = [dp for dp in data if dp.get("fiscal_period") == "FY"]
-        if annual:
-            most_recent_end = max(dp.get("end", "") for dp in annual)
-            if most_recent_end > best_end:
-                best_end = most_recent_end
-                best_tag = tag
-                best_data = data
+    if not winners:
+        return [], None
 
-    if best_tag is not None:
-        return best_data, best_tag
-    if first_tag is not None:
-        return first_data, first_tag
-    return [], None
+    data = sorted(winners.values(), key=lambda dp: dp.get("end") or "")
+    return data, _primary_tag(data)
 
 
-def extract_all_line_items(facts_data):
+def extract_all_line_items(facts_data, names=None):
     """
-    Extract data for every line item in TAG_MAP.
+    Extract data for a set of line items.
+
+    names defaults to TAG_MAP, the 14 items the existing views display.  Pass an
+    explicit sequence of registry names to extract anything else; the registry
+    is a superset of TAG_MAP.
 
     Returns:
         dict keyed by line-item name, each value:
           {"data": list[dict], "tag_used": str | None}
         tag_used is None when no mapped tag has data for that line item.
     """
+    if names is None:
+        names = TAG_MAP
     return {
         line_item: {"data": data, "tag_used": tag_used}
-        for line_item in TAG_MAP
+        for line_item in names
         for data, tag_used in (resolve_line_item(facts_data, line_item),)
     }
 
@@ -223,6 +253,7 @@ FLAG_ZERO_AMONG_NONZERO = "ZERO_AMONG_NONZERO"
 FLAG_EPS_RECONCILIATION = "EPS_RECONCILIATION_MISMATCH"
 FLAG_LARGE_YOY_CHANGE = "LARGE_YOY_CHANGE"
 FLAG_MISSING_CRITICAL_DATA = "MISSING_CRITICAL_DATA"
+FLAG_TAG_TRANSITION = "TAG_TRANSITION"
 
 
 def _make_flag(flag_type, message, period_end, value, details=None):
@@ -464,6 +495,79 @@ def _check_large_yoy_change(line_item_name, data_points, threshold=5.0):
     return flags
 
 
+def _is_annual_period(dp):
+    """Return True if a data point covers one full fiscal year.
+
+    Flow items are judged by period length, not by the fiscal_period label:
+    EDGAR stamps fp on the filing, not the fact, so every comparative quarter
+    inside a 10-K comes back labeled "FY".  A 10 to 14 month span is the honest
+    signal.  Instants have no span to measure, so the label is all there is.
+    """
+    start, end = dp.get("start"), dp.get("end")
+    if not end:
+        return False
+    if start is None:
+        return dp.get("fiscal_period") == "FY"
+    try:
+        days = (datetime.date.fromisoformat(end) - datetime.date.fromisoformat(start)).days
+    except (ValueError, TypeError):
+        return False
+    return 300 <= days <= 425
+
+
+def _consecutive_annual_pairs(data_points):
+    """Yield (previous, current) pairs of adjacent annual periods in a series.
+
+    Adjacent means the two end dates are 10 to 14 months apart.  The date gate
+    matters: XBRL histories have holes, and without it a 2012 period sitting
+    next to a 2019 one would read as adjacent.
+    """
+    annual = sorted(
+        [dp for dp in data_points if _is_annual_period(dp)],
+        key=lambda dp: dp.get("end") or "",
+    )
+    for i in range(1, len(annual)):
+        prev_dp, curr_dp = annual[i - 1], annual[i]
+        try:
+            prev_end = datetime.date.fromisoformat(prev_dp["end"])
+            curr_end = datetime.date.fromisoformat(curr_dp["end"])
+        except (ValueError, TypeError, KeyError):
+            continue
+        if 300 <= (curr_end - prev_end).days <= 425:
+            yield prev_dp, curr_dp
+
+
+def _check_tag_transition(line_item_name, data_points):
+    """
+    Flag the boundary year where a series switches from one XBRL tag to another.
+
+    Per-period resolution stitches a single series out of every tag in a line
+    item's fallback chain, so a company that changed tags mid-history keeps all
+    of its years.  That is the point, but it means adjacent values in one row
+    can come from different tags, and the two tags may not mean exactly the same
+    thing.  This flag makes the seam visible on the first year of the new tag
+    instead of leaving it buried in per-value provenance.
+
+    Informational, like every other flag here: it never removes or alters data.
+    """
+    flags = []
+    for prev_dp, curr_dp in _consecutive_annual_pairs(data_points):
+        prev_tag = prev_dp.get("tag")
+        curr_tag = curr_dp.get("tag")
+        if not prev_tag or not curr_tag or prev_tag == curr_tag:
+            continue
+        flags.append(_make_flag(
+            FLAG_TAG_TRANSITION,
+            (f"{line_item_name} switches XBRL tag here: the period ending "
+             f"{prev_dp.get('end')} comes from {prev_tag}, this one from {curr_tag}. "
+             f"The two tags may not cover exactly the same items"),
+            curr_dp.get("end"), curr_dp.get("value"),
+            {"previous_tag": prev_tag, "current_tag": curr_tag,
+             "previous_period_end": prev_dp.get("end")},
+        ))
+    return flags
+
+
 def _check_missing_critical_data(deduped_line_items):
     """
     Flag if annual (FY) periods exist in any line item but both Revenue and
@@ -527,6 +631,9 @@ def validate_financials(deduped_line_items):
 
     for name, info in deduped_line_items.items():
         flags[name].extend(_check_zero_among_nonzero(name, info.get("data", [])))
+
+    for name, info in deduped_line_items.items():
+        flags[name].extend(_check_tag_transition(name, info.get("data", [])))
 
     flags["EPS Diluted"].extend(
         _check_eps_reconciliation(
