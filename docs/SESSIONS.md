@@ -139,27 +139,37 @@ updated.
 
 ## Session 4B. Chain corrections and the Phase 1 exit review
 
-Read docs/V2_PLAN.md (Part 3) and PROGRESS.md first, including open questions 1 and 4.
+Read docs/V2_PLAN.md (Part 3) and PROGRESS.md first, especially open questions 1, 4, and 7
+and the Session 4A detail.
 
-1. Add the last acceptance fixture: Kroger, CIK 56873. Verify the CIK against the live
-   ticker lookup before committing. Kroger is in the acceptance set to stress 52/53-week
-   fiscal years, so assert what its stub and 53-week periods do to the unified period
-   engine 4A shipped.
-2. Validate every registry chain against all committed fixtures and correct chains as
-   needed (one-line registry edits). A chain that resolves to a tag meaning something other
-   than its label is a wrong answer, not a missing one.
-3. Close open question 4: give Total Debt a summed derivation for filers that skip
-   DebtCurrent, so the row is not short by the commercial paper. The test asserting Apple's
-   105,103 against the real 111,088 changes with it. Only surface Total Debt once the
-   derivation is right.
-4. Settle open question 1 with the Honeywell fixture: state in the registry what the
-   Long-Term Debt row means for a filer resolving through the LongTermDebt fallback, and
-   make sure Total Debt does not double-count current maturities for that filer.
-5. Run the Phase 1 exit review against V2_PLAN's exit criteria and record pass or fail per
-   criterion in PROGRESS.md.
+0. Amend this Session 4B entry to match the steps below. Commit separately or with step 1.
+1. Add the Kroger fixture (CIK 56873) with scripts/make_fixture.py; its late-January
+   52/53-week FYE is the point. Confirm the cell-for-cell view-agreement test in
+   test_periods.py picks it up automatically, and add Kroger-specific period tests.
+2. Correct the Long-Term Debt chain per open question 1:
+   LongTermDebtAndCapitalLeaseObligations ahead of LongTermDebt. Honeywell's row must show
+   its balance-sheet non-current line (25,479 for 2024-12-31); assert the old 27,265 does
+   not win. Keep the registry caveat accurate for filers still landing on LongTermDebt.
+3. Validate every registry chain against all five fixtures (Apple, Honeywell, Kroger,
+   JPMorgan, SAP). Correct chains with one-line registry edits; record each correction and
+   its evidence in PROGRESS.md.
+4. Fix Short-Term Debt per open question 4: a summed derivation (current maturities plus
+   commercial paper plus short-term borrowings, each term optional but at least one
+   present), never a chain pick. Apple's derived Total Debt must equal 111,088 million for
+   FY2023, and the Honeywell sum must not double-count current maturities now that step 2
+   makes the long-term row strictly non-current. Then surface Total Debt in views and
+   exports as a derived value with its formula in provenance, and retire the tripwire test
+   deliberately in the same commit.
+5. Fix the EPS reconciliation check per open question 7: key net income, shares, and EPS on
+   (start, end), ignoring unit. Assert it flags Honeywell's Q2 2025 mixed-basis column.
+   Review every new flag it raises across the fixtures: each is either a genuine mismatch
+   (keep, document) or a tolerance problem (tune, document). Never silence one without a
+   reason in PROGRESS.md.
+6. Run the Phase 1 exit review against V2_PLAN's exit criteria; record pass or fail per
+   criterion in PROGRESS.md and declare Phase 1 done only if all pass.
 
-Constraints: no network in tests; never guess values; a chain correction that changes a
-displayed number must be checked against the filing it comes from.
+Constraints: no network in tests; never guess values; a chain that resolves nothing for a
+filer stays a flagged blank, never a substitute.
 
 Exit criteria: suite green, single-company and peer views agree on periods for all fixture
 companies, Phase 1 declared done in PROGRESS.md.
