@@ -219,14 +219,25 @@ _REGISTRY_ITEMS = [
 
     _item("Long-Term Debt", STATEMENT_BS, KIND_INSTANT, UNIT_DOLLAR, [
         "LongTermDebtNoncurrent",
+        "LongTermDebtAndCapitalLeaseObligations",
         "LongTermDebt",
-    ], note="LongTermDebt is not strictly non-current: its definition covers the whole "
-            "long-term debt balance including current maturities, so a filer resolving "
-            "through the fallback reports a row slightly broader than its label. "
-            "Honeywell (CIK 773840) is such a filer; it has no LongTermDebtNoncurrent at "
-            "all. This is PROGRESS.md open question 1 and needs a Honeywell fixture in "
-            "Session 4 to settle. Summing this row with Short-Term Debt for that filer "
-            "would double-count the current maturities."),
+    ], note="Strictly the non-current balance, through either of the first two tags. "
+            "LongTermDebtAndCapitalLeaseObligations is the non-current line of a filer "
+            "that presents debt and finance leases as one caption; its current half is "
+            "LongTermDebtAndCapitalLeaseObligationsCurrent, a different tag, which is why "
+            "it belongs here and its name does not mean it includes current maturities. "
+            "The last fallback does: LongTermDebt covers the whole long-term balance "
+            "including current maturities, so a filer resolving through it reports a row "
+            "broader than its label, and Total Debt double-counts for exactly those "
+            "periods. It is last because it is the one tag here whose meaning does not "
+            "match the row. Apple reaches it only for FY2012 and FY2013, before Apple "
+            "tagged LongTermDebtNoncurrent and while it carried no current maturities at "
+            "all, so the two happen to agree; JPMorgan reaches it throughout, and no "
+            "scaffold is generated for a bank. Honeywell was the filer this caveat was "
+            "written about and no longer reaches it: its LongTermDebt is neither its "
+            "non-current line nor its balance-sheet total, reading 27,265 million at "
+            "2024-12-31 where the balance sheet shows 25,479 of non-current debt and "
+            "1,347 of current maturities. PROGRESS.md open question 1."),
 
     _item("Total Liabilities", STATEMENT_BS, KIND_INSTANT, UNIT_DOLLAR, [
         "Liabilities",

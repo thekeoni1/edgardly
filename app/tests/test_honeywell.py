@@ -149,7 +149,7 @@ FY2025_10K = {
     "Total Assets": 73_681,
     "Total Equity": 15_030,
     "Cash and Equivalents": 12_487,
-    "Long-Term Debt": 29_046,
+    "Long-Term Debt": 27_141,
 }
 
 
@@ -220,23 +220,85 @@ def test_total_liabilities_is_a_hole_because_honeywell_tags_no_such_item(
         assert "sec.gov/Archives/edgar/data/773840/" in prov["message"]
 
 
-def test_long_term_debt_resolves_through_the_broader_fallback(honeywell_facts,
+def test_long_term_debt_is_the_balance_sheet_non_current_line(honeywell_facts,
                                                               honeywell_table):
-    """PROGRESS.md open question 1, on the filer it was written about.
+    """PROGRESS.md open question 1, settled on the filer it was written about.
 
-    Honeywell tags no LongTermDebtNoncurrent, so the row falls through to
-    LongTermDebt, whose definition can include current maturities. The row is
-    therefore slightly broader than its label for this filer, which the
-    registry entry says and which Session 4B has to settle before Total Debt
-    can sum the two without double counting.
+    Honeywell tags no LongTermDebtNoncurrent, so before this correction the row
+    fell through to LongTermDebt, which is not the non-current balance and for
+    this filer is not the balance-sheet total either. Honeywell does report the
+    non-current line, under the tag a filer uses when debt and finance leases
+    share one caption, and putting that tag ahead of LongTermDebt is the whole
+    of the fix.
+
+    27,141 is the "Long-term debt" line of Honeywell's FY2025 balance sheet.
+    29,046 is what LongTermDebt holds for the same instant, 1,905 above it and
+    359 above even the balance sheet's debt including current maturities, which
+    is why no chain position could have made that tag the right answer.
     """
     assert list(line_items.tags_for("Long-Term Debt")) == [
-        "LongTermDebtNoncurrent", "LongTermDebt"]
+        "LongTermDebtNoncurrent",
+        "LongTermDebtAndCapitalLeaseObligations",
+        "LongTermDebt",
+    ]
     assert "LongTermDebtNoncurrent" not in honeywell_facts["facts"]["us-gaap"]
 
     _entity, _columns, rows, _scope = honeywell_table
     cell = rows["Long-Term Debt"]["cells"][FY2025_END]
-    assert cell["provenance"]["tag"] == "LongTermDebt"
+    assert cell["value"] == 27_141 * MILLION
+    assert cell["provenance"]["tag"] == "LongTermDebtAndCapitalLeaseObligations"
+
+    # The tag the row used to resolve through still holds its own figure.
+    old = xbrl.deduplicate_period(
+        xbrl._extract_tag_data(honeywell_facts, "LongTermDebt"))
+    assert {dp["value"] for dp in old if dp["end"] == FY2025_END} == {29_046 * MILLION}
+
+
+def test_the_2024_row_shows_the_restated_non_current_line_not_the_old_total(
+        honeywell_facts, honeywell_table):
+    """The number open question 1 predicted, and the reason it is not that number.
+
+    Open question 1 was written off the FY2024 10-K, where the non-current line
+    reads 25,479 and LongTermDebt reads 27,265, and it expected the corrected
+    row to show 25,479. It shows 25,440, because Honeywell's FY2025 10-K
+    re-presents the 2024 balance sheet for the Solstice spin-off and moves 39
+    million of debt into liabilities held for sale. Both figures are the same
+    balance-sheet line; the row takes the one the most recent annual report
+    gives, which is the rule that already puts FY2024 revenue at 34,717 rather
+    than the 38,498 first reported.
+
+    What matters for the correction is the other assertion: 27,265 does not win
+    any more, and neither does 26,826, the balance-sheet total the 10-Qs put in
+    the same tag.
+    """
+    _entity, _columns, rows, _scope = honeywell_table
+    cell = rows["Long-Term Debt"]["cells"][FY2024_END]
+
+    assert cell["value"] == 25_440 * MILLION
+    assert cell["provenance"]["accession"] == "0000773840-26-000013"
+    assert cell["value"] not in (27_265 * MILLION, 26_826 * MILLION)
+
+    # Both of the figures it beat, still in the payload, from the filings named.
+    for_2024 = xbrl._extract_tag_data(honeywell_facts, "LongTermDebt")
+    by_form = {(dp["form"], dp["value"]) for dp in for_2024 if dp["end"] == FY2024_END}
+    assert ("10-K", 27_265 * MILLION) in by_form
+    assert ("10-Q", 26_826 * MILLION) in by_form
+
+    original = xbrl._extract_tag_data(
+        honeywell_facts, "LongTermDebtAndCapitalLeaseObligations")
+    assert {dp["value"] for dp in original
+            if dp["end"] == FY2024_END and dp["accn"] == "0000773840-25-000010"} == {
+        25_479 * MILLION}
+
+
+def test_the_whole_honeywell_debt_row_now_comes_from_one_tag(honeywell_table):
+    """No seam, where the old chain produced one at every year Honeywell restated."""
+    _entity, columns, rows, _scope = honeywell_table
+    tags = {cell["provenance"].get("tag")
+            for cell in rows["Long-Term Debt"]["cells"].values()}
+
+    assert tags == {"LongTermDebtAndCapitalLeaseObligations"}
+    assert rows["Long-Term Debt"]["tag_summary"] == "LongTermDebtAndCapitalLeaseObligations"
 
 
 def test_gross_profit_is_derived_once_honeywell_stops_tagging_it(honeywell_table):
