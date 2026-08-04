@@ -345,3 +345,33 @@ fixture the same question so it cannot drift back.
    every company, and Session 4A was constrained not to change peer results
    beyond the proxy correction. The fix is to key the three series on
    (start, end) and ignore the unit, which is the only thing they can agree on.
+
+8. **A fiscal year is named for the calendar year it ends in, and Kroger
+   disagrees.** Edgardly labels a period FY plus the year of its end date, so
+   Kroger's year running 2 February 2025 to 31 January 2026 is FY2026. Kroger
+   calls that year fiscal 2025, and so does its 10-K cover page and every
+   column heading in its statements. The label is the only thing that differs;
+   the column, its value, and its provenance are all correct, and the peer
+   table aligns by relative index so it never sees the name. The obvious
+   repair, naming a fiscal year for the calendar year that holds most of it,
+   is wrong in the other direction: Nike's year ends 31 May and Nike calls it
+   by the later year, which that rule would rename. The reliable source is the
+   filer's own dei DocumentFiscalYearFocus, taken from the filing that first
+   reported the period rather than from whichever filing repeated it last,
+   which is the same "earliest annual filing for this period end" lookup
+   filing_pointers already does. Left for a later session because it is a
+   feature, not a correction, and because Phase 2's hand-check is the first
+   place the name actually matters. test_kroger.py pins the current behavior.
+
+9. **Quarter labels still come from EDGAR's fp.** app/periods.py decides
+   whether a period exists from its dates, and the annual view names its
+   columns FY from the period type, so no label reaches an annual column. A
+   quarterly column still takes its name from the fiscal_period of whichever
+   fact confirmed it, and that field names the filing rather than the fact.
+   Kroger shows it plainly: the flow from 9 November 2025 to 31 January 2026
+   is its fourth quarter, the only filing carrying it is the first-quarter
+   10-Q of fiscal 2026, and the column comes out labeled Q1. The period is
+   right and the name is wrong. Fixing it means numbering quarters by their
+   position between two confirmed fiscal year ends, which the engine has the
+   dates to do and does not do yet. test_kroger.py holds a strict xfail
+   asserting the label should read Q4.
