@@ -302,16 +302,39 @@ def test_the_row_tag_label_names_every_tag_the_row_used(monkeypatch):
         "RevenueFromContractWithCustomerExcludingAssessedTax")
 
 
-def test_total_debt_is_in_no_payload_this_session(built):
-    """Its derivation understates for filers that skip DebtCurrent; see PROGRESS.md.
+def test_total_debt_is_displayed_now_that_its_derivation_is_right(built):
+    """The tripwire that stood here has been tripped on purpose.
 
-    The registry knows how to compute it and nothing displays it. This test is
-    the tripwire for the session that changes that: fix the derivation first.
+    Session 3 left a test asserting Total Debt appeared in no payload, because
+    its derivation was a chain pick that understated Apple by the whole of its
+    commercial paper. Session 4B replaced the chain with a sum of the current
+    liability lines a filer actually reports, so the row is now correct and is
+    shown. The test that guarded the gap is replaced by one that guards the
+    fix: the row is displayed, it is derived rather than reported, and it
+    carries the arithmetic that produced it.
     """
     _entity, _columns, rows, _scope = built
-    assert "Total Debt" not in rows
-    assert "Total Debt" not in line_items.UI_LINE_ITEMS
+    assert "Total Debt" in rows
+    assert "Total Debt" in line_items.UI_LINE_ITEMS
     assert "Total Debt" in line_items.DERIVATIONS
+    assert "Total Debt" not in line_items.REGISTRY      # arithmetic, never a tag
+
+
+def test_a_row_with_no_debt_lines_at_all_says_which_input_was_missing(built):
+    """The synthetic payload here tags revenue and nothing else.
+
+    "Not tagged in XBRL, check the balance sheet" would be true of Total Debt
+    for every filer that has ever filed, and would send a reader looking for a
+    line no balance sheet carries. The message names the component instead.
+    """
+    _entity, columns, rows, _scope = built
+    prov = rows["Total Debt"]["cells"][columns[0]["key"]]["provenance"]
+
+    assert prov["state"] == "missing"
+    assert prov["flag"] == xbrl.FLAG_DERIVATION_UNAVAILABLE
+    assert prov["message"].startswith(
+        "No filer tags this; Edgardly computes it as Short-Term Debt + Long-Term Debt.")
+    assert "Short-Term Debt, Long-Term Debt is not reported" in prov["message"]
 
 
 # ---------------------------------------------------------------------------

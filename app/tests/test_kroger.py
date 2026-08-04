@@ -384,6 +384,51 @@ def test_the_net_interest_line_carries_the_filers_own_sign(kroger_table):
     assert by_end[FISCAL_2025_END]["tag"] == "InterestIncomeExpenseNonoperatingNet"
 
 
+def test_total_debt_is_a_sum_of_one_term_where_that_is_all_kroger_has(kroger_table):
+    """The optional-term rule at its narrowest, and a cross-check on the answer.
+
+    Kroger carries no commercial paper and no short-term borrowings, so its
+    short-term debt is the current maturities line alone. The sum comes to
+    15,875 million, which is exactly what Kroger's own LongTermDebt tag holds
+    for the same instant: the element that means long-term debt including
+    current maturities. Two different routes to the same number, one of them
+    the filer's own.
+    """
+    _entity, _columns, rows, _scope = kroger_table
+    cell = rows["Total Debt"]["cells"][FISCAL_2025_END]
+
+    assert cell["value"] == (14_509 + 1_366) * MILLION
+    assert cell["value"] == 15_875 * MILLION
+
+    short_term = next(entry for entry in cell["provenance"]["inputs"]
+                      if entry["name"] == "Short-Term Debt")
+    assert short_term["formula"] == "Current Maturities of Long-Term Debt"
+    assert [i["tag"] for i in short_term["inputs"]] == ["LongTermDebtCurrent"]
+
+    facts = json.load(open(FIXTURE_PATH, encoding="utf-8"))
+    combined = [dp for dp in xbrl._extract_tag_data(facts, "LongTermDebt")
+                if dp["end"] == FISCAL_2025_END and dp["form"] == "10-K"]
+    assert {dp["value"] for dp in combined} == {15_875 * MILLION}
+
+
+def test_the_debt_rows_exclude_finance_leases_as_their_labels_promise(kroger_table):
+    """Kroger's captions bundle leases in; the rows do not, and should not.
+
+    The balance sheet reads "Long-term debt including obligations under finance
+    leases 15,764" against the row's 14,509, the difference being 1,255 of
+    lease liabilities that Kroger tags separately. A row called Long-Term Debt
+    that quietly included finance leases would be the wrong answer to its own
+    label. The gap is the filer's presentation, not a missing number.
+    """
+    _entity, _columns, rows, _scope = kroger_table
+    assert rows["Long-Term Debt"]["cells"][FISCAL_2025_END]["value"] == 14_509 * MILLION
+
+    facts = json.load(open(FIXTURE_PATH, encoding="utf-8"))
+    leases = [dp for dp in xbrl._extract_tag_data(facts, "FinanceLeaseLiabilityNoncurrent")
+              if dp["end"] == FISCAL_2025_END]
+    assert leases == [], "the fixture keeps only registry tags; leases are not one"
+
+
 def test_what_kroger_leaves_blank_stays_blank(kroger_table, kroger_facts):
     """Three rows this session deliberately did not fill.
 

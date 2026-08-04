@@ -659,8 +659,12 @@ def validate_financials(deduped_line_items):
 
     Flags are purely informational -- they never modify or remove data.
     """
+    # Every item passed in, plus every item the checks below write to. A caller
+    # is free to extract two line items, and a check that names a third must
+    # then find an empty list rather than raise.
     flags = {name: [] for name in deduped_line_items}
-    flags["_company"] = []
+    for name in ("Revenue", "Net Income", "Total Assets", "EPS Diluted", "_company"):
+        flags.setdefault(name, [])
 
     def _data(name):
         return deduped_line_items.get(name, {}).get("data", [])
@@ -743,8 +747,15 @@ PROVENANCE_MISSING = "missing"
 #                  (PROGRESS.md open question 3). Saying "not tagged" here
 #                  would be false, and the difference matters to anyone
 #                  deciding whether to go read the filing.
+# DERIVATION_UNAVAILABLE the row is arithmetic, never a tag, and at least one
+#                  input was not there for this period. Saying "not tagged"
+#                  about Total Debt would be true of every filer that ever
+#                  lived and would send a reader looking for a line no balance
+#                  sheet carries; what is missing is a component, and the
+#                  message names it.
 FLAG_NOT_TAGGED = "NOT_TAGGED"
 FLAG_PERIOD_UNRESOLVED = "PERIOD_UNRESOLVED"
+FLAG_DERIVATION_UNAVAILABLE = "DERIVATION_UNAVAILABLE"
 
 SEC_ARCHIVES_BASE = "https://www.sec.gov/Archives/edgar/data"
 
@@ -834,15 +845,16 @@ def derived_provenance(formula, inputs):
 
 
 def missing_provenance(line_item, period_label, cik=None, pointer=None,
-                       flag=FLAG_NOT_TAGGED):
+                       flag=FLAG_NOT_TAGGED, missing_inputs=()):
     """Provenance for a value that is not there, with a pointer to go find it.
 
     pointer is one entry from filing_pointers, or None when no filing for the
     period could be identified, in which case the message names the statement
     but has no link to offer.
 
-    flag says which kind of absence this is; both send the reader to the same
-    place, and only one of them claims the filer never tagged the item.
+    flag says which kind of absence this is; all three send the reader to the
+    same place, and only one of them claims the filer never tagged the item.
+    missing_inputs names the components a DERIVATION_UNAVAILABLE was short of.
     """
     pointer = pointer or {}
     statement = line_items.statement_label_of(line_item)
@@ -854,6 +866,12 @@ def missing_provenance(line_item, period_label, cik=None, pointer=None,
     if flag == FLAG_PERIOD_UNRESOLVED:
         opening = ("Tagged in XBRL, but not for a period Edgardly could confirm "
                    "as {}".format(period_label or "this period"))
+    elif flag == FLAG_DERIVATION_UNAVAILABLE:
+        rule = line_items.DERIVATIONS.get(line_item)
+        formula = rule.formula if rule is not None else ""
+        short_of = ", ".join(missing_inputs) or "an input"
+        opening = ("No filer tags this; Edgardly computes it as {}. {} is not "
+                   "reported for this period".format(formula, short_of))
     else:
         opening = "Not tagged in XBRL"
     message = "{}. Check {}".format(opening, target)

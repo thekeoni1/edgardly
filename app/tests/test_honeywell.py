@@ -291,6 +291,45 @@ def test_the_2024_row_shows_the_restated_non_current_line_not_the_old_total(
         25_479 * MILLION}
 
 
+def test_total_debt_ties_to_the_balance_sheet_without_double_counting(honeywell_table):
+    """PROGRESS.md open questions 1 and 4 are the same arithmetic seen twice.
+
+    Honeywell's FY2025 balance sheet carries three debt lines: long-term debt
+    27,141, current maturities 1,546, and commercial paper and other short-term
+    borrowings 5,893. They add to 34,580 and the row says 34,580.
+
+    Both halves of the fix are load-bearing. Before the chain correction the
+    long-term row read 29,046, a figure that overlaps the current maturities
+    and is 1,905 above the balance-sheet line, so any sum built on it
+    double-counted. Before the summed derivation the short-term side was one
+    tag, which for this filer would have been the borrowings alone and would
+    have dropped the current maturities entirely.
+    """
+    _entity, _columns, rows, _scope = honeywell_table
+    cell = rows["Total Debt"]["cells"][FY2025_END]
+
+    assert cell["value"] == (27_141 + 1_546 + 5_893) * MILLION
+    assert cell["value"] == 34_580 * MILLION
+
+    prov = cell["provenance"]
+    inputs = {entry["name"]: entry for entry in prov["inputs"]}
+    assert inputs["Long-Term Debt"]["value"] == 27_141 * MILLION
+
+    short_term = inputs["Short-Term Debt"]
+    assert short_term["value"] == 7_439 * MILLION
+    assert short_term["formula"] == (
+        "Current Maturities of Long-Term Debt + Short-Term Borrowings")
+    assert {(i["name"], i["value"], i["tag"]) for i in short_term["inputs"]} == {
+        ("Current Maturities of Long-Term Debt", 1_546 * MILLION,
+         "LongTermDebtAndCapitalLeaseObligationsCurrent"),
+        ("Short-Term Borrowings", 5_893 * MILLION, "ShortTermBorrowings"),
+    }
+
+    # Honeywell tags no commercial paper instant, so the term that would have
+    # overlapped its combined borrowings line is absent rather than added.
+    assert "Commercial Paper" not in {i["name"] for i in short_term["inputs"]}
+
+
 def test_the_whole_honeywell_debt_row_now_comes_from_one_tag(honeywell_table):
     """No seam, where the old chain produced one at every year Honeywell restated."""
     _entity, columns, rows, _scope = honeywell_table

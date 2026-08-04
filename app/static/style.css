@@ -1105,6 +1105,9 @@ footer {
 .xbrl-tooltip .tt-flag-msg { color: var(--color-flag); padding-left: 6px; font-size: var(--text-xs); }
 .xbrl-tooltip .tt-missing-msg { font-size: var(--text-xs); opacity: 0.9; }
 .xbrl-tooltip .tt-derived-input { padding-left: 6px; font-size: var(--text-xs); opacity: 0.9; }
+/* A derived input that is itself a sum, so Total Debt can show its working
+   all the way down to values a filer tagged. */
+.xbrl-tooltip .tt-derived-leaf { padding-left: 18px; font-size: var(--text-xs); opacity: 0.8; }
 
 /* Provenance: derived values are visibly not the filer's own number. */
 .xbrl-derived .xbrl-value,

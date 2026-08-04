@@ -55,7 +55,17 @@ LineItem = namedtuple("LineItem", "name statement kind unit tags sign note")
 
 # inputs is a tuple of (line-item name, sign) pairs; formula is the human-readable
 # string that ships with the value as its provenance.
-Derivation = namedtuple("Derivation", "name statement kind unit inputs formula note")
+#
+# every_input_required says what a missing input means. True is the ordinary
+# case and the safe one: Gross Profit without a cost of revenue is unknown, not
+# equal to revenue. False is for a total whose components a filer picks from,
+# where the components present are the whole of the balance and the ones absent
+# are lines the filer does not have. Only a sum may set it, only where every
+# term is a distinct balance-sheet line, and even then at least one term must be
+# present -- a total of nothing stays missing rather than becoming zero.
+Derivation = namedtuple(
+    "Derivation", "name statement kind unit inputs formula note every_input_required")
+Derivation.__new__.__defaults__ = (True,)
 
 
 def _item(name, statement, kind, unit, tags, sign="", note=""):
@@ -233,15 +243,38 @@ _REGISTRY_ITEMS = [
 
     _item("Short-Term Debt", STATEMENT_BS, KIND_INSTANT, UNIT_DOLLAR, [
         "DebtCurrent",
+    ], note="One tag, because only one tag means this row. DebtCurrent is a filer's whole "
+            "current debt balance; every other candidate is a component of it, and a "
+            "chain picks one component where the row needs them all added. Not one of the "
+            "five committed fixtures tags DebtCurrent, so for all of them this row is the "
+            "sum of its parts: see DERIVATIONS['Short-Term Debt']."),
+
+    # The three components of Short-Term Debt. Registry items in their own right
+    # so each carries its own tag, filed date and accession into the derived
+    # value's provenance, rather than the sum being arithmetic on raw tags a
+    # reader cannot trace.
+    _item("Current Maturities of Long-Term Debt", STATEMENT_BS, KIND_INSTANT, UNIT_DOLLAR, [
         "LongTermDebtCurrent",
+        "LongTermDebtAndCapitalLeaseObligationsCurrent",
+    ], note="The current half of the long-term debt balance, and the mirror of the "
+            "Long-Term Debt chain: a filer presenting debt and finance leases as one "
+            "caption splits it across the second tag of each. Honeywell and Kroger both "
+            "do."),
+
+    _item("Commercial Paper", STATEMENT_BS, KIND_INSTANT, UNIT_DOLLAR, [
+        "CommercialPaper",
+    ], note="OtherShortTermBorrowings is deliberately not a fallback here or under "
+            "Short-Term Borrowings. Apple tags both for 2019-09-28 and both hold the same "
+            "5,980 million, so it is an alias for this line rather than a second balance, "
+            "and reading it as a separate term would double-count the whole of it."),
+
+    _item("Short-Term Borrowings", STATEMENT_BS, KIND_INSTANT, UNIT_DOLLAR, [
         "ShortTermBorrowings",
-    ], note="DebtCurrent is the whole current debt balance. The fallbacks are components "
-            "of it: current maturities of long-term debt, and short-term borrowings. A "
-            "filer resolving through either fallback reports less than all current debt. "
-            "Apple is such a filer. It tags no DebtCurrent, so this row falls through to "
-            "LongTermDebtCurrent and misses the commercial paper it carries alongside "
-            "(5,985 million in FY2023). Closing that gap needs a summed derivation rather "
-            "than a chain edit, which is a Session 4 decision."),
+    ], note="Borrowings that are short-term by origin rather than by maturity: bank "
+            "lines, overdrafts, and for some filers the commercial paper too. Honeywell "
+            "puts both in it and says so on the face of the balance sheet, where the line "
+            "reads \"Commercial paper and other short-term borrowings\"; it tags no "
+            "CommercialPaper instant, so the two terms cannot overlap for that filer."),
 
     _item("Long-Term Debt", STATEMENT_BS, KIND_INSTANT, UNIT_DOLLAR, [
         "LongTermDebtNoncurrent",
@@ -342,8 +375,28 @@ DERIVATIONS = {
         note="The row the old extractor labeled Total Debt was one of these two, never "
              "the sum. Both components are required: a filer reporting only long-term "
              "debt gets no Total Debt, because a missing short-term balance is unknown, "
-             "not zero. Watch the Long-Term Debt note: a filer resolving that row "
-             "through LongTermDebt may already include its current maturities here.",
+             "not zero. JPMorgan is the case, and gets no row. Long-Term Debt is strictly "
+             "non-current except through its last fallback, and Short-Term Debt is the "
+             "current side, so the two do not overlap; the exception is named in the "
+             "Long-Term Debt note and no committed fixture reaches it.",
+    ),
+    "Short-Term Debt": Derivation(
+        "Short-Term Debt", STATEMENT_BS, KIND_INSTANT, UNIT_DOLLAR,
+        inputs=(("Current Maturities of Long-Term Debt", 1),
+                ("Commercial Paper", 1),
+                ("Short-Term Borrowings", 1)),
+        formula=("Current Maturities of Long-Term Debt + Commercial Paper "
+                 "+ Short-Term Borrowings"),
+        every_input_required=False,
+        note="Three separate lines of a current-liabilities section, added. A filer "
+             "carries the ones it has: Apple's FY2023 balance sheet shows term debt and "
+             "commercial paper and no other short-term borrowings, Honeywell shows "
+             "current maturities and one combined borrowings line, Kroger shows current "
+             "maturities alone. So the terms are optional, and the formula that ships "
+             "with each value names only the ones that were there. At least one must be, "
+             "or the row stays missing. This is what a chain could not do: a chain picks "
+             "one component and calls it the total, which understated Apple by exactly "
+             "the 5,985 million of commercial paper it left out.",
     ),
     "EBITDA": Derivation(
         "EBITDA", STATEMENT_IS, KIND_FLOW, UNIT_DOLLAR,
@@ -374,32 +427,73 @@ DERIVATIONS = {
 DA_COMPONENT_TAGS = ("Depreciation", "AmortizationOfIntangibleAssets")
 
 
+def inputs_used(name, values):
+    """Which of a rule's inputs are present in *values*, in formula order.
+
+    Empty when the rule cannot be applied at all: any input missing from a rule
+    that requires them all, or every input missing from a rule that does not.
+    """
+    rule = DERIVATIONS[name]
+    used = []
+    for input_name, _sign in rule.inputs:
+        if values.get(input_name) is None:
+            if rule.every_input_required:
+                return []
+        else:
+            used.append(input_name)
+    return used
+
+
 def derive(name, values):
     """Apply a derivation rule to a dict of already-resolved input values.
 
     values maps input name to a number or None. Returns the derived number, or
-    None when any input is missing. Missing inputs never become zero: a value
-    Edgardly cannot compute is reported as absent, never guessed.
+    None when the rule cannot be applied. Missing inputs never become zero: a
+    value Edgardly cannot compute is reported as absent, never guessed. For the
+    one rule whose terms are optional, an absent term is a line the filer's
+    balance sheet does not carry rather than a number nobody knows, which is
+    why it may be left out of the sum instead of stopping it.
 
     Raises KeyError for a name with no derivation rule.
     """
     rule = DERIVATIONS[name]
-    total = 0
-    for input_name, sign in rule.inputs:
-        value = values.get(input_name)
-        if value is None:
-            return None
-        total += sign * value
-    return total
+    used = inputs_used(name, values)
+    if not used:
+        return None
+    signs = dict(rule.inputs)
+    return sum(signs[input_name] * values[input_name] for input_name in used)
+
+
+def formula_for(name, values):
+    """The formula string to ship with a derived value, naming the terms used.
+
+    Identical to the rule's own formula whenever every term was present, which
+    is every rule but one. Where terms are optional, the string has to describe
+    the arithmetic that actually happened: "Current Maturities of Long-Term Debt
+    + Commercial Paper" is checkable, and the full three-term formula would be a
+    claim about a line the filer does not report.
+    """
+    rule = DERIVATIONS[name]
+    used = inputs_used(name, values)
+    if not used or len(used) == len(rule.inputs):
+        return rule.formula
+    signs = dict(rule.inputs)
+    parts = []
+    for input_name in used:
+        joiner = "" if not parts else (" + " if signs[input_name] > 0 else " - ")
+        parts.append("{}{}".format(joiner, input_name))
+    return "".join(parts)
 
 
 # ---------------------------------------------------------------------------
 # Extraction set
 #
-# The 14 items the single-company table, the CSV, and both Excel exports have
-# always shown, in the order they are displayed. TAG_MAP is built from the
-# registry so the chains cannot drift apart, and keeps the shape callers expect:
-# a plain dict of canonical name to an ordered list of us-gaap tags.
+# The items the single-company table, the CSV, and both Excel exports show, in
+# the order they are displayed. TAG_MAP is the subset of them that a tag
+# reports, built from the registry so the chains cannot drift apart, and keeps
+# the shape callers expect: a plain dict of canonical name to an ordered list of
+# us-gaap tags. Total Debt is displayed and is in no chain, because no filer
+# reports it; it is arithmetic, and the only row here that always is.
 # ---------------------------------------------------------------------------
 
 UI_LINE_ITEMS = (
@@ -417,9 +511,26 @@ UI_LINE_ITEMS = (
     "Total Equity",
     "Cash and Equivalents",
     "Long-Term Debt",
+    "Total Debt",
 )
 
-TAG_MAP = {name: list(REGISTRY[name].tags) for name in UI_LINE_ITEMS}
+TAG_MAP = {name: list(REGISTRY[name].tags) for name in UI_LINE_ITEMS if name in REGISTRY}
+
+# Reported items a displayed derivation needs and no view shows. Both tables
+# extract these alongside the displayed ones, compute with them, and drop them
+# before rendering, so Total Debt can be built from reported values without
+# putting four more rows on a screen that asked for fifteen.
+DERIVATION_INPUT_ITEMS = (
+    "Short-Term Debt",
+    "Current Maturities of Long-Term Debt",
+    "Commercial Paper",
+    "Short-Term Borrowings",
+)
+
+# Displayed rows a table may fill by arithmetic, in the order they must be
+# computed: Short-Term Debt is one of Total Debt's inputs, so it has to exist
+# before Total Debt is attempted.
+DERIVED_UI_ITEMS = ("Gross Profit", "Short-Term Debt", "Total Debt")
 
 
 def tags_for(name):

@@ -1352,7 +1352,14 @@
                 let html = '<div class="tt-row"><b>Derived:</b> ' + xbrlEsc(prov.formula || '') + '</div>';
                 (prov.inputs || []).forEach(input => {
                     html += '<div class="tt-row tt-derived-input">&#8226; ' + xbrlEsc(input.name)
-                          + (input.tag ? ' (' + xbrlEsc(input.tag) + ')' : '') + '</div>';
+                          + (input.tag ? ' (' + xbrlEsc(input.tag) + ')' : '')
+                          + (input.formula ? ' = ' + xbrlEsc(input.formula) : '') + '</div>';
+                    // An input that is itself derived carries its own inputs, and
+                    // those are the reported values a reader can check.
+                    (input.inputs || []).forEach(leaf => {
+                        html += '<div class="tt-row tt-derived-leaf">&#8226; ' + xbrlEsc(leaf.name)
+                              + (leaf.tag ? ' (' + xbrlEsc(leaf.tag) + ')' : '') + '</div>';
+                    });
                 });
                 return html;
             }

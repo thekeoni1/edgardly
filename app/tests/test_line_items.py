@@ -138,15 +138,26 @@ def test_defaults_are_valid_scales():
 # ---------------------------------------------------------------------------
 
 def test_registry_covers_every_item_the_plan_enumerates():
-    """V2_PLAN 1.1: 14 income statement, 16 balance sheet, 8 cash flow."""
+    """V2_PLAN 1.1: 14 income statement, 16 balance sheet, 8 cash flow.
+
+    Three balance-sheet items beyond the plan's list, and they are all one
+    thing: Short-Term Debt is a total of separately tagged current-liability
+    lines, so each of those lines is a registry item of its own. The plan wrote
+    Short-Term Debt as a chain of three tags and expected one of them to be the
+    answer, which is the very thing PROGRESS.md open question 4 was about.
+    """
     by_statement = {}
     for item in line_items.REGISTRY.values():
         by_statement.setdefault(item.statement, []).append(item.name)
 
+    components = ["Current Maturities of Long-Term Debt", "Commercial Paper",
+                  "Short-Term Borrowings"]
+    assert [n for n in by_statement[line_items.STATEMENT_BS] if n in components] == components
+
     assert len(by_statement[line_items.STATEMENT_IS]) == 14
-    assert len(by_statement[line_items.STATEMENT_BS]) == 16
+    assert len(by_statement[line_items.STATEMENT_BS]) == 16 + len(components)
     assert len(by_statement[line_items.STATEMENT_CF]) == 8
-    assert len(line_items.REGISTRY) == 38
+    assert len(line_items.REGISTRY) == 41
 
 
 def test_every_registry_entry_is_well_formed():
@@ -241,15 +252,40 @@ def test_tags_for_reaches_past_the_extraction_set():
 # The extraction set stays where it was
 # ---------------------------------------------------------------------------
 
-def test_tag_map_is_the_fourteen_displayed_items_in_display_order():
-    assert list(line_items.TAG_MAP) == list(line_items.UI_LINE_ITEMS)
-    assert list(line_items.TAG_MAP) == [
+def test_the_displayed_items_are_the_fourteen_reported_ones_plus_total_debt():
+    """Total Debt is displayed and is in no chain, because no filer reports it.
+
+    It is the first row either table has ever shown that is arithmetic in every
+    column for every company. TAG_MAP is the extraction set and so does not
+    carry it: there is nothing to extract.
+    """
+    assert list(line_items.UI_LINE_ITEMS) == [
         "Revenue", "Cost of Revenue", "Gross Profit", "Operating Income", "Net Income",
         "EPS Basic", "EPS Diluted",
         "Shares Outstanding (Basic)", "Shares Outstanding (Diluted)",
         "Total Assets", "Total Liabilities", "Total Equity",
-        "Cash and Equivalents", "Long-Term Debt",
+        "Cash and Equivalents", "Long-Term Debt", "Total Debt",
     ]
+    assert list(line_items.TAG_MAP) == list(line_items.UI_LINE_ITEMS)[:-1]
+    assert "Total Debt" not in line_items.REGISTRY
+
+
+def test_every_derivation_input_resolves_or_is_itself_derived():
+    """A displayed derivation whose input nothing extracts would never fire."""
+    extractable = set(line_items.TAG_MAP) | set(line_items.DERIVATION_INPUT_ITEMS)
+    for name in line_items.DERIVED_UI_ITEMS:
+        for input_name, _sign in line_items.DERIVATIONS[name].inputs:
+            assert input_name in extractable or input_name in line_items.DERIVED_UI_ITEMS, (
+                "{} needs {}, which no view extracts".format(name, input_name))
+
+
+def test_a_derived_input_is_computed_before_whatever_needs_it():
+    """Total Debt is built on Short-Term Debt, so the order is not decorative."""
+    order = list(line_items.DERIVED_UI_ITEMS)
+    for name in order:
+        for input_name, _sign in line_items.DERIVATIONS[name].inputs:
+            if input_name in order:
+                assert order.index(input_name) < order.index(name)
 
 
 def test_tag_map_chains_come_from_the_registry():
@@ -294,6 +330,48 @@ def test_a_missing_input_makes_the_result_missing_never_zero():
     assert line_items.derive("EBITDA", {"Operating Income": 114_301}) is None
 
 
+# ---------------------------------------------------------------------------
+# The one rule whose terms are optional
+# ---------------------------------------------------------------------------
+
+def test_short_term_debt_adds_the_lines_a_filer_has():
+    """Apple's FY2023 case: term debt and commercial paper, nothing else."""
+    values = {"Current Maturities of Long-Term Debt": 9_822, "Commercial Paper": 5_985,
+              "Short-Term Borrowings": None}
+
+    assert line_items.derive("Short-Term Debt", values) == 15_807
+    assert line_items.formula_for("Short-Term Debt", values) == (
+        "Current Maturities of Long-Term Debt + Commercial Paper")
+
+
+def test_short_term_debt_with_every_line_present_keeps_the_full_formula():
+    values = {"Current Maturities of Long-Term Debt": 1_546, "Commercial Paper": 100,
+              "Short-Term Borrowings": 5_893}
+
+    assert line_items.derive("Short-Term Debt", values) == 7_539
+    assert line_items.formula_for("Short-Term Debt", values) == (
+        line_items.DERIVATIONS["Short-Term Debt"].formula)
+
+
+def test_short_term_debt_of_no_lines_at_all_is_missing_rather_than_zero():
+    """The floor under an optional sum: some term has to be there.
+
+    A filer with no current debt lines tagged has not told anyone it has no
+    current debt. Zero would be a claim; missing is the truth.
+    """
+    assert line_items.derive("Short-Term Debt", {}) is None
+    assert line_items.derive("Short-Term Debt", {
+        "Current Maturities of Long-Term Debt": None, "Commercial Paper": None,
+        "Short-Term Borrowings": None}) is None
+
+
+def test_only_a_sum_of_distinct_lines_may_have_optional_terms():
+    """The escape hatch stays shut for every rule but the one it was cut for."""
+    optional = [name for name, rule in line_items.DERIVATIONS.items()
+                if not rule.every_input_required]
+    assert optional == ["Short-Term Debt"]
+
+
 def test_every_derivation_names_its_inputs_in_its_formula():
     for name, rule in line_items.DERIVATIONS.items():
         assert rule.inputs, "{} derives from nothing".format(name)
@@ -309,7 +387,8 @@ def test_derivation_inputs_are_registry_items_or_documented_raw_tags():
         for input_name, _ in rule.inputs:
             if name == "D&A":
                 continue  # its inputs are raw tags; see DA_COMPONENT_TAGS
-            assert input_name in line_items.REGISTRY, (
+            assert (input_name in line_items.REGISTRY
+                    or input_name in line_items.DERIVATIONS), (
                 "{} derives from unknown item {}".format(name, input_name))
 
 

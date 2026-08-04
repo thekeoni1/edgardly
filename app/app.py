@@ -213,17 +213,10 @@ def _detect_share_scale(rows, columns):
     return line_items.DEFAULT_SHARE_SCALE
 
 
-# Items the existing tables may fill by arithmetic when the filer tags no value
-# of its own. Gross Profit is the only one: Revenue minus Cost of Revenue is
-# the definition of the line, and both inputs sit in the same table.
-#
-# Total Debt is deliberately absent, and is absent from the displayed items as
-# well. Its derivation is Short-Term Debt plus Long-Term Debt, and for a filer
-# that tags no DebtCurrent the short-term row is current maturities only, so
-# the sum understates real debt (PROGRESS.md open question 4). Showing a number
-# that is knowingly short is worse than showing none; Session 4 fixes the
-# derivation and then it can surface.
-_DERIVED_UI_ITEMS = ("Gross Profit",)
+# Items the tables may fill by arithmetic when the filer tags no value of its
+# own, in the order they have to be computed. The list lives in the registry so
+# the peer table cannot disagree with this one about what a number is.
+_DERIVED_UI_ITEMS = line_items.DERIVED_UI_ITEMS
 
 
 def _company_scope(cik, facts):
@@ -267,16 +260,41 @@ def _reported_cell(dp, end, fp):
     }
 
 
+def _derivation_input(name, cell):
+    """One entry of a derived value's provenance, describing where it came from.
+
+    A reported input names its tag and its filing. A derived input carries its
+    own formula and its own inputs instead, so a total built on a subtotal can
+    still be checked all the way down to values a filer tagged.
+    """
+    prov = cell.get("provenance") or {}
+    entry = {
+        "name": name,
+        "value": cell.get("value"),
+        "tag": cell.get("tag"),
+        "filed": cell.get("filed"),
+        "accession": prov.get("accession"),
+    }
+    if prov.get("state") == xbrl.PROVENANCE_DERIVED:
+        entry["formula"] = prov.get("formula")
+        entry["inputs"] = prov.get("inputs", [])
+    return entry
+
+
 def _fill_derived_cells(rows, columns):
     """Compute the values the filer left untagged but the table can prove.
 
-    A derived value is arithmetic on reported values and nothing else. Every
-    input must be reported for that same period, in the same unit: a derivation
-    built on another derivation, or on a value from a different period, would
-    be a chain of inference presented as a fact. A period that fails any of
-    those conditions stays missing.
+    A derived value is arithmetic on values from the same period in the same
+    unit, and nothing else. An input must itself be reported, or be a value
+    this function has already derived from reported ones: Total Debt is the
+    sum of a long-term balance a filer tagged and a short-term balance built
+    from the current-liabilities lines it tagged, and there is no way to state
+    that in one step for the filers who report the parts and not the total.
+    Nesting stops there, at one level, and every leaf is reported. A period
+    that fails any of those conditions stays missing.
     """
     by_item = {row["line_item"]: row for row in rows}
+    usable = (xbrl.PROVENANCE_REPORTED, xbrl.PROVENANCE_DERIVED)
 
     for name in _DERIVED_UI_ITEMS:
         rule = line_items.DERIVATIONS.get(name)
@@ -284,8 +302,6 @@ def _fill_derived_cells(rows, columns):
         if rule is None or target is None:
             continue
         sources = [(input_name, by_item.get(input_name)) for input_name, _sign in rule.inputs]
-        if any(row is None for _name, row in sources):
-            continue
 
         for col in columns:
             key = col["key"]
@@ -295,22 +311,25 @@ def _fill_derived_cells(rows, columns):
 
             input_cells = []
             for input_name, row in sources:
-                cell = row["cells"].get(key)
+                cell = (row or {}).get("cells", {}).get(key)
                 prov = (cell or {}).get("provenance") or {}
                 if (cell is None or cell.get("value") is None
-                        or prov.get("state") != xbrl.PROVENANCE_REPORTED):
-                    input_cells = None
-                    break
+                        or prov.get("state") not in usable):
+                    continue
                 input_cells.append((input_name, cell))
-            if not input_cells:
+
+            values = {n: c["value"] for n, c in input_cells}
+            used = line_items.inputs_used(name, values)
+            if not used:
                 continue
+            input_cells = [(n, c) for n, c in input_cells if n in used]
 
             units = {cell.get("unit") for _name, cell in input_cells}
             if len(units) != 1:
                 continue
             unit = units.pop()
 
-            value = line_items.derive(name, {n: c["value"] for n, c in input_cells})
+            value = line_items.derive(name, values)
             if value is None:
                 continue
 
@@ -324,16 +343,63 @@ def _fill_derived_cells(rows, columns):
                 "tag": None,
                 "filed": None,
                 "flags": [],
-                "provenance": xbrl.derived_provenance(rule.formula, [
-                    {
-                        "name": n,
-                        "value": c.get("value"),
-                        "tag": c.get("tag"),
-                        "filed": c.get("filed"),
-                        "accession": (c.get("provenance") or {}).get("accession"),
-                    }
-                    for n, c in input_cells
-                ]),
+                "provenance": xbrl.derived_provenance(
+                    line_items.formula_for(name, values),
+                    [_derivation_input(n, c) for n, c in input_cells]),
+            }
+
+
+def _missing_derivation_inputs(name, rows_by_item, key):
+    """Which of a derived row's inputs had no value for one period."""
+    rule = line_items.DERIVATIONS.get(name)
+    if rule is None:
+        return []
+    absent = []
+    for input_name, _sign in rule.inputs:
+        cell = (rows_by_item.get(input_name) or {}).get("cells", {}).get(key)
+        if cell is None or cell.get("value") is None:
+            absent.append(input_name)
+    return absent
+
+
+def _fill_underivable_cells(rows, columns, cik, pointers, period_type):
+    """Explain a hole in a row that is arithmetic rather than a tag.
+
+    Runs before the derivation-input rows are dropped, because the explanation
+    is which of them was empty. A row like Total Debt has no XBRL tag anywhere
+    and never will, so the ordinary "not tagged in XBRL" message would send a
+    reader hunting for a line that no balance sheet carries. What is actually
+    absent is a component, and naming it is both true and useful: JPMorgan
+    reports short-term borrowings and no long-term debt, and that sentence is
+    the whole story of why the row is blank.
+    """
+    rows_by_item = {row["line_item"]: row for row in rows}
+    derived_only = [name for name in line_items.UI_LINE_ITEMS
+                    if name in line_items.DERIVATIONS and name not in line_items.REGISTRY]
+
+    for name in derived_only:
+        row = rows_by_item.get(name)
+        if row is None:
+            continue
+        for col in columns:
+            key = col["key"]
+            if row["cells"].get(key) is not None:
+                continue
+            label = xbrl.period_label(key, col.get("fp"), period_type)
+            row["cells"][key] = {
+                "value": None,
+                "formatted": None,
+                "unit": None,
+                "start": None,
+                "end": key,
+                "fp": col.get("fp"),
+                "tag": None,
+                "filed": None,
+                "flags": [],
+                "provenance": xbrl.missing_provenance(
+                    name, label, cik, pointers.get(key),
+                    xbrl.FLAG_DERIVATION_UNAVAILABLE,
+                    _missing_derivation_inputs(name, rows_by_item, key)),
             }
 
 
@@ -381,23 +447,41 @@ def _tag_summary(row, columns):
     honestly. Where a row has only one tag this reads exactly as it always did.
     """
     tags = []
+    formulas = []
     for col in columns:
         prov = (row["cells"].get(col["key"]) or {}).get("provenance") or {}
-        if prov.get("state") != xbrl.PROVENANCE_REPORTED:
+        state = prov.get("state")
+        if state == xbrl.PROVENANCE_DERIVED:
+            formula = prov.get("formula")
+            if formula and formula not in formulas:
+                formulas.append(formula)
+            continue
+        if state != xbrl.PROVENANCE_REPORTED:
             continue
         tag = prov.get("tag")
         if tag and tag not in tags:
             tags.append(tag)
-    if not tags:
-        return row.get("tag_used") or ""
-    return " -> ".join(tags)
+    if tags:
+        return " -> ".join(tags)
+    # A row with no tag anywhere is not a row with no source. Total Debt has
+    # none by definition, and a filer that never tags gross profit has none
+    # either; in both cases the arithmetic is what a reader wants named.
+    if formulas:
+        return "derived: {}".format(" -> ".join(formulas))
+    return row.get("tag_used") or ""
 
 
 def _build_xbrl_result(cik, start_year, end_year, period_type):
     facts = xbrl.fetch_company_facts(cik)
     entity = facts.get("entityName", str(cik))
     scope = _company_scope(cik, facts)
-    raw = xbrl.extract_all_line_items(facts)
+    # The displayed reported items, plus the ones only a displayed derivation
+    # needs. The extra four never become rows; they are dropped below, once
+    # Total Debt has been built out of them.
+    extracted = [name for name in line_items.UI_LINE_ITEMS if name in line_items.REGISTRY]
+    extracted += [name for name in line_items.DERIVATION_INPUT_ITEMS
+                  if name not in extracted]
+    raw = xbrl.extract_all_line_items(facts, extracted)
     deduped = xbrl.deduplicate_all_line_items(raw)
     all_flags = xbrl.validate_financials(deduped)
 
@@ -416,9 +500,13 @@ def _build_xbrl_result(cik, start_year, end_year, period_type):
         label = "FY{}".format(yr) if period_type == "annual" else "{} {}".format(fp, yr)
         columns.append({"key": end, "label": label, "fp": fp, "fy": yr})
 
+    # Every displayed item, then the derivation inputs, which are dropped again
+    # below. A displayed item with no chain (Total Debt) starts with no cells
+    # and is filled entirely by _fill_derived_cells.
     rows = []
-    for line_item in xbrl.TAG_MAP:
-        info = deduped[line_item]
+    for line_item in list(line_items.UI_LINE_ITEMS) + [
+            name for name in extracted if name not in line_items.UI_LINE_ITEMS]:
+        info = deduped.get(line_item) or {"data": [], "tag_used": None}
         tag_used = info.get("tag_used")
         item_flags = all_flags.get(line_item, [])
         cells = {}
@@ -437,6 +525,9 @@ def _build_xbrl_result(cik, start_year, end_year, period_type):
     # every remaining hole a pointer. Order matters -- a derivable period is a
     # derived value, not a missing one.
     _fill_derived_cells(rows, columns)
+    _fill_underivable_cells(rows, columns, cik, xbrl.filing_pointers(facts), period_type)
+    rows = [row for row in rows if row["line_item"] in line_items.UI_LINE_ITEMS]
+
     tagged_ends = {
         name: {dp.get("end") for dp in info.get("data", []) if dp.get("value") is not None}
         for name, info in deduped.items()
@@ -1647,12 +1738,16 @@ def _peer_write_xlsx(filepath, comparison_result):
                         note = seam.get("message", "")
 
                 tag = prov.get("tag") or period.get("source_tag") or ""
+                # "not found" is a statement about a search. A derived value was
+                # never looked for under a tag, so it does not get told one was
+                # missing; the Notes column carries its formula instead.
+                no_tag = "— arithmetic" if state == xbrl.PROVENANCE_DERIVED else "— not found"
                 ws2.cell(tag_row, 1, company["name"]).font = BASE_FONT
                 ws2.cell(tag_row, 2, li).font = BASE_FONT
                 ws2.cell(tag_row, 3, period.get("relative_period", "")).font = BASE_FONT
                 ws2.cell(tag_row, 4, state).font = (
                     MISS_FONT if state == xbrl.PROVENANCE_MISSING else BASE_FONT)
-                ws2.cell(tag_row, 5, tag or "— not found").font = (
+                ws2.cell(tag_row, 5, tag or no_tag).font = (
                     TAG_FONT if tag else MISS_FONT)
                 ws2.cell(tag_row, 6, prov.get("filed") or "").font = TAG_FONT
                 ws2.cell(tag_row, 7, prov.get("accession") or "").font = TAG_FONT

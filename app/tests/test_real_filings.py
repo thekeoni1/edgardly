@@ -308,29 +308,46 @@ def test_ebitda_derives_from_real_fy2023_figures(apple_facts):
     assert line_items.derive("EBITDA", values) == (114_301 + 11_519) * MILLION
 
 
-def test_total_debt_sums_both_components_and_still_misses_commercial_paper(apple_facts):
-    """The sum is right; its inputs are only as complete as the filer's tagging.
+def test_total_debt_picks_up_the_commercial_paper_a_chain_left_out(apple_table):
+    """PROGRESS.md open question 4, closed on the filer that raised it.
 
-    Apple's FY2023 balance sheet carries $5,985M of commercial paper, and Apple
-    does not tag DebtCurrent. The Short-Term Debt chain falls through to
-    LongTermDebtCurrent, which is current maturities only, so the derived total
-    is short by exactly the commercial paper. Recorded here rather than papered
-    over: closing the gap needs a summed derivation, not a chain reorder, and
-    that is a Session 4 decision.
+    Apple tags no DebtCurrent, so its short-term debt is not one tag but two
+    balance-sheet lines: term debt of 9,822 million and commercial paper of
+    5,985. A chain picks one and calls it the total, which is how the row came
+    to read 105,103 against a real 111,088. The sum reads 111,088, and the
+    provenance names both lines with the tag and filing each came from.
     """
-    short_term = annual_value(apple_facts, "Short-Term Debt", FY2023_END)
-    long_term = annual_value(apple_facts, "Long-Term Debt", FY2023_END)
-    assert short_term == 9_822 * MILLION
-    assert long_term == 95_281 * MILLION
+    _entity, _columns, rows, _scope = apple_table
+    cell = rows["Total Debt"]["cells"][FY2023_END]
 
-    total = line_items.derive("Total Debt", {
-        "Short-Term Debt": short_term, "Long-Term Debt": long_term,
-    })
-    assert total == short_term + long_term
-    assert total == 105_103 * MILLION
+    assert cell["value"] == 111_088 * MILLION
+    prov = cell["provenance"]
+    assert prov["state"] == "derived"
+    assert prov["formula"] == "Short-Term Debt + Long-Term Debt"
 
-    commercial_paper = 5_985 * MILLION
-    assert total + commercial_paper == 111_088 * MILLION
+    inputs = {entry["name"]: entry for entry in prov["inputs"]}
+    assert inputs["Long-Term Debt"]["value"] == 95_281 * MILLION
+    assert inputs["Long-Term Debt"]["tag"] == "LongTermDebtNoncurrent"
+
+    # The short-term half is itself a sum, and shows its own working.
+    short_term = inputs["Short-Term Debt"]
+    assert short_term["value"] == 15_807 * MILLION
+    assert short_term["formula"] == (
+        "Current Maturities of Long-Term Debt + Commercial Paper")
+    assert {(i["name"], i["value"], i["tag"]) for i in short_term["inputs"]} == {
+        ("Current Maturities of Long-Term Debt", 9_822 * MILLION, "LongTermDebtCurrent"),
+        ("Commercial Paper", 5_985 * MILLION, "CommercialPaper"),
+    }
+
+    # The figure the chain used to produce, which was short by the whole of it.
+    assert cell["value"] - 5_985 * MILLION == 105_103 * MILLION
+
+
+def test_apples_short_term_debt_is_no_longer_a_chain_pick(apple_facts):
+    """One tag left in the chain, and Apple does not use it."""
+    assert list(line_items.tags_for("Short-Term Debt")) == ["DebtCurrent"]
+    assert "DebtCurrent" not in apple_facts["facts"]["us-gaap"]
+    assert annual_value(apple_facts, "Short-Term Debt", FY2023_END) is None
 
 
 # ---------------------------------------------------------------------------
@@ -352,12 +369,17 @@ def apple_table(apple_facts, monkeypatch):
 
 
 def test_every_apple_value_declares_a_state(apple_table):
-    """The whole grid, 14 items by 11 years, with nothing unaccounted for.
+    """The whole grid, 15 items by 11 years, with nothing unaccounted for.
 
-    Every cell is reported. It was 147 of 154 until annual report forms were
-    ranked above every other form: the other seven were balance-sheet instants
-    whose FY label a later 10-Q had overwritten, and reading the label was the
-    only reason they were holes (PROGRESS.md open question 3).
+    The 14 reported rows are reported in every column. They were 147 of 154
+    until annual report forms were ranked above every other form: the other
+    seven were balance-sheet instants whose FY label a later 10-Q had
+    overwritten, and reading the label was the only reason they were holes
+    (PROGRESS.md open question 3).
+
+    The fifteenth row is Total Debt, which no filer tags, so all 11 of its
+    cells are derived. Apple exercises no other derivation: it tags GrossProfit
+    itself in every one of these years.
     """
     _entity, columns, rows, _scope = apple_table
     counts = {}
@@ -369,7 +391,7 @@ def test_every_apple_value_declares_a_state(apple_table):
     assert sum(counts.values()) == len(line_items.UI_LINE_ITEMS) * len(columns)
     assert counts["reported"] == 154
     assert counts.get("missing", 0) == 0
-    assert counts.get("derived", 0) == 0      # Apple tags GrossProfit itself
+    assert counts["derived"] == len(columns)
 
 
 def test_apples_fy2023_revenue_names_the_filing_it_came_from(apple_table):

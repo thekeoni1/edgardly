@@ -27,19 +27,40 @@ SHARE_LINE_ITEMS = line_items.SHARE_LINE_ITEMS
 
 
 # Items this table may fill by arithmetic when the filer tags no value of its
-# own, kept identical to the single-company table's list so the two views can
-# never disagree about what a number is. Total Debt is deliberately not here;
-# see the note in app.py.
-_DERIVED_ITEMS = ("Gross Profit",)
+# own, in the order they have to be computed. Taken from the registry, which is
+# also where the single-company table takes it, so the two views can never
+# disagree about what a number is.
+_DERIVED_ITEMS = line_items.DERIVED_UI_ITEMS
+_UI_LINE_ITEMS = line_items.UI_LINE_ITEMS
+_DERIVATION_INPUT_ITEMS = line_items.DERIVATION_INPUT_ITEMS
+
+
+def _derivation_input(name, period):
+    """One entry of a derived value's provenance, describing where it came from."""
+    prov = period.get("provenance") or {}
+    entry = {
+        "name": name,
+        "value": period.get("value"),
+        "tag": period.get("source_tag"),
+        "filed": prov.get("filed"),
+        "accession": prov.get("accession"),
+    }
+    if prov.get("state") == xbrl.PROVENANCE_DERIVED:
+        entry["formula"] = prov.get("formula")
+        entry["inputs"] = prov.get("inputs", [])
+    return entry
 
 
 def _fill_derived_periods(result_items):
     """Compute the values the filer left untagged but the table can prove.
 
-    Same rule as the single-company path: every input must be reported, for the
-    same period, or the value stays missing. Written as a module-level function
-    because fetch_peer_data's own parameter shadows the line_items module.
+    Same rule as the single-company path: an input must be reported for the
+    same period, or already derived from values that were, and nesting stops
+    at that one level. Written as a module-level function because
+    fetch_peer_data's own parameter shadows the line_items module.
     """
+    usable = (xbrl.PROVENANCE_REPORTED, xbrl.PROVENANCE_DERIVED)
+
     for name in _DERIVED_ITEMS:
         rule = line_items.DERIVATIONS.get(name)
         target = result_items.get(name)
@@ -47,8 +68,6 @@ def _fill_derived_periods(result_items):
             continue
         sources = [(input_name, result_items.get(input_name))
                    for input_name, _sign in rule.inputs]
-        if any(info is None for _name, info in sources):
-            continue
 
         for idx, period in enumerate(target.get("periods", [])):
             if period.get("value") is not None:
@@ -56,34 +75,59 @@ def _fill_derived_periods(result_items):
 
             inputs = []
             for input_name, info in sources:
-                candidates = info.get("periods", [])
+                candidates = (info or {}).get("periods", [])
                 source = candidates[idx] if idx < len(candidates) else None
                 state = (source or {}).get("provenance", {}).get("state")
                 if (source is None or source.get("value") is None
-                        or state != xbrl.PROVENANCE_REPORTED
+                        or state not in usable
                         or source.get("period_end") != period.get("period_end")):
-                    inputs = None
-                    break
+                    continue
                 inputs.append((input_name, source))
-            if not inputs:
-                continue
 
-            value = line_items.derive(name, {n: p["value"] for n, p in inputs})
+            values = {n: p["value"] for n, p in inputs}
+            used = line_items.inputs_used(name, values)
+            if not used:
+                continue
+            inputs = [(n, p) for n, p in inputs if n in used]
+
+            value = line_items.derive(name, values)
             if value is None:
                 continue
 
             period["value"] = value
             period["period_start"] = inputs[0][1].get("period_start")
-            period["provenance"] = xbrl.derived_provenance(rule.formula, [
-                {
-                    "name": n,
-                    "value": p.get("value"),
-                    "tag": p.get("source_tag"),
-                    "filed": (p.get("provenance") or {}).get("filed"),
-                    "accession": (p.get("provenance") or {}).get("accession"),
-                }
-                for n, p in inputs
-            ])
+            period["provenance"] = xbrl.derived_provenance(
+                line_items.formula_for(name, values),
+                [_derivation_input(n, p) for n, p in inputs])
+
+
+def _explain_underivable_periods(result_items, cik, pointers):
+    """Say which component was missing where an arithmetic-only row is blank.
+
+    Runs before the derivation inputs are dropped, for the same reason and with
+    the same message as the single-company path.
+    """
+    derived_only = [name for name in _UI_LINE_ITEMS
+                    if name in line_items.DERIVATIONS and name not in line_items.REGISTRY]
+
+    for name in derived_only:
+        rule = line_items.DERIVATIONS[name]
+        target = result_items.get(name)
+        if target is None:
+            continue
+        for idx, period in enumerate(target.get("periods", [])):
+            if period.get("value") is not None:
+                continue
+            absent = []
+            for input_name, _sign in rule.inputs:
+                candidates = (result_items.get(input_name) or {}).get("periods", [])
+                source = candidates[idx] if idx < len(candidates) else None
+                if source is None or source.get("value") is None:
+                    absent.append(input_name)
+            end = period.get("period_end")
+            period["provenance"] = xbrl.missing_provenance(
+                name, xbrl.period_label(end), cik, pointers.get(end),
+                xbrl.FLAG_DERIVATION_UNAVAILABLE, absent)
 
 
 def fetch_peer_data(cik, line_items, n_periods=5):
@@ -128,12 +172,22 @@ def fetch_peer_data(cik, line_items, n_periods=5):
     facts = xbrl.fetch_company_facts(cik)
     entity = facts.get("entityName", cik)
 
-    raw = xbrl.extract_all_line_items(facts)
+    # What the caller asked for, plus the rest of the displayed set and the
+    # derivation inputs. The extras are computed with and then dropped: the
+    # sanity checks read items a caller asking for two rows would not have
+    # requested, and Total Debt is built from four rows nobody asks for.
+    requested = list(line_items)
+    wanted = requested + [name for name in list(_UI_LINE_ITEMS) + list(_DERIVATION_INPUT_ITEMS)
+                          if name not in requested]
+
+    raw = xbrl.extract_all_line_items(facts, wanted)
     deduped = xbrl.deduplicate_all_line_items(raw)
     all_flags = xbrl.validate_financials(deduped)
 
-    # Collect all confirmed FY end dates for this company.
-    fy_ends = periods.period_ends(deduped, line_items, periods.ANNUAL)
+    # Collect all confirmed FY end dates for this company. Only the requested
+    # items may witness a period: a derivation input is fetched to be added up,
+    # not to put a year on the table that the caller's own items do not show.
+    fy_ends = periods.period_ends(deduped, requested, periods.ANNUAL)
     sorted_ends = sorted(fy_ends, reverse=True)[:n_periods]
 
     # Where to send a reader who wants a value nobody tagged. Built from the
@@ -142,7 +196,7 @@ def fetch_peer_data(cik, line_items, n_periods=5):
     pointers = xbrl.filing_pointers(facts)
 
     result_items = {}
-    for li in line_items:
+    for li in wanted:
         info = deduped.get(li) or {}
         tag_used = info.get("tag_used")
         item_flags = all_flags.get(li, [])
@@ -192,6 +246,9 @@ def fetch_peer_data(cik, line_items, n_periods=5):
         result_items[li] = {"tag_used": tag_used, "periods": item_periods}
 
     _fill_derived_periods(result_items)
+    _explain_underivable_periods(result_items, cik, pointers)
+    result_items = {name: info for name, info in result_items.items()
+                    if name in requested}
 
     return {"name": entity, "cik": cik, "line_items": result_items}
 
@@ -206,7 +263,8 @@ def fetch_peer_comparison(ciks, line_items=None, n_periods=3, progress_callback=
 
     Args:
         ciks:              list of CIK strings or ints
-        line_items:        line items to include; defaults to all TAG_MAP keys
+        line_items:        line items to include; defaults to the displayed set,
+                           which is the reported items plus derived Total Debt
         n_periods:         fiscal years per company, most-recent first
         progress_callback: optional callable(fetched_so_far, total, company_name)
                            called just BEFORE each fetch begins, and once more
@@ -220,7 +278,7 @@ def fetch_peer_comparison(ciks, line_items=None, n_periods=3, progress_callback=
         }
     """
     if line_items is None:
-        line_items = list(xbrl.TAG_MAP.keys())
+        line_items = list(_UI_LINE_ITEMS)
 
     companies = []
     total = len(ciks)

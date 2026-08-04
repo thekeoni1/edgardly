@@ -243,12 +243,14 @@ def test_a_registry_item_outside_tag_map_resolves():
 # What the existing views extract
 # ---------------------------------------------------------------------------
 
-def test_extract_all_line_items_defaults_to_the_displayed_fourteen():
+def test_extract_all_line_items_defaults_to_the_items_a_tag_reports():
+    """TAG_MAP, not the displayed set: Total Debt is displayed and has no tag."""
     payload = facts({"Revenues": [entry("2018-12-31", 120, "2019-02-01")]})
 
     extracted = xbrl.extract_all_line_items(payload)
 
-    assert list(extracted) == list(line_items.UI_LINE_ITEMS)
+    assert list(extracted) == list(line_items.TAG_MAP)
+    assert "Total Debt" not in extracted
     assert extracted["Revenue"]["tag_used"] == "Revenues"
     assert extracted["Net Income"]["data"] == []
 
