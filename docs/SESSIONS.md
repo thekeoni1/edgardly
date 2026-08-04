@@ -1,8 +1,9 @@
 # Edgardly v2 session prompts
 
-Six staggered work sessions covering the pre-Phase-1 fixes, Phase 1, and Phase 2 of
+Seven staggered work sessions covering the pre-Phase-1 fixes, Phase 1, and Phase 2 of
 docs/V2_PLAN.md. Each prompt is self-contained: paste one into a fresh Claude Code session,
-and it loads its own context before doing anything.
+and it loads its own context before doing anything. Session 4 was split into 4A and 4B once
+it was clear how much moved with the period engine; the entry says why.
 
 Rules of use:
 
@@ -100,18 +101,65 @@ Exit criteria: suite green, provenance visible end to end for Apple including pe
 in the Source Tags sheet, refusal messages tested against the new fixtures, PROGRESS.md
 updated.
 
-## Session 4. Unify the period engine and finish Phase 1 (rest of 1.5, plus R5)
+## Session 4A. Unify the period engine (rest of 1.5, plus R5)
 
-Read docs/V2_PLAN.md (Part 3 and Part 8 R5) and PROGRESS.md first.
+Session 4 was one session covering the period engine, the last two fixtures, the chain
+corrections, and the Phase 1 exit review. That is more than one sitting can hold: unifying
+resolution moves numbers for every company, and the comparison that proves it moved them
+correctly has to happen in the same session as the change. So the engine work and the
+validation it needs are 4A, and the chain corrections and the exit review are 4B.
 
-1. Make the single-company path (`_build_xbrl_result` in app/app.py) use the peer path's
-   date-anchored period engine so shadowed 10-K entries are no longer dropped, and extract
-   the shared logic into one module.
-2. Add the remaining acceptance fixtures: Honeywell, CIK 773840, and Kroger, CIK 56873.
-   Validate every registry chain against all fixtures and correct chains as needed (one-line
-   registry edits).
-3. Run the Phase 1 exit review against V2_PLAN's exit criteria and record pass or fail per
+Read docs/V2_PLAN.md (Part 3, Part 8 R5) and PROGRESS.md first, especially open questions 3
+and 6.
+
+0. Amend this Session 4 entry into 4A and 4B entries, in the same file update. Commit
+   separately or with step 1.
+1. Fix resolution ranking per open question 6: annual report forms (10-K, 10-K/A, 20-F and
+   variants) outrank other forms; filing date decides within a rank. Apply identically in
+   resolve_line_item and deduplicate_period. The JPMorgan fixture test asserting 49,600 must
+   now assert 49,552 for all five affected years.
+2. Add the Honeywell fixture (CIK 773840) with scripts/make_fixture.py. Add a test
+   reproducing the shadowing bug before the fix: the 2025-12-31 instant labeled Q2, recent
+   years missing from the single-company path.
+3. Unify the period engine per V2_PLAN and R5: make `_build_xbrl_result` in app/app.py use
+   the peer path's date-anchored logic, extracting the shared engine into one module.
+   Apple's 7 PERIOD_UNRESOLVED holes must resolve to reported values; Honeywell's dropped
+   years must appear; the PERIOD_UNRESOLVED flag stays in the codebase for values that
+   genuinely cannot be date-confirmed.
+4. Compare old versus new resolution across all 14 displayed items on all committed
+   fixtures; record gains, losses, and changed values in PROGRESS.md. Losses and changed
+   values need an explanation each, or they are bugs.
+
+Constraints: no network in tests; never guess values; peer comparison results must not
+change except where a proxy-statement value is corrected to the 10-K figure.
+
+Exit criteria: suite green, Apple single-company table has zero PERIOD_UNRESOLVED holes,
+Honeywell recent years present, JPMorgan FY2023 net income reads 49,552, PROGRESS.md
+updated.
+
+## Session 4B. Chain corrections and the Phase 1 exit review
+
+Read docs/V2_PLAN.md (Part 3) and PROGRESS.md first, including open questions 1 and 4.
+
+1. Add the last acceptance fixture: Kroger, CIK 56873. Verify the CIK against the live
+   ticker lookup before committing. Kroger is in the acceptance set to stress 52/53-week
+   fiscal years, so assert what its stub and 53-week periods do to the unified period
+   engine 4A shipped.
+2. Validate every registry chain against all committed fixtures and correct chains as
+   needed (one-line registry edits). A chain that resolves to a tag meaning something other
+   than its label is a wrong answer, not a missing one.
+3. Close open question 4: give Total Debt a summed derivation for filers that skip
+   DebtCurrent, so the row is not short by the commercial paper. The test asserting Apple's
+   105,103 against the real 111,088 changes with it. Only surface Total Debt once the
+   derivation is right.
+4. Settle open question 1 with the Honeywell fixture: state in the registry what the
+   Long-Term Debt row means for a filer resolving through the LongTermDebt fallback, and
+   make sure Total Debt does not double-count current maturities for that filer.
+5. Run the Phase 1 exit review against V2_PLAN's exit criteria and record pass or fail per
    criterion in PROGRESS.md.
+
+Constraints: no network in tests; never guess values; a chain correction that changes a
+displayed number must be checked against the filing it comes from.
 
 Exit criteria: suite green, single-company and peer views agree on periods for all fixture
 companies, Phase 1 declared done in PROGRESS.md.
