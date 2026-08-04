@@ -352,7 +352,13 @@ def apple_table(apple_facts, monkeypatch):
 
 
 def test_every_apple_value_declares_a_state(apple_table):
-    """The whole grid, 14 items by 11 years, with nothing unaccounted for."""
+    """The whole grid, 14 items by 11 years, with nothing unaccounted for.
+
+    Every cell is reported. It was 147 of 154 until annual report forms were
+    ranked above every other form: the other seven were balance-sheet instants
+    whose FY label a later 10-Q had overwritten, and reading the label was the
+    only reason they were holes (PROGRESS.md open question 3).
+    """
     _entity, columns, rows, _scope = apple_table
     counts = {}
     for row in rows.values():
@@ -361,7 +367,8 @@ def test_every_apple_value_declares_a_state(apple_table):
             counts[state] = counts.get(state, 0) + 1
 
     assert sum(counts.values()) == len(line_items.UI_LINE_ITEMS) * len(columns)
-    assert counts["reported"] == 147
+    assert counts["reported"] == 154
+    assert counts.get("missing", 0) == 0
     assert counts.get("derived", 0) == 0      # Apple tags GrossProfit itself
 
 
@@ -406,26 +413,31 @@ def test_the_seam_is_on_the_value_that_crosses_it(apple_table):
     assert revenue[FY2018_END]["flags"] == []
 
 
-def test_an_apple_hole_says_which_filing_to_open(apple_table):
-    """Apple's FY2025 balance sheet instants do not survive the fp filter.
+def test_apples_shadowed_year_end_balance_sheet_comes_back(apple_table, apple_facts):
+    """PROGRESS.md open question 3, on the row it was found on.
 
-    That is PROGRESS.md open question 3, the R5 shadowing a later 10-Q causes,
-    and Session 4 fixes it. Until then the cell says what is true: the value is
-    tagged, this table could not confirm it covers FY2025, and here is the
-    filing to check. It does not say the filer failed to tag it.
+    Apple's FY2025 total assets used to read "tagged, but not for a period
+    Edgardly could confirm as FY2025" and point at the 10-K. Apple had tagged
+    it in that 10-K all along: three later 10-Qs repeat the same instant as
+    their comparative column, the last of them filed nine months after the
+    10-K, and keeping the most recently filed entry meant the row inherited
+    that filing's Q3 label. The value never moved, only the label did.
     """
     _entity, _columns, rows, _scope = apple_table
     cell = rows["Total Assets"]["cells"]["2025-09-27"]
 
-    assert cell["value"] is None
+    assert cell["value"] == 359_241 * MILLION
     prov = cell["provenance"]
-    assert prov["state"] == "missing"
-    assert prov["flag"] == xbrl.FLAG_PERIOD_UNRESOLVED
-    assert prov["statement"] == "balance sheet"
-    assert prov["message"] == (
-        "Tagged in XBRL, but not for a period Edgardly could confirm as FY2025. "
-        "Check the balance sheet of the FY2025 10-K: "
-        "https://www.sec.gov/Archives/edgar/data/320193/000032019325000079/.")
+    assert prov["state"] == "reported"
+    assert prov["form"] == "10-K"
+    assert prov["accession"] == "0000320193-25-000079"
+
+    # The later filings that used to take the row are all still in the payload.
+    shadows = [dp for dp in xbrl._extract_tag_data(apple_facts, "Assets")
+               if dp["end"] == "2025-09-27" and dp["form"] == "10-Q"]
+    assert [dp["fiscal_period"] for dp in shadows] == ["Q1", "Q2", "Q3"]
+    assert all(dp["value"] == cell["value"] for dp in shadows)
+    assert max(dp["filed"] for dp in shadows) > prov["filed"]
 
 
 def test_apple_is_in_scope(apple_table):
@@ -469,10 +481,12 @@ def test_the_source_tags_sheet_shows_apples_tags_period_by_period(apple_table):
         assert sheet[("Revenue", "FY2018")][5] == "0000320193-18-000145"
         assert "switches XBRL tag" in sheet[("Revenue", "FY2019")][6]
 
-        # And the hole says where to look.
-        assert sheet[("Total Assets", "FY2025")][2] == "missing"
-        assert "Check the balance sheet of the FY2025 10-K" in (
-            sheet[("Total Assets", "FY2025")][6])
+        # And the year a 10-Q's label used to cost this row is on the sheet,
+        # named to the 10-K it was reported in.
+        assets = sheet[("Total Assets", "FY2025")]
+        assert assets[2] == "reported"
+        assert assets[3] == "Assets"
+        assert assets[5] == "0000320193-25-000079"
 
 
 def test_reported_apple_values_are_written_in_the_reported_colour(apple_table):

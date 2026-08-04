@@ -81,6 +81,47 @@ def _extract_tag_data(facts_data, tag):
     return result
 
 
+# The forms that are a company's annual report to the SEC: the 10-K and its
+# transition and small-business variants for domestic filers, the 20-F and 40-F
+# for foreign ones, each with or without an /A amendment suffix.
+#
+# These are the filings a line item's annual figure belongs to. Everything else
+# -- a 10-Q, an 8-K earnings release, a DEF 14A proxy -- may repeat an annual
+# number, but repeating it is not reporting it, and a repetition is often
+# rounded or reframed for its own purpose.
+_ANNUAL_REPORT_FORMS = frozenset({
+    "10-K", "10-KT", "10-K405", "10-KSB", "20-F", "40-F",
+})
+
+
+def is_annual_report_form(form):
+    """Return True if a form type is the filer's annual report.
+
+    Amendments count: a 10-K/A is still the annual report, and within the rank
+    its later filing date is exactly what should let a restatement win.
+    """
+    if not form:
+        return False
+    base = str(form).split("/")[0].strip().upper()
+    return base in _ANNUAL_REPORT_FORMS
+
+
+def _resolution_rank(dp):
+    """Order two entries reporting the same period. Higher wins.
+
+    Rank first, filing date second. The rank exists because "most recently
+    filed wins" was written for the 10-K/A case, where a later filing genuinely
+    is better information, and it does not hold outside it: three JPMorgan 10-Ks
+    report FY2023 net income as 49,552 million and a 2026 proxy statement
+    repeats it rounded to 49,600, so on filing date alone the proxy took the row
+    (PROGRESS.md open question 6). Ranking annual reports above everything else
+    settles that without disturbing restatements, which are annual reports too
+    and still win on date within the rank.
+    """
+    return (1 if is_annual_report_form(dp.get("form")) else 0,
+            dp.get("filed") or "")
+
+
 def _primary_tag(data_points):
     """Return the tag behind the most recent annual data point in a series.
 
@@ -103,10 +144,10 @@ def resolve_line_item(facts_data, line_item):
     together from every tag in the item's fallback chain.
 
     Resolution is per period, not per series.  For each reported period, the
-    earliest tag in the chain that reports it wins; within one tag, the most
-    recently filed entry wins (a 10-K/A restating a year beats the original).
-    A period reported only by a later tag in the chain is kept rather than
-    dropped.
+    earliest tag in the chain that reports it wins; within one tag, an annual
+    report beats any other form, and within one form rank the most recently
+    filed entry wins (a 10-K/A restating a year beats the original).  A period
+    reported only by a later tag in the chain is kept rather than dropped.
 
     This replaces winner-takes-all resolution, which picked the single tag whose
     most recent annual data point was newest and used that tag for the entire
@@ -134,7 +175,7 @@ def resolve_line_item(facts_data, line_item):
             if key in winners:
                 continue  # an earlier tag in the chain already reports this period
             incumbent = from_this_tag.get(key)
-            if incumbent is None or (dp.get("filed") or "") > (incumbent.get("filed") or ""):
+            if incumbent is None or _resolution_rank(dp) > _resolution_rank(incumbent):
                 from_this_tag[key] = dp
         winners.update(from_this_tag)
 
@@ -204,9 +245,16 @@ def deduplicate_period(data_points):
     Deduplicate a list of data points for one line item so that each
     distinct reported period appears exactly once.
 
-    When the same period appears more than once (e.g. original 10-K then a
-    10-K/A restatement), the entry with the most recently FILED date is kept
-    and the earlier filing(s) are discarded.
+    When the same period appears more than once, an entry from an annual report
+    beats an entry from any other form, and among entries of the same rank the
+    most recently FILED one is kept (an original 10-K then a 10-K/A restatement:
+    the restatement wins). Earlier and lower-ranked filings are discarded.
+
+    The same ordering resolve_line_item uses, and deliberately so: the two ran
+    on filing date alone and a proxy statement repeating a rounded annual figure
+    took the row from the 10-K that reported it. Two functions applying two
+    orderings to the same question is how a table ends up disagreeing with
+    itself.
 
     Returns a list sorted by end date ascending (oldest period first).
     """
@@ -218,7 +266,7 @@ def deduplicate_period(data_points):
 
     result = []
     for entries in groups.values():
-        best = max(entries, key=lambda dp: dp.get("filed") or "")
+        best = max(entries, key=_resolution_rank)
         result.append(best)
 
     result.sort(key=lambda dp: dp.get("end") or "")

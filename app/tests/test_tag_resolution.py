@@ -6,7 +6,8 @@ It now resolves period by period. These tests pin the rules down on synthetic
 companyfacts payloads, where every input is visible:
 
   - a period reported by more than one tag goes to the earliest tag in the chain
-  - within one tag, the most recently filed entry wins
+  - within one tag, an annual report beats any other form
+  - within one form rank, the most recently filed entry wins
   - a period only a later tag reports is kept, not dropped
   - adjacent years from different tags raise TAG_TRANSITION on the seam
 
@@ -102,6 +103,91 @@ def test_within_one_tag_the_latest_filing_wins():
     data, _tag_used = xbrl.resolve_line_item(payload, "Revenue")
 
     assert values_by_end(data) == {"2016-12-31": 105}
+
+
+def test_an_annual_report_outranks_a_later_filing_that_is_not_one():
+    """A proxy statement repeating a year does not take it from the 10-K.
+
+    The rounding is what gives it away in the wild, but the rule is about the
+    form and not the number: a DEF 14A, an 8-K earnings release, and a 10-Q
+    comparative are all repeating a figure some annual report already reported.
+    """
+    payload = facts({
+        "Revenues": [entry("2016-12-31", 100, "2017-02-01"),
+                     entry("2016-12-31", 100.5, "2019-04-01", form="DEF 14A")],
+    })
+
+    data, _tag_used = xbrl.resolve_line_item(payload, "Revenue")
+
+    assert values_by_end(data) == {"2016-12-31": 100}
+    assert data[0]["form"] == "10-K"
+
+
+def test_the_rank_does_not_reach_across_the_chain():
+    """Chain position still decides first; the rank only breaks ties inside a tag.
+
+    Here the later tag in the chain holds the 10-K and the earlier one holds
+    only a proxy repetition. The earlier tag still wins the period, because
+    which tag means what is a stronger signal than which form said it, and
+    reordering that would undo the stitching Session 2 built.
+    """
+    payload = facts({
+        "Revenues": [entry("2016-12-31", 100.5, "2019-04-01", form="DEF 14A")],
+        "SalesRevenueNet": [entry("2016-12-31", 100, "2017-02-01")],
+    })
+
+    data, _tag_used = xbrl.resolve_line_item(payload, "Revenue")
+
+    assert tags_by_end(data) == {"2016-12-31": "Revenues"}
+
+
+def test_a_20f_counts_as_an_annual_report():
+    """Foreign private issuers file a 20-F, and it is their annual report."""
+    payload = facts({
+        "Revenues": [entry("2016-12-31", 100, "2017-04-01", form="20-F"),
+                     entry("2016-12-31", 100.5, "2018-06-01", form="6-K")],
+    })
+
+    data, _tag_used = xbrl.resolve_line_item(payload, "Revenue")
+
+    assert values_by_end(data) == {"2016-12-31": 100}
+
+
+def test_only_an_annual_report_and_its_amendment_carry_the_rank():
+    forms = {"10-K": True, "10-K/A": True, "10-KT": True, "20-F": True,
+             "20-F/A": True, "40-F": True, "10-Q": False, "8-K": False,
+             "DEF 14A": False, "6-K": False, "S-1": False, "": False,
+             None: False}
+    assert {f: xbrl.is_annual_report_form(f) for f in forms} == forms
+
+
+def test_deduplication_ranks_forms_the_same_way_resolution_does():
+    """Two orderings of the same question is how a table disagrees with itself."""
+    points = [
+        {"unit": "USD", "start": "2016-01-01", "end": "2016-12-31", "value": 100,
+         "form": "10-K", "filed": "2017-02-01"},
+        {"unit": "USD", "start": "2016-01-01", "end": "2016-12-31", "value": 100.5,
+         "form": "DEF 14A", "filed": "2019-04-01"},
+    ]
+
+    kept = xbrl.deduplicate_period(points)
+
+    assert len(kept) == 1
+    assert kept[0]["value"] == 100
+    assert kept[0]["form"] == "10-K"
+
+
+def test_deduplication_still_prefers_the_later_of_two_annual_reports():
+    points = [
+        {"unit": "USD", "start": "2016-01-01", "end": "2016-12-31", "value": 100,
+         "form": "10-K", "filed": "2017-02-01"},
+        {"unit": "USD", "start": "2016-01-01", "end": "2016-12-31", "value": 105,
+         "form": "10-K/A", "filed": "2017-08-01"},
+    ]
+
+    kept = xbrl.deduplicate_period(points)
+
+    assert [dp["value"] for dp in kept] == [105]
 
 
 def test_a_series_is_returned_oldest_first():

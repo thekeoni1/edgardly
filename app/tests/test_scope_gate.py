@@ -258,31 +258,77 @@ def test_a_bank_has_holes_where_a_bank_should_have_holes(bank_facts, monkeypatch
     assert "sec.gov/Archives/edgar/data/19617/" in cell["provenance"]["message"]
 
 
-def test_a_proxy_statement_shadows_the_banks_own_10k_net_income(bank_facts):
-    """A real defect the fixture makes reproducible, left for Session 4.
+# The five years JPMorgan's April 2026 proxy statement repeats, each rounded to
+# the nearest hundred million: what the 10-K reports, and what the proxy says.
+PROXY_SHADOWED_NET_INCOME = {
+    "2021-12-31": (48_334, 48_300),
+    "2022-12-31": (37_676, 37_700),
+    "2023-12-31": (49_552, 49_600),
+    "2024-12-31": (58_471, 58_500),
+    "2025-12-31": (57_048, 57_000),
+}
 
-    Three JPMorgan 10-Ks report FY2023 net income as 49,552 million. A 2026
-    proxy statement repeats the same period rounded to 49,600 million, and the
-    resolver's "most recently filed wins" tie-break hands the row to the proxy.
-    The rule was written for 10-K/A restatements, where later really is better;
-    a DEF 14A is not a restatement.
 
-    Recorded rather than papered over, exactly as the Total Debt gap in
-    open question 4 was. Provenance is what makes it visible: the cell names
-    DEF 14A as its form, so a reader can see where the odd number came from.
-    Fixing it belongs with the period-engine work in Session 4.
+def test_the_proxy_statement_really_does_repeat_these_years(bank_facts):
+    """The defect this fixture was committed to reproduce, stated as data.
+
+    A DEF 14A filed in April 2026 carries five years of net income rounded to
+    the nearest hundred million. Nothing here is about resolution yet: it
+    records that both numbers are genuinely in the payload, so the test below
+    is choosing between them rather than asserting one exists.
     """
-    from_10k = [dp for dp in xbrl._extract_tag_data(bank_facts, "NetIncomeLoss")
-                if dp["end"] == "2023-12-31" and dp["form"] == "10-K"
-                and xbrl._is_annual_period(dp)]
-    assert from_10k and {dp["value"] for dp in from_10k} == {49_552 * MILLION}
+    entries = [dp for dp in xbrl._extract_tag_data(bank_facts, "NetIncomeLoss")
+               if xbrl._is_annual_period(dp)]
+
+    for end, (reported, rounded) in PROXY_SHADOWED_NET_INCOME.items():
+        for_period = [dp for dp in entries if dp["end"] == end]
+        from_10k = {dp["value"] for dp in for_period if dp["form"] == "10-K"}
+        from_proxy = {dp["value"] for dp in for_period if dp["form"] == "DEF 14A"}
+
+        assert from_10k == {reported * MILLION}, end
+        assert from_proxy == {rounded * MILLION}, end
+        # The proxy is the most recently filed of the two, which is what made
+        # it win before annual forms were ranked above everything else.
+        latest = max(for_period, key=lambda dp: dp["filed"])
+        assert latest["form"] == "DEF 14A", end
+
+
+@pytest.mark.parametrize("end,reported", sorted(
+    (end, values[0]) for end, values in PROXY_SHADOWED_NET_INCOME.items()))
+def test_the_banks_own_10k_outranks_the_proxy_that_rounds_it(bank_facts, end, reported):
+    """PROGRESS.md open question 6, closed: the annual report wins the row.
+
+    "Most recently filed wins" was written for 10-K/A restatements, where a
+    later filing really is better information. A proxy statement is not a
+    restatement, and rounding a year to the nearest hundred million is not new
+    information about it. Ranking annual report forms above every other form
+    settles it, and filing date still decides inside the rank.
+    """
+    data, _tag = xbrl.resolve_line_item(bank_facts, "Net Income")
+    winner = next(dp for dp in xbrl.deduplicate_period(data)
+                  if dp["end"] == end and xbrl._is_annual_period(dp))
+
+    assert winner["value"] == reported * MILLION
+    assert winner["form"] == "10-K"
+    assert xbrl.reported_provenance(winner)["form"] == "10-K"
+
+
+def test_a_restatement_still_beats_the_original_within_the_annual_rank(bank_facts):
+    """Ranking forms must not cost the thing the date rule was there for.
+
+    JPMorgan's FY2013 net income was 17,923 million in the 10-K that first
+    reported it and 17,886 in the one filed two years later. Both are annual
+    reports, so the rank is a tie and the later filing still takes the row.
+    """
+    for_2013 = [dp for dp in xbrl._extract_tag_data(bank_facts, "NetIncomeLoss")
+                if dp["end"] == "2013-12-31" and xbrl._is_annual_period(dp)]
+    assert {dp["value"] for dp in for_2013} == {17_923 * MILLION, 17_886 * MILLION}
 
     data, _tag = xbrl.resolve_line_item(bank_facts, "Net Income")
     winner = next(dp for dp in xbrl.deduplicate_period(data)
-                  if dp["end"] == "2023-12-31" and xbrl._is_annual_period(dp))
-    assert winner["value"] == 49_600 * MILLION
-    assert winner["form"] == "DEF 14A"
-    assert xbrl.reported_provenance(winner)["form"] == "DEF 14A"
+                  if dp["end"] == "2013-12-31" and xbrl._is_annual_period(dp))
+    assert winner["value"] == 17_886 * MILLION
+    assert winner["filed"] == "2016-02-23"
 
 
 # ---------------------------------------------------------------------------
