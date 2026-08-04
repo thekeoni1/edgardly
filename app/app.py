@@ -7,6 +7,7 @@ import datetime
 import json
 import edgar_api
 import line_items
+import periods
 import xbrl_extractor as xbrl
 import peer_comparison as pc
 from flask import Flask, render_template, request, jsonify, send_from_directory, Response, stream_with_context
@@ -21,18 +22,6 @@ EXPORTS_DIR = os.path.join(BASE_DIR, "exports")
 os.makedirs(DATA_DIR, exist_ok=True)
 os.makedirs(DOWNLOADS_DIR, exist_ok=True)
 os.makedirs(EXPORTS_DIR, exist_ok=True)
-
-
-def _xbrl_period_days(dp):
-    """Return period duration in days; 999999 for balance-sheet instants (start=None)."""
-    start = dp.get("start")
-    end = dp.get("end")
-    if not start or not end:
-        return 999999
-    try:
-        return (datetime.date.fromisoformat(end) - datetime.date.fromisoformat(start)).days
-    except Exception:
-        return 0
 
 
 def _xbrl_format_value(value, unit):
@@ -411,68 +400,37 @@ def _build_xbrl_result(cik, start_year, end_year, period_type):
     raw = xbrl.extract_all_line_items(facts)
     deduped = xbrl.deduplicate_all_line_items(raw)
     all_flags = xbrl.validate_financials(deduped)
-    target_fps = {"FY"} if period_type == "annual" else {"Q1", "Q2", "Q3", "Q4"}
-    # Filter out partial-year or multi-quarter YTD contexts that EDGAR sometimes
-    # mislabels with the wrong fp tag in 10-K/10-Q comparative tables.
-    def _valid_period(dp):
-        days = _xbrl_period_days(dp)
-        if days == 999999:
-            return True  # balance-sheet instant — always valid
-        if period_type == "annual":
-            return days >= 300
-        else:
-            return 60 <= days <= 130  # single calendar quarter
 
-    all_ends = set()
-    end_fp = {}
-    for line_item, info in deduped.items():
-        for dp in info["data"]:
-            fp = dp.get("fiscal_period")
-            if fp not in target_fps:
-                continue
-            if not _valid_period(dp):
-                continue
-            end = dp.get("end")
-            if not end:
-                continue
-            year = int(end[:4])
-            if start_year <= year <= end_year:
-                all_ends.add(end)
-                if end not in end_fp:
-                    end_fp[end] = fp
-    sorted_ends = sorted(all_ends)
+    # Which periods this filer reports, decided by dates rather than by EDGAR's
+    # fiscal_period label. The same engine the peer table runs on, which is the
+    # point: the two views used to disagree about whether a year existed, and a
+    # balance sheet a later 10-Q had relabeled fell out of this one (V2_PLAN R5).
+    confirmed = periods.period_ends(deduped, xbrl.TAG_MAP, period_type)
+    in_range = {end: fp for end, fp in confirmed.items()
+                if start_year <= int(end[:4]) <= end_year}
+
     columns = []
-    for end in sorted_ends:
-        fp = end_fp.get(end, "")
+    for end in sorted(in_range):
+        fp = in_range[end]
         yr = int(end[:4])
         label = "FY{}".format(yr) if period_type == "annual" else "{} {}".format(fp, yr)
         columns.append({"key": end, "label": label, "fp": fp, "fy": yr})
+
     rows = []
     for line_item in xbrl.TAG_MAP:
         info = deduped[line_item]
         tag_used = info.get("tag_used")
         item_flags = all_flags.get(line_item, [])
         cells = {}
-        cell_days = {}
-        for dp in info["data"]:
-            fp = dp.get("fiscal_period")
-            if fp not in target_fps:
-                continue
-            if not _valid_period(dp):
-                continue
-            end = dp.get("end")
-            if not end or end not in all_ends:
-                continue
-            days = _xbrl_period_days(dp)
-            if end in cells and cell_days[end] >= days:
-                continue  # prefer the longest period for this end date
+        for end, dp in periods.points_by_end(info["data"], in_range, period_type).items():
             period_flags = [
                 {"type": f["flag_type"], "msg": f["message"]}
                 for f in item_flags if f.get("period_end") == end
             ]
-            cells[end] = _reported_cell(dp, end, fp)
+            # The column's label, not the data point's own: the column is the
+            # period, and the point was accepted because it covers that period.
+            cells[end] = _reported_cell(dp, end, in_range[end])
             cells[end]["flags"] = period_flags
-            cell_days[end] = days
         rows.append({"line_item": line_item, "tag_used": tag_used, "cells": cells})
 
     # Provenance: derive what can be proven from reported values, then give

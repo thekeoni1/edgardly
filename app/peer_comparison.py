@@ -8,12 +8,9 @@ Rate limiting is inherited from xbrl_extractor.fetch_company_facts ->
 edgar_api._rate_limited_get (0.1 s/call, proper User-Agent, 429 back-off).
 """
 
-import datetime
 import line_items
+import periods
 import xbrl_extractor as xbrl
-
-# Minimum period length (days) for a flow item to count as a full fiscal year.
-_MIN_ANNUAL_DAYS = 300
 
 # Canonical definitions live in line_items.py, shared with app.py.
 # Re-exported here because callers already reach for pc.DOLLAR_LINE_ITEMS.
@@ -22,79 +19,11 @@ EPS_LINE_ITEMS = line_items.EPS_LINE_ITEMS
 SHARE_LINE_ITEMS = line_items.SHARE_LINE_ITEMS
 
 
-def _is_valid_annual_flow(dp):
-    """
-    Return True if dp is a valid annual data point for a FLOW item
-    (income statement / cash flow -- has both start and end dates).
-
-    Uses period length (300–425 days) instead of the fiscal_period label.
-    Reason: deduplication keeps the most-recently-filed entry per period key,
-    and a later DEF 14A or 10-Q sometimes shadows the 10-K entry, leaving
-    fiscal_period as None or a quarter label even for a full-year period.
-    The period length is a reliable signal: quarterly and YTD entries are
-    < 300 days; multi-year cumulative totals are > 425 days.
-
-    Balance-sheet instants (start is None) must be handled separately; see
-    _collect_fy_ends.
-    """
-    start = dp.get("start")
-    end = dp.get("end")
-    if not start or not end:
-        return False
-    try:
-        days = (
-            datetime.date.fromisoformat(end) - datetime.date.fromisoformat(start)
-        ).days
-        return _MIN_ANNUAL_DAYS <= days <= 425
-    except (ValueError, TypeError):
-        return False
-
-
-def _collect_fy_ends(deduped, line_items):
-    """
-    Return the set of confirmed fiscal-year end dates for a company.
-
-    Two-phase approach:
-      1. Collect dates from FLOW items (income statement) where fiscal_period=="FY"
-         and the period spans at least _MIN_ANNUAL_DAYS.  These are the primary
-         anchors for the company's fiscal year calendar.
-      2. Also collect dates from BALANCE-SHEET instants (start==None) that are
-         explicitly labeled fiscal_period=="FY" in the deduped data.  Some
-         companies' 10-K balance sheet entries are not shadowed by later 10-Q
-         filings and provide additional anchor dates.
-
-    The union is returned.  Downstream code uses this set to accept a balance-sheet
-    instant for any end date in the set, regardless of whether that instant's own
-    fiscal_period field was overwritten by a later 10-Q filing (the "shadowing" bug
-    described below).
-
-    Background: EDGAR's deduplication (most-recently-filed wins) can leave a
-    balance-sheet instant with fiscal_period="Q2" if a later 10-Q includes
-    the same balance-sheet date as a comparison period.  Filtering such instants
-    by fiscal_period=="FY" alone would miss them.  Using the flow-item anchor set
-    as the filter avoids that pitfall.
-    """
-    flow_fy_ends: set = set()
-    bs_fy_ends: set = set()
-
-    for li in line_items:
-        info = deduped.get(li) or {}
-        for dp in info.get("data", []):
-            start = dp.get("start")
-            end = dp.get("end")
-            if not end:
-                continue
-            if start is None:
-                # Balance-sheet instant: only trust the FY label when it is
-                # present (the anchor approach below handles shadowed entries).
-                if dp.get("fiscal_period") == "FY":
-                    bs_fy_ends.add(end)
-            else:
-                # Flow item: use period-length filter (see _is_valid_annual_flow)
-                if _is_valid_annual_flow(dp):
-                    flow_fy_ends.add(end)
-
-    return flow_fy_ends | bs_fy_ends
+# The date-anchored period logic this module used to own now lives in
+# periods.py, unchanged in behavior, because the single-company table needed the
+# same answers and was giving itself different ones (V2_PLAN R5). What is left
+# here is what this view does with the periods: how many, in what order, and
+# with what labels.
 
 
 # Items this table may fill by arithmetic when the filer tags no value of its
@@ -157,28 +86,6 @@ def _fill_derived_periods(result_items):
             ])
 
 
-def _best_dp_for_end(dps, end_date):
-    """
-    Among data points with a specific end date, return the one with the longest
-    period (prefers the full-year entry over any mislabeled partials).
-    For instants (start==None), period length is 0 and the first match is used.
-    """
-    candidates = [dp for dp in dps if dp.get("end") == end_date]
-    if not candidates:
-        return None
-
-    def _days(dp):
-        s, e = dp.get("start"), dp.get("end")
-        if not s or not e:
-            return 0
-        try:
-            return (datetime.date.fromisoformat(e) - datetime.date.fromisoformat(s)).days
-        except (ValueError, TypeError):
-            return 0
-
-    return max(candidates, key=_days)
-
-
 def fetch_peer_data(cik, line_items, n_periods=5):
     """
     Fetch, extract, deduplicate, and validate XBRL data for one company.
@@ -226,7 +133,7 @@ def fetch_peer_data(cik, line_items, n_periods=5):
     all_flags = xbrl.validate_financials(deduped)
 
     # Collect all confirmed FY end dates for this company.
-    fy_ends = _collect_fy_ends(deduped, line_items)
+    fy_ends = periods.period_ends(deduped, line_items, periods.ANNUAL)
     sorted_ends = sorted(fy_ends, reverse=True)[:n_periods]
 
     # Where to send a reader who wants a value nobody tagged. Built from the
@@ -241,37 +148,21 @@ def fetch_peer_data(cik, line_items, n_periods=5):
         item_flags = all_flags.get(li, [])
         all_dps = info.get("data", [])
 
-        # Select valid annual data points for this line item.
-        # Flow items: strict filter (fiscal_period=="FY", period >= 300 days).
-        # Balance-sheet instants: accept any entry whose end date is a confirmed
-        # FY end date -- the flow items' dates serve as the anchor so that instants
-        # overwritten in deduplication (fp!=FY) are still included.
-        annual_dps = []
-        for dp in all_dps:
-            start = dp.get("start")
-            end = dp.get("end")
-            if not end:
-                continue
-            if start is None:
-                # Balance-sheet instant: accept if end is a confirmed FY date
-                if end in fy_ends:
-                    annual_dps.append(dp)
-            else:
-                # Flow item: strict annual filter
-                if _is_valid_annual_flow(dp):
-                    annual_dps.append(dp)
+        # Which data point covers each confirmed fiscal year: flow items by the
+        # span they cover, instants by the date they carry.
+        chosen = periods.points_by_end(all_dps, fy_ends, periods.ANNUAL)
 
-        periods = []
+        item_periods = []
         for i, end in enumerate(sorted_ends):
             rel_label = "FY0" if i == 0 else "FY-{}".format(i)
-            dp = _best_dp_for_end(annual_dps, end)
+            dp = chosen.get(end)
             if dp is None:
                 # A value carrying this end date that did not survive the
                 # annual filter is not an untagged item, and does not get told
                 # it is one.
                 tagged = any(other.get("end") == end and other.get("value") is not None
                              for other in all_dps)
-                periods.append({
+                item_periods.append({
                     "relative_period": rel_label,
                     "period_end": end,
                     "period_start": None,
@@ -288,7 +179,7 @@ def fetch_peer_data(cik, line_items, n_periods=5):
                     for f in item_flags
                     if f.get("period_end") == end
                 ]
-                periods.append({
+                item_periods.append({
                     "relative_period": rel_label,
                     "period_end": end,
                     "period_start": dp.get("start"),
@@ -298,7 +189,7 @@ def fetch_peer_data(cik, line_items, n_periods=5):
                     "provenance": xbrl.reported_provenance(dp),
                 })
 
-        result_items[li] = {"tag_used": tag_used, "periods": periods}
+        result_items[li] = {"tag_used": tag_used, "periods": item_periods}
 
     _fill_derived_periods(result_items)
 
