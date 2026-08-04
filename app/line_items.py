@@ -92,7 +92,14 @@ _REGISTRY_ITEMS = [
         "CostOfGoodsAndServicesSold",
         "CostOfGoodsSold",
         "CostOfServices",
-    ]),
+        "CostOfGoodsAndServiceExcludingDepreciationDepletionAndAmortization",
+    ], note="The last tag excludes depreciation and amortization, which the others "
+            "include, so a filer resolving through it reports a narrower cost line and a "
+            "correspondingly wider gross profit. It is last for that reason and the seam "
+            "is flagged where a row crosses it. Kroger (CIK 56873) is such a filer from "
+            "fiscal 2018 on, and its income statement says so on the face of the "
+            "statement: \"Merchandise costs, including advertising, warehousing, and "
+            "transportation, excluding items shown separately below\"."),
 
     _item("Gross Profit", STATEMENT_IS, KIND_FLOW, UNIT_DOLLAR, [
         "GrossProfit",
@@ -117,9 +124,17 @@ _REGISTRY_ITEMS = [
     _item("Interest Expense", STATEMENT_IS, KIND_FLOW, UNIT_DOLLAR, [
         "InterestExpense",
         "InterestExpenseDebt",
+        "InterestAndDebtExpense",
         "InterestIncomeExpenseNet",
-    ], sign="Positive as an expense, except through InterestIncomeExpenseNet, which is "
-            "a net figure and is positive when interest income exceeds interest expense."),
+        "InterestIncomeExpenseNonoperatingNet",
+    ], sign="Positive as an expense through the first three tags. The last two are net "
+            "figures and carry the filer's own sign: Kroger tags its \"Net interest "
+            "expense\" of 639 million as -639, so a row that crosses into them can change "
+            "sign without the underlying expense changing direction. The seam is flagged.",
+       note="InterestAndDebtExpense bundles other financing charges in with interest, "
+            "which is how Honeywell (CIK 773840) presents the line: \"Interest and other "
+            "financial charges\", 1,344 million for FY2025. It is the filer's own interest "
+            "line and the only one it tags."),
 
     _item("Pretax Income", STATEMENT_IS, KIND_FLOW, UNIT_DOLLAR, [
         "IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest",
@@ -180,7 +195,14 @@ _REGISTRY_ITEMS = [
 
     _item("PP&E Net", STATEMENT_BS, KIND_INSTANT, UNIT_DOLLAR, [
         "PropertyPlantAndEquipmentNet",
-    ]),
+        "PropertyPlantAndEquipmentAndFinanceLeaseRightOfUseAssetAfterAccumulated"
+        "DepreciationAndAmortization",
+    ], note="The second tag is the successor element filers moved to after ASC 842 put "
+            "finance-lease right-of-use assets inside the same balance-sheet caption. It "
+            "is the same line, not a broader one: Honeywell and Kroger each tag both in "
+            "their transition year and the two agree to the dollar (5,471 million for "
+            "Honeywell at 2022-12-31, 21,871 for Kroger at 2020-02-01). Without it both "
+            "filers' rows stop dead at the transition."),
 
     _item("Goodwill", STATEMENT_BS, KIND_INSTANT, UNIT_DOLLAR, [
         "Goodwill",
@@ -198,8 +220,12 @@ _REGISTRY_ITEMS = [
 
     _item("Accounts Payable", STATEMENT_BS, KIND_INSTANT, UNIT_DOLLAR, [
         "AccountsPayableCurrent",
+        "AccountsPayableTradeCurrent",
         "AccountsPayableAndAccruedLiabilitiesCurrent",
-    ], note="The fallback bundles accrued liabilities in with payables."),
+    ], note="AccountsPayableTradeCurrent is the narrower trade-only element; Kroger "
+            "(CIK 56873) used it until fiscal 2023 and the two agree to the dollar in the "
+            "year it tags both (10,381 million at 2024-02-03). The last fallback goes the "
+            "other way and bundles accrued liabilities in with payables."),
 
     _item("Total Current Liabilities", STATEMENT_BS, KIND_INSTANT, UNIT_DOLLAR, [
         "LiabilitiesCurrent",

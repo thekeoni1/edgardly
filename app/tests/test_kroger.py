@@ -269,6 +269,143 @@ def test_the_fourth_quarter_is_not_labelled_the_first(kroger_facts):
 
 
 # ---------------------------------------------------------------------------
+# Chain corrections Kroger forced
+# ---------------------------------------------------------------------------
+
+def test_merchandise_costs_reach_the_cost_of_revenue_row(kroger_table):
+    """Kroger's cost line is tagged with the element that excludes D&A.
+
+    None of CostOfRevenue, CostOfGoodsAndServicesSold, CostOfGoodsSold or
+    CostOfServices carries it after fiscal 2017, so the row -- and the gross
+    profit under it -- was blank for the eight most recent years while the
+    number sat in the payload.
+    """
+    _entity, columns, rows, _scope = kroger_table
+    cells = rows["Cost of Revenue"]["cells"]
+
+    assert cells[FISCAL_2025_END]["value"] == 113_240 * MILLION
+    assert cells[FISCAL_2023_END]["value"] == 116_675 * MILLION
+    assert cells[FISCAL_2025_END]["provenance"]["tag"] == (
+        "CostOfGoodsAndServiceExcludingDepreciationDepletionAndAmortization")
+
+    # Unbroken from the first year Kroger tagged a cost line at all.
+    reported = [col["key"] for col in columns
+                if cells[col["key"]]["provenance"]["state"] == "reported"]
+    assert reported == [col["key"] for col in columns[1:]]
+
+
+def test_gross_profit_is_derived_because_kroger_reports_no_such_line(kroger_table):
+    """Kroger's income statement goes from sales to operating profit.
+
+    There is no gross profit line to tag and Kroger tags none, so every year of
+    this row is arithmetic on two reported values and says so.
+    """
+    _entity, _columns, rows, _scope = kroger_table
+    cell = rows["Gross Profit"]["cells"][FISCAL_2025_END]
+
+    assert cell["value"] == (147_642 - 113_240) * MILLION
+    assert cell["provenance"]["state"] == "derived"
+    assert cell["provenance"]["formula"] == "Revenue - Cost of Revenue"
+
+
+def test_the_cost_row_flags_the_year_it_changes_tag(kroger_table):
+    """The new tag excludes D&A and the old ones do not, so the seam matters."""
+    _entity, _columns, rows, _scope = kroger_table
+    seams = {end: [f for f in cell["flags"] if f["type"] == xbrl.FLAG_TAG_TRANSITION]
+             for end, cell in rows["Cost of Revenue"]["cells"].items()}
+
+    assert seams["2019-02-02"], "the first year only the new tag reports"
+    assert not seams[FISCAL_2025_END]
+
+
+def _instants(facts, name):
+    """Resolve a registry item outside the fourteen displayed ones, by end date."""
+    data, _tag = xbrl.resolve_line_item(facts, name)
+    return {dp["end"]: dp for dp in xbrl.deduplicate_period(data)
+            if dp.get("start") is None}
+
+
+def test_property_survives_the_lease_accounting_change(kroger_facts):
+    """ASC 842 moved finance-lease assets into the PP&E caption and the tag with it.
+
+    PropertyPlantAndEquipmentNet stops at fiscal 2019 for this filer. The
+    successor element continues the same balance-sheet line, and the two agree
+    exactly in the year Kroger tags both.
+    """
+    by_end = _instants(kroger_facts, "PP&E Net")
+
+    assert by_end[FISCAL_2025_END]["value"] == 24_260 * MILLION
+    assert by_end[FISCAL_2025_END]["tag"] == (
+        "PropertyPlantAndEquipmentAndFinanceLeaseRightOfUseAssetAfterAccumulated"
+        "DepreciationAndAmortization")
+
+    overlap = "2020-02-01"
+    assert by_end[overlap]["value"] == 21_871 * MILLION
+    both = {dp["tag"]: dp["value"] for tag in (
+                "PropertyPlantAndEquipmentNet",
+                "PropertyPlantAndEquipmentAndFinanceLeaseRightOfUseAssetAfterAccumulated"
+                "DepreciationAndAmortization")
+            for dp in xbrl._extract_tag_data(kroger_facts, tag)
+            if dp["end"] == overlap and dp["form"] == "10-K"}
+    assert len(both) == 2
+    assert set(both.values()) == {21_871 * MILLION}
+
+
+def test_trade_payables_fill_the_years_before_kroger_switched_element(kroger_facts):
+    by_end = _instants(kroger_facts, "Accounts Payable")
+
+    assert by_end[FISCAL_2025_END]["value"] == 10_488 * MILLION
+    assert by_end[FISCAL_2025_END]["tag"] == "AccountsPayableCurrent"
+    assert by_end["2023-01-28"]["tag"] == "AccountsPayableTradeCurrent"
+
+
+def test_the_net_interest_line_carries_the_filers_own_sign(kroger_table):
+    """A caveat the registry states, exercised rather than asserted.
+
+    Kroger's income statement shows "Net interest expense (639)" and tags it
+    -639. The tags earlier in the chain report an expense as a positive number,
+    so a row that crosses from one to the other changes sign while the company's
+    interest bill goes up. The registry's sign note says so and the seam is
+    flagged; nothing here is corrected, because both numbers are what the filer
+    reported.
+    """
+    _entity, _columns, rows, _scope = kroger_table
+    cells = rows["Interest Expense"]["cells"] if "Interest Expense" in rows else None
+    assert cells is None      # not one of the fourteen displayed items
+
+    facts = json.load(open(FIXTURE_PATH, encoding="utf-8"))
+    data, _tag = xbrl.resolve_line_item(facts, "Interest Expense")
+    by_end = {dp["end"]: dp for dp in xbrl.deduplicate_period(data)
+              if dp.get("start") and xbrl._is_annual_period(dp)}
+
+    assert by_end[FISCAL_2023_END]["value"] == 441 * MILLION
+    assert by_end[FISCAL_2023_END]["tag"] == "InterestExpense"
+    assert by_end[FISCAL_2025_END]["value"] == -639 * MILLION
+    assert by_end[FISCAL_2025_END]["tag"] == "InterestIncomeExpenseNonoperatingNet"
+
+
+def test_what_kroger_leaves_blank_stays_blank(kroger_table, kroger_facts):
+    """Three rows this session deliberately did not fill.
+
+    Kroger tags no operating expense element the registry reads, and no net
+    inventory: its balance sheet carries FIFO inventory and a LIFO reserve as
+    two lines, and netting them is a derivation nobody has written. Filling
+    either from a tag that means something else would be a wrong answer rather
+    than a missing one, so both stay flagged blanks with a pointer.
+    """
+    _entity, columns, rows, _scope = kroger_table
+    assert "FIFOInventoryAmount" not in kroger_facts["facts"]["us-gaap"]
+
+    for name in ("Inventory", "SG&A"):
+        data, _tag = xbrl.resolve_line_item(kroger_facts, name)
+        recent = [dp for dp in data if dp["end"] >= "2020-01-01"]
+        assert recent == [], name
+
+    prov = rows["Total Liabilities"]["cells"][FISCAL_2025_END]["provenance"]
+    assert prov["state"] == "reported"      # Kroger, unlike Honeywell, does tag it
+
+
+# ---------------------------------------------------------------------------
 # The two views agree
 # ---------------------------------------------------------------------------
 

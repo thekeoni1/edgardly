@@ -182,6 +182,45 @@ def test_no_tag_is_claimed_by_two_line_items():
             owner[tag] = name
 
 
+def test_the_registry_says_which_of_its_tags_no_filer_has_ever_exercised():
+    """Every chain runs against every committed fixture, and this is the residue.
+
+    A tag that no fixture reports has never been shown to mean what the
+    registry says it means. That is allowed -- the market is wider than five
+    filers -- but it is a proposal rather than a verified fact, and the list of
+    proposals has to be visible or it quietly becomes a claim.
+
+    Adding a tag to a chain without a fixture behind it fails here until it is
+    named. Adding a fixture that exercises one of these fails here too, which
+    is the direction the list should move in.
+    """
+    import glob
+    import json
+
+    fixture_dir = os.path.join(os.path.dirname(__file__), "fixtures")
+    reported = set()
+    for path in glob.glob(os.path.join(fixture_dir, "cik*.json")):
+        with open(path, encoding="utf-8") as handle:
+            reported |= set(json.load(handle)["facts"].get("us-gaap", {}))
+
+    unexercised = {tag
+                   for item in line_items.REGISTRY.values()
+                   for tag in item.tags
+                   if tag not in reported}
+
+    assert unexercised == {
+        # Filers that gross up sales taxes collected into revenue. None of the
+        # five is a retailer that does; Kroger reports net of them.
+        "RevenueFromContractWithCustomerIncludingAssessedTax",
+        # The bundled payables-and-accruals element. All five split them.
+        "AccountsPayableAndAccruedLiabilitiesCurrent",
+        # The one tag that states a filer's whole current debt balance. Not one
+        # of the five uses it, which is exactly why Short-Term Debt cannot be a
+        # chain pick and has to sum its components.
+        "DebtCurrent",
+    }
+
+
 def test_long_term_debt_entry_records_the_current_maturities_caveat():
     """PROGRESS.md open question 1 lives where the chain is written, not only in a doc."""
     note = line_items.REGISTRY["Long-Term Debt"].note

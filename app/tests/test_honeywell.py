@@ -301,6 +301,49 @@ def test_the_whole_honeywell_debt_row_now_comes_from_one_tag(honeywell_table):
     assert rows["Long-Term Debt"]["tag_summary"] == "LongTermDebtAndCapitalLeaseObligations"
 
 
+def _annual(facts, name):
+    data, _tag = xbrl.resolve_line_item(facts, name)
+    return {dp["end"]: dp for dp in xbrl.deduplicate_period(data)
+            if xbrl._is_annual_period(dp)}
+
+
+def test_the_interest_row_reads_honeywells_own_interest_line(honeywell_facts):
+    """Honeywell tags neither InterestExpense nor InterestExpenseDebt, ever.
+
+    Its income statement calls the line "Interest and other financial charges"
+    and tags it InterestAndDebtExpense, which bundles other financing costs in
+    with interest. Adding that tag to the end of the chain turns nineteen blank
+    years into nineteen reported ones; the registry note says what the number
+    includes, because the label alone would overstate its precision.
+    """
+    us_gaap = honeywell_facts["facts"]["us-gaap"]
+    assert "InterestExpense" not in us_gaap
+    assert "InterestExpenseDebt" not in us_gaap
+
+    by_end = _annual(honeywell_facts, "Interest Expense")
+    assert by_end[FY2025_END]["value"] == 1_344 * MILLION
+    assert by_end[FY2025_END]["tag"] == "InterestAndDebtExpense"
+    assert by_end[FY2024_END]["value"] == 1_048 * MILLION
+
+
+def test_property_survives_the_lease_accounting_change(honeywell_facts):
+    """The same successor element Kroger needs, agreeing to the dollar here too."""
+    by_end = _annual(honeywell_facts, "PP&E Net")
+    successor = ("PropertyPlantAndEquipmentAndFinanceLeaseRightOfUseAssetAfterAccumulated"
+                 "DepreciationAndAmortization")
+
+    assert by_end[FY2025_END]["value"] == 4_629 * MILLION
+    assert by_end[FY2025_END]["tag"] == successor
+
+    overlap = "2022-12-31"
+    values = {dp["tag"]: dp["value"]
+              for tag in ("PropertyPlantAndEquipmentNet", successor)
+              for dp in xbrl._extract_tag_data(honeywell_facts, tag)
+              if dp["end"] == overlap and dp["form"] == "10-K"}
+    assert len(values) == 2
+    assert set(values.values()) == {5_471 * MILLION}
+
+
 def test_gross_profit_is_derived_once_honeywell_stops_tagging_it(honeywell_table):
     """The first fixture where the derivation actually fires on real numbers.
 
