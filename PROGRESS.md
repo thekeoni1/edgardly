@@ -22,6 +22,8 @@ wrong, change it here with a dated note saying why.
 | 2026-08-04 | A derivation may stand on one other derivation, never two | Amends the 2026-08-03 entry above, which said no derivation is ever built on another. Total Debt is the sum of a long-term balance a filer tags and a short-term balance that most filers do not: Apple, Honeywell, Kroger and JPMorgan all report the current debt lines and none of them reports the total. Stating that in one step is impossible, because whether the short-term side is one reported tag or a sum of components is exactly what varies. So an input may be a value already derived from reported values of the same period, and no deeper: every leaf is still a number a filer tagged, the provenance carries the nested formula and the nested inputs, and the tooltip shows the whole descent. The rest of the 2026-08-03 rule is untouched -- same period, same unit, no neighbouring periods. |
 | 2026-08-04 | One derivation may have optional terms, and only for a sum of separately reported lines | Every other rule needs every input: gross profit without a cost of revenue is unknown, not equal to revenue. Short-Term Debt is a sum of three current-liability lines, and a filer carries the ones it has. Apple shows term debt and commercial paper, Honeywell current maturities and one combined borrowings line, Kroger current maturities alone. An absent term there is a line the balance sheet does not have, not a number nobody knows. At least one term must be present, so a total of nothing stays missing rather than becoming zero, and the formula that ships with each value names only the terms that were added. |
 | 2026-08-04 | Periods are decided by dates, never by the fiscal_period label | Both views run on app/periods.py. A flow item covers a period when its span is 10 to 14 months (a year) or 2 to 4 months (a quarter); an instant, having no span, is anchored to a period some measurable item already confirmed. EDGAR stamps fp on the filing rather than the fact, so the label describes whoever filed last, not the fact. Nothing invents a period: a value carrying a confirmed end date that covers something else is reported as PERIOD_UNRESOLVED, not shown. |
+| 2026-08-04 | A fiscal year is named by the filer's convention, not by its own year's focus value | The name comes from dei DocumentFiscalYearFocus, but what is read from it is the offset between a filing's focus and the calendar year of its own year end, with the commonest offset winning across the filer's annual filings. Face value does not work: Kroger tagged focus 2025 on two consecutive years and Honeywell tagged 2020 on its 2021 annual report, so year-by-year reading puts two columns under one name, and no focus value at all exists for the comparative years a company's first XBRL filing carried. An offset of zero is exactly the old end-year rule, which is also the fallback where a payload names no fiscal year. A filer that changes its fiscal year end changes its convention with it and would need more than one number; none in the acceptance set does. |
+| 2026-08-04 | A quarter is numbered by position between two fiscal year ends | How far through its fiscal year the period ends, in quarters, rounded to the nearest one, against year ends the engine has already confirmed. Never from fp, which names the filing: Kroger's fourth quarter is carried only by the next year's first-quarter 10-Q, and Honeywell's third quarter of 2020 sits in a 10-Q that is itself mis-stamped Q2. An unclosed year is measured against the filer's median year length; a quarter with no year end before it keeps the label it arrived with, because there is nothing to number from. Numbering decides the name only: which quarters exist still needs a filing to have called the date a quarter, so no value moves into or out of the view. |
 
 ## Session log
 
@@ -36,6 +38,7 @@ open questions the next session needs to know about.
 | 2026-08-03 | 3 | V2_PLAN 1.3 and 1.4, and the rest of 1.5. Four commits: session prompt amended, fixture generator extended plus the JPMorgan and SAP fixtures, provenance and the scope gate, tooltip element moved. | 0 | Open question 5 closed, 3 partly addressed; 1, 3, and 4 still open; one new one. |
 | 2026-08-04 | 4A | The period engine, V2_PLAN R5. Four commits: Session 4 split into 4A and 4B, annual report forms ranked above every other form, the Honeywell fixture, one shared period engine in app/periods.py. | 0 | Open questions 3 and 6 closed. 1 sharpened by the Honeywell fixture and still open, as is 4; both go to 4B. One new one, 7. |
 | 2026-08-04 | 4B | The chain corrections and the Phase 1 exit review. Six commits: session prompt amended, the Kroger fixture, the Long-Term Debt chain, four more chain corrections, Short-Term Debt summed and Total Debt surfaced, the EPS reconciliation check. Phase 1 declared done. | 1 | Open questions 1, 4 and 7 closed. Two new ones, 8 and 9, both about labels rather than values, both raised by Kroger. |
+| 2026-08-04 | 4C | Period names, an interstitial before Phase 2. Three commits: session prompt added, fiscal years named by the filer's own convention, quarters numbered by position. No fixture regenerated and no value changed anywhere. | 0 | Open questions 8 and 9 closed. One new one, 10, about the calendar year a quarter label carries. |
 
 ### Session 1 detail
 
@@ -402,6 +405,115 @@ silenced and no tolerance was tuned.
 The message changed rather than the threshold. It used to assert "possible share
 count or unit mismatch" and now names the two things it can actually be.
 
+### Session 4C detail
+
+Suite state: 562 tests, all passing, zero xfails. 516 mocked tests run offline in
+about 7 seconds; 46 integration tests hit live EDGAR or start a browser and take
+about 31 seconds. Session 4B left 541, one of which was the strict xfail this
+session was for. The 21 new tests are 14 in the period engine module, 3 more in
+the Honeywell module, 2 more in each of the Kroger and Apple modules.
+
+Two label fixes, no value moved, and no fixture regenerated. The whole of both
+tables was dumped before and after each change and compared cell by cell across
+all five fixtures: every value, every flag, every tag summary, every peer-table
+figure and every provenance record is identical, and the only provenance text
+that moved is the period name inside a missing-value pointer, which now names
+the year its column heading does.
+
+**Where DocumentFiscalYearFocus actually lives.** Step 3 of the session prompt
+allowed for the fact not being in the companyfacts payload, and it is not: the
+XBRL APIs carry only numeric facts, the focus is a gYear, and
+`companyconcept/CIK0000056873/dei/DocumentFiscalYearFocus.json` returns 404. But
+no fixture needed regenerating and make_fixture.py needed no extension, because
+EDGAR stamps each filing's focus on every fact that filing reported, as the `fy`
+field the extraction layer has always copied into `fiscal_year`. The value is the
+same one; only the route to it is different. Recorded because the obvious
+conclusion from the missing dei tag is that a second download is needed, and it
+is not.
+
+**Why the convention is read rather than the value.** The session prompt asked
+for the focus from the earliest annual filing that first reported a period end,
+which is the lookup filing_pointers does. Taken at face value that is wrong for
+Kroger in two ways, both measured:
+
+- Kroger tags focus 2025 on the year ended 1 February 2025 and again on the year
+  ended 31 January 2026. Two columns, one name. Its 10-K for the earlier year is
+  unambiguous in prose -- "within 120 days after the end of the fiscal year 2024"
+  -- so the tag is Kroger's own error, not a convention. The filing for the year
+  ended 3 February 2024 carries the same error.
+- Kroger's first XBRL filing, the 10-K filed 30 March 2010, carries four years:
+  the year ending 30 January 2010 and three comparatives. All four facts carry
+  that filing's focus of 2009. Four columns, one name. Apple, Honeywell and
+  JPMorgan all have the same shape at the start of their histories.
+
+So what is read is the difference between a filing's focus and the calendar year
+of its own year end, and the commonest difference wins. Kroger's nineteen annual
+filings vote 17 to 2 for an offset of one; Honeywell's seventeen vote 16 to 1 for
+zero, its 2021 annual report having tagged 2020; Apple's eighteen and JPMorgan's
+seventeen are unanimous at zero. Every one of Kroger's nineteen columns moves
+back a year, no two share a name, and the headings now read the way the filings
+behind them do. Nothing else moves, because an offset of zero is the old rule
+exactly, which is also the fallback for a payload that names no fiscal year --
+SAP, which has no us-gaap facts at all.
+
+A filing's own year end is the latest period end it reports, with two guards: an
+end date after the filing date was not reported by that filing, and one more than
+400 days before it belongs to an earlier year. Across the four us-gaap fixtures,
+all 71 annual filings resolve to their true fiscal year end.
+
+The repair that looks obvious, naming a fiscal year for the calendar year that
+holds most of it, is now running code in test_periods.py rather than a sentence.
+It agrees with Kroger and disagrees with Nike, whose 31 May year end is named for
+the later year, so it would have fixed one filer by breaking another. No Nike
+fixture exists and the test filer is synthetic; what it pins is why a rule was
+rejected, which no committed fixture can pin.
+
+**Quarter numbering, and the eighteen columns it corrects.** How far through its
+fiscal year a period ends, in quarters, rounded to the nearest one, between two
+confirmed year ends. Kroger's 16-week first quarter ends 30 percent of the way
+through and its second 54 percent, and rounding absorbs both without anything
+having to be told what a quarter measures. A quarter in a year that has not
+closed is measured against the filer's median year length; a quarter with no year
+end before it keeps the label it came with.
+
+| Company | Quarter columns | Renumbered |
+| --- | --- | --- |
+| Kroger | 60 | 17 |
+| Honeywell | 56 | 1 |
+| Apple | 55 | 0 |
+| JPMorgan | 54 | 0 |
+
+Every one of the eighteen is a correction, and each was read:
+
+- **Kroger, five fourth quarters**, ending 29 January 2022 through 31 January
+  2026, which read Q3 or Q1 depending on which filing repeated them last. This is
+  open question 9 itself.
+- **Kroger, twelve first and second quarters**, every one before fiscal 2019.
+  EDGAR numbered them against a calendar year, so the May quarter came back Q2 and
+  in a 53-week year the August quarter came back Q3. From fiscal 2019 the filings
+  number them the way Kroger does and the two already agreed.
+- **Honeywell, the quarter ended 30 September 2020.** Two filings report it. Its
+  own 10-Q, filed that October, calls it Q3. The 10-Q filed a year later carries
+  it as a comparative and is itself stamped Q2, which it is not either, and being
+  later it is the copy resolution keeps. So this is fp being wrong on a filing
+  rather than merely borrowed from one, which no other fixture demonstrates.
+
+Which quarters exist is deliberately untouched. A period still needs a filing to
+have called it a quarter before it is a column, so the column set is identical
+before and after and no value moved into or out of the quarterly view. Numbering
+answers what a period is called, not whether it happened, and widening the
+existence rule is a change with values behind it that this session was not for.
+
+**What the quarter labels still carry, and it is not right.** A quarter column
+keeps the calendar year of its end date, so Kroger's fourth quarter of fiscal
+2025 reads "Q4 2026" beside an annual column for the same period end that reads
+FY2025. Naming a quarter for the fiscal year it belongs to would fix that and
+would also move every Apple quarter, because Apple's first quarter ends in
+December: the quarter ending 28 December 2024 reads "Q1 2024" today and is Apple's
+first quarter of fiscal 2025. The session prompt asked for Apple's and
+Honeywell's quarter labels to be unchanged and they are, so the year component
+was left alone and the question is open question 10 rather than a silent change.
+
 ## Phase 1 exit review
 
 Run 2026-08-04 against the exit criteria in V2_PLAN Part 3. All four pass, so
@@ -421,6 +533,11 @@ and the annual table, which is the one the app shows, is unaffected by the
 second. They matter first at Phase 2's hand-check, where a column heading that
 disagrees with the 10-K's own will cost the checker time, so they should be
 settled before Session 6.
+
+**Both were settled in Session 4C**, before Phase 2 began, and neither moved a
+value. Kroger's annual headings now read the way its own 10-K cover pages do and
+its fourth quarters are numbered Q4. The residue is open question 10, which is
+about the calendar year a quarter label carries rather than about the quarter.
 
 ## Open questions
 
@@ -533,32 +650,71 @@ settled before Session 6.
    needs another registry item and another fixture regeneration for a filer no
    scaffold is generated for.
 
-8. **A fiscal year is named for the calendar year it ends in, and Kroger
-   disagrees.** Edgardly labels a period FY plus the year of its end date, so
-   Kroger's year running 2 February 2025 to 31 January 2026 is FY2026. Kroger
-   calls that year fiscal 2025, and so does its 10-K cover page and every
-   column heading in its statements. The label is the only thing that differs;
-   the column, its value, and its provenance are all correct, and the peer
-   table aligns by relative index so it never sees the name. The obvious
-   repair, naming a fiscal year for the calendar year that holds most of it,
-   is wrong in the other direction: Nike's year ends 31 May and Nike calls it
-   by the later year, which that rule would rename. The reliable source is the
-   filer's own dei DocumentFiscalYearFocus, taken from the filing that first
-   reported the period rather than from whichever filing repeated it last,
-   which is the same "earliest annual filing for this period end" lookup
-   filing_pointers already does. Left for a later session because it is a
-   feature, not a correction, and because Phase 2's hand-check is the first
-   place the name actually matters. test_kroger.py pins the current behavior.
+8. **Closed.** A fiscal year is named the way its filer names it. The source is
+   the dei DocumentFiscalYearFocus this entry named, and it is in the payload
+   after all, though not where the entry expected: the XBRL APIs carry only
+   numeric facts, so the focus is in no dei block and companyconcept returns
+   404 for it, but EDGAR stamps each filing's focus on every fact that filing
+   reported, as the `fy` field the extraction layer already copies. No fixture
+   was regenerated and make_fixture.py needed no change.
 
-9. **Quarter labels still come from EDGAR's fp.** app/periods.py decides
-   whether a period exists from its dates, and the annual view names its
-   columns FY from the period type, so no label reaches an annual column. A
-   quarterly column still takes its name from the fiscal_period of whichever
-   fact confirmed it, and that field names the filing rather than the fact.
-   Kroger shows it plainly: the flow from 9 November 2025 to 31 January 2026
-   is its fourth quarter, the only filing carrying it is the first-quarter
-   10-Q of fiscal 2026, and the column comes out labeled Q1. The period is
-   right and the name is wrong. Fixing it means numbering quarters by their
-   position between two confirmed fiscal year ends, which the engine has the
-   dates to do and does not do yet. test_kroger.py holds a strict xfail
-   asserting the label should read Q4.
+   What is read from it is not the focus of the filing that first reported each
+   period, which this entry proposed and which is wrong twice over for the very
+   filer that raised the question. Kroger tags focus 2025 on both the year ended
+   1 February 2025 and the year ended 31 January 2026, which would put two
+   columns under one name, and its own 10-K prose for the earlier year says
+   fiscal year 2024, so the tag is an error rather than a convention. And the
+   four years Kroger's first XBRL filing carried all take that filing's single
+   focus of 2009, which would put four columns under one name; every filer has
+   that shape at the start of its history.
+
+   So the offset between a filing's focus and the calendar year of its own year
+   end is what is read, and the commonest offset wins. Kroger's nineteen annual
+   filings vote 17 to 2 for one; Honeywell's seventeen vote 16 to 1 for zero,
+   its 2021 annual report having tagged 2020; Apple and JPMorgan are unanimous
+   at zero. Kroger's nineteen columns each move back a year, no two share a
+   name, and no other filer moves at all, because zero is the old end-year rule
+   exactly and is also the fallback where a payload names no fiscal year.
+
+   The rejected repair is now running code rather than prose: test_periods.py
+   builds a synthetic Nike-shaped filer, a 31 May year end named for the later
+   year, and asserts that naming a fiscal year for the calendar year holding
+   most of it would rename it FY2024 while fixing Kroger.
+
+9. **Closed.** Quarters are numbered by how far through their fiscal year they
+   end, in quarters, rounded to the nearest one, between two year ends the
+   engine has already confirmed. Kroger's fourth quarter reads Q4 and the strict
+   xfail in test_kroger.py is a plain passing test.
+
+   Eighteen columns change across the five fixtures and every one is a
+   correction. Kroger gains seventeen: the five fourth quarters this entry
+   named, and twelve first and second quarters from before fiscal 2019 that
+   EDGAR had numbered against a calendar year. Honeywell gains one, the quarter
+   ended 30 September 2020, whose surviving copy sits in a 10-Q that is itself
+   mis-stamped Q2 -- fp being wrong on a filing rather than borrowed from one,
+   which no other fixture shows. Apple's 55 quarter ends and JPMorgan's 54 are
+   unchanged.
+
+   Which quarters exist was deliberately not touched: a period still needs a
+   filing to have called it a quarter before it is a column, so the column set
+   and every value in it are identical before and after. Numbering answers what
+   a period is called, not whether it happened.
+
+10. **A quarter label carries the calendar year of its end date, and for two
+    filers that is the wrong year.** Kroger's fourth quarter of fiscal 2025 ends
+    31 January 2026 and reads "Q4 2026", beside an annual column for the same
+    period end that now reads FY2025. Apple has the mirror problem from the
+    other direction: its first quarter ends in December, so the quarter ending
+    28 December 2024 reads "Q1 2024" and is Apple's first quarter of fiscal
+    2025. Naming a quarter for the fiscal year it belongs to fixes both, and
+    the fiscal-year offset that open question 8 introduced is all the machinery
+    it needs.
+
+    Not done in Session 4C because that session's prompt required Apple's and
+    Honeywell's quarter labels to be unchanged, and this changes every Apple
+    quarter label by a year. It is a decision about a convention rather than a
+    correction of a defect, and it wants stating before it is made: today the
+    annual and quarterly views of the same period end can disagree about the
+    year, which is worse than either convention consistently applied. The
+    annual table, which is the one the app shows and the one Phase 2 hand-checks,
+    is unaffected either way.
