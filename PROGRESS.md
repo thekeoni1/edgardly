@@ -18,6 +18,8 @@ wrong, change it here with a dated note saying why.
 | 2026-08-03 | A derived value needs reported inputs, same period, same unit | Anything else stays missing. No derivation is ever built on another derivation, on a value from a neighbouring period, or across units. This is what keeps "derived" a claim a reader can check rather than a chain of inference. |
 | 2026-08-03 | Missing carries two flags, not one | NOT_TAGGED means the filer never tagged the item for the period. PERIOD_UNRESOLVED means a value with that end date exists but no filter could confirm it covers the period, which is what R5 shadowing produces. Telling a reader "not tagged in XBRL" when the filer did tag it would be a false statement, and the two cases warrant different levels of suspicion. |
 | 2026-08-03 | Filing pointers are read from the payload, never from a resolved series | Resolution keeps one entry per period per tag, the most recently filed. Pointed at that, a missing FY2023 value cites the FY2024 10-K, which reported FY2023 only as a comparative. The pointer needs the filings resolution discarded. |
+| 2026-08-04 | An annual report outranks every other form for the same period | Amends the 2026-08-03 entry above, which said filing date decides within a tag. Rank decides first: 10-K, 10-KT, 10-K405, 10-KSB, 20-F and 40-F, with or without an /A suffix, beat any other form reporting the same period. Filing date still decides inside the rank, so a 10-K/A restatement still beats the 10-K it amends. A 10-Q comparative, an 8-K earnings release and a DEF 14A proxy repeat an annual figure; repeating it is not reporting it, and the repetition is often rounded or recast. Chain position is untouched and still outranks both. |
+| 2026-08-04 | Periods are decided by dates, never by the fiscal_period label | Both views run on app/periods.py. A flow item covers a period when its span is 10 to 14 months (a year) or 2 to 4 months (a quarter); an instant, having no span, is anchored to a period some measurable item already confirmed. EDGAR stamps fp on the filing rather than the fact, so the label describes whoever filed last, not the fact. Nothing invents a period: a value carrying a confirmed end date that covers something else is reported as PERIOD_UNRESOLVED, not shown. |
 
 ## Session log
 
@@ -30,6 +32,7 @@ open questions the next session needs to know about.
 | 2026-08-03 | 1 | F1 through F5, five commits in the prescribed order. README claims corrected, real SEC User-Agent contact, test suite restored from git history, Total Debt relabeled Long-Term Debt, line-item constants consolidated into app/line_items.py. | 0 | Three, listed below. |
 | 2026-08-03 | 2 | V2_PLAN 1.1, 1.2, part of 1.5, and the frontend half of the Session 1 consolidation. Five commits: session prompt amended, registry built, per-period stitching, fixture generator plus the Apple fixture, classification served to the browser. | 0 | Open question 2 closed; 1 and 3 still open; two new ones. |
 | 2026-08-03 | 3 | V2_PLAN 1.3 and 1.4, and the rest of 1.5. Four commits: session prompt amended, fixture generator extended plus the JPMorgan and SAP fixtures, provenance and the scope gate, tooltip element moved. | 0 | Open question 5 closed, 3 partly addressed; 1, 3, and 4 still open; one new one. |
+| 2026-08-04 | 4A | The period engine, V2_PLAN R5. Four commits: Session 4 split into 4A and 4B, annual report forms ranked above every other form, the Honeywell fixture, one shared period engine in app/periods.py. | 0 | Open questions 3 and 6 closed. 1 sharpened by the Honeywell fixture and still open, as is 4; both go to 4B. One new one, 7. |
 
 ### Session 1 detail
 
@@ -167,33 +170,138 @@ message, and the browser console is clean.
 The first full-suite run of the session hit the cold-Chromium timeout Session 1
 documented; the rerun was clean and every later run has been.
 
+### Session 4A detail
+
+Suite state: 489 tests, all passing, zero xfails. Session 3 left 438. The 51 new
+tests are 20 against the Honeywell fixture, 19 for the period engine, 6 for form
+ranking on synthetic payloads, and 6 more in the scope-gate module.
+
+Two changes, and the surprise is which one did the work. The prompt expected the
+period engine to close the shadowing holes. It was the form ranking that closed
+every one of them, because the shadowing and the proxy statement turn out to be
+the same defect seen from two sides: a later filing that merely repeats a period
+was winning it. Once the annual report wins, the year-end balance sheet keeps its
+own FY label and the fp filter has nothing left to drop.
+
+That does not make the engine optional. It is what V2_PLAN R5 asks for, it is
+what stops the two views drifting apart again, and it reaches a case ranking
+cannot: a fiscal year whose only balance sheet is the comparative column of a
+10-Q has no annual report to prefer. No fixture contains one, so app/tests/
+test_periods.py builds it by hand along with the year-to-date column and the
+multi-year cumulative total that the old "at least 300 days, no ceiling" filter
+would have accepted.
+
+**Old versus new, all 14 displayed items, every committed fixture.** Measured by
+running the same table off each fixture at three commits: before the session,
+after the ranking fix, and after the engine.
+
+| Company | Annual table | Peer table | Quarterly table |
+| --- | --- | --- | --- |
+| Apple | +21 values, 0 lost, 0 changed | unchanged | +165, -7, 0 changed |
+| JPMorgan | +11 values, 0 lost, 0 changed | 5 changed | 0 gained, -6, 0 changed |
+| Honeywell | +19 values, 0 lost, 0 changed | 2 changed | +177, -7, 2 changed |
+| SAP | unchanged (no us-gaap facts) | unchanged | unchanged |
+
+The annual table is the one the app shows, and it gained 51 values and lost
+none. All 51 were blank cells; 50 now come from a 10-K and the 51st is a
+derived Gross Profit. Not one number changed. They cluster where a later filing
+had relabeled a period: Apple's FY2012 income statement, whose last copy is a
+January 2015 8-K carrying no fp at all, and pieces of the year-end balance sheets
+of FY2011, FY2013, FY2017, FY2024 and FY2025, each relabeled by a following 10-Q.
+Honeywell gains its FY2021 income statement and FY2025 balance sheet the same
+way.
+JPMorgan gains five years of net income, which had been dropped from this table
+entirely rather than shown rounded: the proxy statement that won those periods
+carries no FY label, so the row was blank here while the peer table showed the
+rounded figure.
+
+Every loss and every changed value, with its explanation:
+
+- **Quarterly, 20 lost cells across three companies, all in 10 dropped columns.**
+  Each dropped column is a fiscal year end that had appeared in the quarterly
+  view under a quarter label, which is what shadowing produces: Apple's
+  2025-09-27 year end shown as "Q3 2025". Every one of those columns is a column
+  in the annual view, and every lost cell reappears there with the same value,
+  except the two Honeywell debt figures below. A mislabeled column stopped
+  existing; no number was lost.
+- **Peer, JPMorgan net income, 5 years changed.** 48,300 to 48,334 for FY2021,
+  37,700 to 37,676, 49,600 to 49,552, 58,500 to 58,471, and 57,000 to 57,048 for
+  FY2025. The proxy statement's rounding gives way to the figure three 10-Ks
+  report. This is open question 6 and the correction the session was for.
+- **Peer, Honeywell long-term debt, 2 years changed.** 26,826 to 27,265 for
+  FY2024 and 28,687 to 29,046 for FY2025. Not a rounding, and the only change
+  that is not the proxy correction the session prompt allowed for. Both figures
+  are Honeywell's own LongTermDebt tag; the 10-Qs and the 10-K put different
+  numbers in it. The 10-Q's 26,826 is exactly Honeywell's balance sheet, being
+  LongTermDebtAndCapitalLeaseObligations of 25,479 plus the current portion of
+  1,347, and the 10-K's 27,265 is 439 higher. So the row now shows the annual
+  report's figure, which for this filer is neither the non-current balance nor
+  the balance-sheet total. That is open question 1 with a sharper edge, and 4B
+  owns it: the fix is a chain correction, not a resolution change.
+- **Quarterly, Honeywell Q2 2025 EPS, 2 values changed.** Basic 4.92 to 2.46 and
+  diluted 4.90 to 2.45. Between the 10-Q that first reported that quarter and the
+  10-Q filed a year later, Honeywell's weighted average share count for it halves
+  from 637.5 to 318.8 million and the EPS doubles, while net income of 1,570
+  million is identical in both and in the 10-K. So a share-basis change in 2026 is
+  being applied backwards, and the FY2025 10-K predates it. Ranking annual reports
+  first means the row shows the basis the 10-K used until the FY2026 10-K restates
+  the quarter. Both figures describe the same earnings; only the denominator moved.
+
+The last one has a consequence worth naming: the shares row for that quarter has
+no annual-report entry, so it still shows the post-change 318.8 million while the
+EPS row shows the pre-change 2.46, and the two no longer reconcile. The check
+that exists to catch exactly this did not fire, for a reason that has nothing to
+do with this session's changes; see open question 7.
+
+One more thing the comparison caught. Ranking annual reports first, on its own,
+costs the quarterly view 22 cells for Apple and 36 for Honeywell, because a 10-K
+comparative quarter carries the label FY and the quarterly filter wanted a Q. The
+engine restores all of them and adds far more. The two changes are only jointly
+correct, and the commit between them has a quarterly view worse than either end.
+Recorded because the commits are ordered as the session prompt asked, and anyone
+bisecting through that commit should know.
+
+Both views now agree cell for cell on all four fixtures. Before the session they
+disagreed on 21 cells for Apple, 19 for Honeywell and 11 for JPMorgan, which is
+R5 measured rather than asserted; a test in test_periods.py asks every committed
+fixture the same question so it cannot drift back.
+
 ## Open questions
 
-1. **LongTermDebt is not strictly non-current.** Honeywell resolves the Long-Term
-   Debt row through the us-gaap LongTermDebt tag, whose definition can include
-   current maturities, so for that filer the row is slightly broader than its
-   label. Session 2 wrote the caveat into the registry entry itself, where anyone
-   editing the chain will see it, and into the Total Debt derivation note, since
-   summing a LongTermDebt row with Short-Term Debt double-counts the current
-   maturities. The Apple fixture cannot settle it: Apple reports
-   LongTermDebtNoncurrent, so it never exercises the fallback. Still needs the
-   Honeywell fixture in Session 4.
+1. **LongTermDebt is not strictly non-current, and for Honeywell it is not the
+   balance sheet either.** Honeywell resolves the Long-Term Debt row through the
+   us-gaap LongTermDebt tag, whose definition can include current maturities, so
+   for that filer the row is broader than its label. Session 2 wrote the caveat
+   into the registry entry and into the Total Debt derivation note, since summing
+   a LongTermDebt row with Short-Term Debt double-counts the current maturities.
+   The Honeywell fixture, added in Session 4A, settles what the tag holds and
+   makes it worse than expected. For 2024-12-31 Honeywell's 10-Qs tag LongTermDebt
+   as 26,826 million, which is exactly the balance sheet:
+   LongTermDebtAndCapitalLeaseObligations of 25,479 plus a current portion of
+   1,347. The FY2024 10-K tags the same instant as 27,265, another 439 higher.
+   Since Session 4A ranks the annual report first, the row shows 27,265, a figure
+   that is neither the non-current balance nor the balance-sheet total. Honeywell
+   does report LongTermDebtAndCapitalLeaseObligations, which is the non-current
+   line the row claims to be, so this looks like a one-line chain correction.
+   Session 4B owns it, together with open question 4, because the two share the
+   same arithmetic.
 
 2. **Closed.** app/templates/index.html no longer carries its own DOLLAR_ITEMS,
    EPS_ITEMS, SHARE_ITEMS, or ALL_LINE_ITEMS. The homepage injects
    line_items.classification_for_client() and the page builds its sets from that.
    A test reads the template source and fails if a hardcoded list reappears.
 
-3. **R5 shadowing is confirmed live, not theoretical.** Honeywell's 2025-12-31
-   year-end balance sheet instant carries fiscal_period "Q2" because a later 10-Q
-   overwrote the label, so the single-company path drops recent years that the
-   peer path keeps. Session 4 is where this gets fixed; noting it here as
-   confirmation the risk is real and reproducible with CIK 773840. Session 3
-   found the same thing in the Apple fixture: seven of the fourteen displayed
-   rows lose a balance-sheet year to it, including FY2025 total assets. Those
-   cells are no longer silent. They carry the PERIOD_UNRESOLVED flag, which says
-   the value is tagged but could not be confirmed to cover the period, and they
-   point at the filing. That is a description of the bug, not a fix for it.
+3. **Closed.** R5 shadowing is fixed, and it was the same defect as open question
+   6 rather than a separate one. Honeywell's 2025-12-31 balance sheet carried the
+   label "Q2" because the July 2026 10-Q repeated it and won on filing date;
+   ranking annual reports first hands the period back to the 10-K, which labeled
+   it FY, and the relabeling never happens. Apple's seven PERIOD_UNRESOLVED cells
+   are gone the same way, and its table is now 154 reported values out of 154.
+   The period engine in app/periods.py then removed the mechanism rather than
+   just this instance: both views judge a period by dates, so neither can be told
+   a fiscal year is a quarter again. The flag itself stays, for a value that
+   carries a period's end date while covering some other span; test_periods.py
+   holds the case, since no committed fixture has one.
 
 4. **Short-Term Debt understates for filers that skip DebtCurrent.** Apple tags
    no DebtCurrent, so the row falls through to LongTermDebtCurrent, which is
@@ -203,7 +311,9 @@ documented; the rerun was clean and every later run has been.
    figures rather than hiding the gap. Closing it needs a summed derivation
    (current maturities plus commercial paper plus short-term borrowings), not a
    chain reorder, because a chain picks one tag and the components have to add.
-   Decide in Session 4 alongside the other chain corrections. Until then, no view
+   Decide in Session 4B alongside the other chain corrections, and alongside open
+   question 1, whose Honeywell evidence is the other half of the same sum. Until
+   then, no view
    shows Total Debt, so nothing user-facing is wrong today. Session 3 kept it that
    way deliberately and left a test that fails the moment Total Debt appears in a
    payload, so the next session has to fix the derivation before surfacing it.
@@ -215,15 +325,23 @@ documented; the rerun was clean and every later run has been.
    all the CSV can hold, now names every tag the row used in period order rather
    than one standing in for all of them.
 
-6. **A proxy statement outranks the 10-K it restates nothing in.** Three JPMorgan
-   10-Ks report FY2023 net income as 49,552 million. A DEF 14A filed in April 2026
-   repeats the same period rounded to 49,600 million, and because deduplication
-   keeps the most recently filed entry, the proxy wins. Five years of the row are
-   affected the same way. The rule was written for 10-K/A restatements, where a
-   later filing genuinely is better information; a proxy statement is not a
-   restatement. The fix is to rank annual report forms above everything else
-   before falling back to filing date, in both resolve_line_item and
-   deduplicate_period. It was left alone in Session 3 because changing resolution
-   semantics moves numbers for every company and belongs with the period-engine
-   work and the full fixture validation in Session 4. A test in
-   test_scope_gate.py asserts both figures, so the change announces itself.
+6. **Closed.** Annual report forms now outrank every other form for the same
+   period, and filing date decides inside the rank, in both resolve_line_item and
+   deduplicate_period. JPMorgan's five shadowed years read 48,334, 37,676, 49,552,
+   58,471 and 57,048 million, each from a 10-K. The proxy's rounded figures are
+   still in the payload and test_scope_gate.py asserts both, so the rule cannot
+   quietly revert. See the Session 4A detail for everything else the change moved.
+
+7. **The EPS reconciliation check has never fired on real data.** It looks up
+   net income, diluted shares and diluted EPS by _period_key, which is
+   (unit, start, end). Net income is in USD, shares are in shares, and EPS is in
+   USD/shares, so the keys can never match and the check returns nothing for
+   every company. Its tests pass because the helper builds all three points with
+   the same unit. Found in Session 4A while looking for the flag that should have
+   caught Honeywell's Q2 2025 column, where EPS of 2.46 sits beside a share count
+   of 318.8 million and net income of 1,570 million because the EPS figure comes
+   from the FY2025 10-K and the share count from a 10-Q filed after Honeywell
+   halved its shares. Left alone deliberately: fixing it raises new flags on
+   every company, and Session 4A was constrained not to change peer results
+   beyond the proxy correction. The fix is to key the three series on
+   (start, end) and ignore the unit, which is the only thing they can agree on.
