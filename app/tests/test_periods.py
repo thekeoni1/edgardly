@@ -14,6 +14,8 @@ whether the two views now agree, which is the property the whole exercise was
 for.
 """
 
+import collections
+import datetime
 import glob
 import json
 import os
@@ -32,14 +34,21 @@ import xbrl_extractor as xbrl
 FIXTURE_DIR = os.path.join(os.path.dirname(__file__), "fixtures")
 
 
-def entry(start, end, value, filed, fp="FY", form="10-K"):
-    return {"start": start, "end": end, "val": value, "fy": int(end[:4]),
+def entry(start, end, value, filed, fp="FY", form="10-K", fy=None):
+    """One EDGAR fact. fy is the filing's dei DocumentFiscalYearFocus.
+
+    It defaults to the calendar year the period ends in, which is what a
+    calendar-year filer tags and what every test written before fiscal-year
+    naming existed assumed.
+    """
+    return {"start": start, "end": end, "val": value,
+            "fy": int(end[:4]) if fy is None else fy,
             "fp": fp, "form": form, "filed": filed, "accn": "accn-" + filed}
 
 
-def instant(end, value, filed, fp="FY", form="10-K"):
-    return {"end": end, "val": value, "fy": int(end[:4]), "fp": fp,
-            "form": form, "filed": filed, "accn": "accn-" + filed}
+def instant(end, value, filed, fp="FY", form="10-K", fy=None):
+    return {"end": end, "val": value, "fy": int(end[:4]) if fy is None else fy,
+            "fp": fp, "form": form, "filed": filed, "accn": "accn-" + filed}
 
 
 def facts(tags, unit="USD"):
@@ -146,6 +155,154 @@ def test_an_instant_a_later_filing_relabeled_confirms_nothing_by_itself():
 
     assert periods.period_ends(resolved, ["Total Assets"]) == {}
     assert periods.period_ends(resolved, ["Total Assets", "Revenue"]) == {"2024-12-31": "FY"}
+
+
+# ---------------------------------------------------------------------------
+# What a fiscal year is called
+# ---------------------------------------------------------------------------
+
+def calendar_majority_year(start, end):
+    """The repair that looks obvious and is wrong: the year holding most of it.
+
+    Kept as running code rather than as prose, because the whole reason the
+    filer's own label is read instead is that this rule disagrees with two real
+    filers in opposite directions, and a comment cannot be run.
+    """
+    first = datetime.date.fromisoformat(start)
+    last = datetime.date.fromisoformat(end)
+    days = collections.Counter()
+    day = first
+    while day <= last:
+        days[day.year] += 1
+        day += datetime.timedelta(days=1)
+    return days.most_common(1)[0][0]
+
+
+def test_a_calendar_year_filer_is_named_for_the_year_it_ends_in():
+    """Honeywell's and JPMorgan's shape. The offset is zero, so nothing moves."""
+    payload = facts({"Revenues": [
+        entry("2024-01-01", "2024-12-31", 100, "2025-02-14")]})
+
+    assert xbrl.fiscal_year_offset(payload) == 0
+    assert xbrl.period_label("2024-12-31", fy_offset=0) == "FY2024"
+
+
+def test_a_late_january_year_end_takes_the_name_the_filer_uses():
+    """Kroger's shape: the year ending 31 January 2026 is fiscal 2025.
+
+    Here the rejected rule happens to agree, because eleven of the twelve
+    months fall in 2025. The next test is where it does not.
+    """
+    payload = facts({"Revenues": [
+        entry("2025-02-02", "2026-01-31", 100, "2026-03-31", fy=2025)]})
+
+    assert xbrl.fiscal_year_offset(payload) == 1
+    assert xbrl.period_label("2026-01-31", fy_offset=1) == "FY2025"
+    assert calendar_majority_year("2025-02-02", "2026-01-31") == 2025
+
+
+def test_a_may_year_end_named_for_the_later_year_is_left_alone():
+    """Nike's shape, and the reason the calendar-majority rule was rejected.
+
+    Nike's fiscal year runs June to May, so seven of its twelve months fall in
+    the earlier calendar year, and Nike names it for the later one: the year
+    ending 31 May 2025 is fiscal 2025. Naming a fiscal year for the calendar
+    year that holds most of it would call it FY2024, a name Nike has never used
+    for it, and it would do so while fixing Kroger. The filer's own focus says
+    2025, the offset is zero, and the end-year rule was right here all along.
+
+    No Nike fixture exists, so this filer is synthetic; what it pins is the
+    reason a rule was not adopted, which no committed fixture can pin.
+    """
+    payload = facts({"Revenues": [
+        entry("2024-06-01", "2025-05-31", 100, "2025-07-24", fy=2025)]})
+
+    assert xbrl.fiscal_year_offset(payload) == 0
+    assert xbrl.period_label("2025-05-31", fy_offset=0) == "FY2025"
+    assert calendar_majority_year("2024-06-01", "2025-05-31") == 2024
+
+
+def test_one_mis_tagged_year_does_not_rename_the_rest():
+    """The reason the convention is read rather than each year's own focus.
+
+    Kroger tagged focus 2025 on the year ended 1 February 2025 and again on the
+    year ended 31 January 2026, and Honeywell tagged 2020 on its 2021 annual
+    report. Taking each year's value at face value would put two columns under
+    one name. The commonest difference between focus and end year wins, so the
+    two mis-tagged years here are outvoted by the three that agree.
+    """
+    payload = facts({"Revenues": [
+        entry("2021-01-31", "2022-01-29", 100, "2022-03-29", fy=2021),
+        entry("2022-01-30", "2023-01-28", 100, "2023-03-28", fy=2022),
+        entry("2023-01-29", "2024-02-03", 100, "2024-04-02", fy=2024),   # mis-tagged
+        entry("2024-02-04", "2025-02-01", 100, "2025-04-01", fy=2025),   # mis-tagged
+        entry("2025-02-02", "2026-01-31", 100, "2026-03-31", fy=2025),
+    ]})
+
+    assert xbrl.fiscal_year_offset(payload) == 1
+
+
+def test_a_year_no_annual_filing_ever_named_still_gets_the_convention():
+    """A first XBRL filing carries its comparatives, and names none of them.
+
+    All four of these years arrive in one 10-K with one fiscal year focus, so
+    reading a focus per year would put four columns under a single name. The
+    convention reaches years no filing names; the individual values cannot.
+    """
+    payload = facts({"Revenues": [
+        entry("2006-01-29", "2007-02-03", 60, "2010-03-30", fy=2009),
+        entry("2007-02-04", "2008-02-02", 70, "2010-03-30", fy=2009),
+        entry("2008-02-03", "2009-01-31", 80, "2010-03-30", fy=2009),
+        entry("2009-02-01", "2010-01-30", 90, "2010-03-30", fy=2009),
+    ]})
+    offset = xbrl.fiscal_year_offset(payload)
+
+    assert offset == 1
+    assert [xbrl.period_label(end, fy_offset=offset) for end in
+            ("2007-02-03", "2008-02-02", "2009-01-31", "2010-01-30")] == [
+        "FY2006", "FY2007", "FY2008", "FY2009"]
+
+
+def test_only_an_annual_filing_gets_to_name_the_fiscal_year():
+    """A 10-Q's focus is the year it is filed into, not the year it reports.
+
+    Kroger's first-quarter 10-Q for fiscal 2026 carries the previous fourth
+    quarter, and its focus is 2026. Letting it speak would move the whole
+    table by a year.
+    """
+    payload = facts({"Revenues": [
+        entry("2025-02-02", "2026-01-31", 100, "2026-03-31", fy=2025),
+        entry("2025-11-09", "2026-01-31", 25, "2026-06-15", fy=2026,
+              fp="Q1", form="10-Q"),
+    ]})
+
+    assert xbrl.fiscal_year_offset(payload) == 1
+
+
+def test_a_filer_that_names_no_fiscal_year_keeps_the_end_year_rule():
+    """Offset zero is the old rule exactly, so the fallback changes nothing."""
+    unlabeled = {"start": "2024-01-01", "end": "2024-12-31", "val": 100,
+                 "fp": "FY", "form": "10-K", "filed": "2025-02-14", "accn": "a"}
+
+    assert xbrl.fiscal_year_offset(facts({"Revenues": [unlabeled]})) == 0
+    assert xbrl.fiscal_year_offset({}) == 0
+    assert xbrl.fiscal_year_offset(None) == 0
+
+
+def test_a_focus_stamped_on_a_period_the_filing_cannot_have_reported_is_ignored():
+    """The two guards on which end date is a filing's own.
+
+    A period ending after the filing date was not reported by it, and one
+    ending more than a year before it belongs to an earlier year. Without both,
+    an untidy payload can hand a filing the wrong year end and invent an
+    offset out of it.
+    """
+    payload = facts({"Revenues": [
+        entry("2024-01-01", "2024-12-31", 100, "2025-02-14"),
+        entry("2025-01-01", "2025-12-31", 110, "2025-02-14"),      # after the filing
+    ]})
+
+    assert xbrl.fiscal_year_offset(payload) == 0
 
 
 # ---------------------------------------------------------------------------

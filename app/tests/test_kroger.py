@@ -223,27 +223,46 @@ def test_fiscal_2025_per_share_figures_match_the_10k(kroger_table):
     assert rows["Shares Outstanding (Basic)"]["cells"][FISCAL_2025_END]["value"] == 652_000_000
 
 
-def test_the_column_is_named_for_the_calendar_year_the_fiscal_year_ends_in(kroger_table):
-    """A naming divergence worth stating out loud rather than discovering later.
+def test_the_columns_are_named_the_way_krogers_own_cover_pages_name_them(kroger_table):
+    """The year ending 31 January 2026 is fiscal 2025, because Kroger says so.
 
-    Edgardly names a fiscal year for the calendar year its period ends in, so
-    the year ending 31 January 2026 is FY2026 here. Kroger calls that same year
-    fiscal 2025, and so does its 10-K cover page. Neither name is wrong; they
-    are different conventions, and a late-January year end is where they part.
-
-    The obvious repair -- name a fiscal year for the calendar year that holds
-    most of it -- is not obviously right either: it would rename Nike's year
-    ending 31 May 2025, which Nike calls fiscal 2025, to FY2024. Getting this
-    right means reading the filer's own DocumentFiscalYearFocus from the filing
-    that first reported the period, which is a piece of work of its own. See
-    PROGRESS.md open question 8.
+    Edgardly used to name a fiscal year for the calendar year its period ended
+    in, which made this column FY2026 while every heading in the filing behind
+    it read fiscal 2025. The name now comes from the filer's own dei
+    DocumentFiscalYearFocus, reduced to the one-year offset Kroger's calendar
+    implies, so the whole table moves back a year and none of its values move
+    at all.
     """
     _entity, columns, _rows, _scope = kroger_table
     by_end = {col["key"]: col["label"] for col in columns}
 
-    assert by_end[FISCAL_2025_END] == "FY2026"
-    assert by_end[FISCAL_2024_END] == "FY2025"
-    assert by_end[FISCAL_2023_END] == "FY2024"
+    assert by_end[FISCAL_2025_END] == "FY2025"
+    assert by_end[FISCAL_2024_END] == "FY2024"
+    assert by_end[FISCAL_2023_END] == "FY2023"
+
+    # Nineteen years, each named for the one before the year it ends in, and no
+    # two years sharing a name. Reading each year's own focus would have given
+    # the last three of these the names 2023, 2025 and 2025.
+    labels = [col["label"] for col in columns]
+    assert labels == ["FY{}".format(int(col["key"][:4]) - 1) for col in columns]
+    assert len(set(labels)) == len(labels)
+
+
+def test_the_offset_comes_from_krogers_filings_and_survives_its_own_mis_tagging(
+        kroger_facts):
+    """Seventeen of Kroger's nineteen annual filings agree, and two do not.
+
+    The 10-Ks filed in April 2024 and April 2025 both tag a fiscal year focus
+    equal to the calendar year their period ends in, which is not the
+    convention Kroger uses anywhere else and which would have given the years
+    ending 1 February 2025 and 31 January 2026 the same name. The commonest
+    offset wins and both are outvoted.
+    """
+    assert xbrl.fiscal_year_offset(kroger_facts) == 1
+
+    observed = xbrl._annual_report_year_ends(kroger_facts)
+    offsets = [int(end[:4]) - focus for end, _filed, focus in observed.values()]
+    assert sorted(offsets) == [0, 0] + [1] * 17
 
 
 @pytest.mark.xfail(reason="quarter labels still come from EDGAR's fp, which names the "

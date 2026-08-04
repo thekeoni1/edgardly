@@ -854,6 +854,106 @@ def filing_pointers(facts_data):
     return {end: pointer for end, (_key, pointer) in best.items()}
 
 
+# How far after a filer's fiscal year end its annual report can arrive and still
+# be that year's report. The SEC allows 60 to 90 days depending on filer status,
+# and a late or amended filing stretches it further; 400 days is loose enough to
+# admit an amendment filed a year on and tight enough to exclude the next year.
+_ANNUAL_REPORT_LAG_DAYS = 400
+
+
+def _annual_report_year_ends(facts_data):
+    """One (period end, fiscal year focus) pair per annual filing in the payload.
+
+    A filing's own fiscal year end is the latest period end it reports: every
+    other date in a 10-K is a comparative or an interim column, and nothing in
+    a companyfacts payload is dated after the period the filing covers. The two
+    guards keep that true where the payload is untidy -- an end date after the
+    filing date is not a period the filing reported, and an end date more than
+    _ANNUAL_REPORT_LAG_DAYS before it belongs to some earlier year.
+
+    fy is EDGAR's copy of the filing's dei DocumentFiscalYearFocus, the filer's
+    own name for the year. It is not in the facts block -- companyfacts carries
+    only numeric dei facts, and DocumentFiscalYearFocus is a gYear -- but EDGAR
+    stamps it on every fact the filing reported, which is the same value read
+    from a place the fixtures already hold.
+
+    Returns {accession: (period_end, filed, fiscal_year_focus)}.
+    """
+    us_gaap = ((facts_data or {}).get("facts", {}) or {}).get("us-gaap", {}) or {}
+    per_filing = {}
+    for tag_data in us_gaap.values():
+        for entries in (tag_data.get("units", {}) or {}).values():
+            for entry in entries:
+                accn, end = entry.get("accn"), entry.get("end")
+                filed, focus = entry.get("filed"), entry.get("fy")
+                if not (accn and end and filed and focus):
+                    continue
+                if entry.get("fp") != "FY":
+                    continue
+                if not is_annual_report_form(entry.get("form")):
+                    continue
+                if end > filed:
+                    continue
+                try:
+                    lag = (datetime.date.fromisoformat(filed)
+                           - datetime.date.fromisoformat(end)).days
+                except (ValueError, TypeError):
+                    continue
+                if lag > _ANNUAL_REPORT_LAG_DAYS:
+                    continue
+                incumbent = per_filing.get(accn)
+                if incumbent is None or end > incumbent[0]:
+                    per_filing[accn] = (end, filed, int(focus))
+    return per_filing
+
+
+def fiscal_year_offset(facts_data):
+    """How far a filer's own name for a fiscal year sits behind the year it ends in.
+
+    Edgardly used to name every fiscal year for the calendar year its period
+    ended in, which is right for Apple, Honeywell and JPMorgan and wrong for
+    Kroger: the year running 2 February 2025 to 31 January 2026 is FY2026 by
+    that rule and fiscal 2025 on Kroger's own 10-K cover page. The obvious
+    repair, naming a year for the calendar year that holds most of it, is wrong
+    in the other direction -- Nike's year ends 31 May and Nike names it for the
+    later year, which that rule would rename (PROGRESS.md open question 8).
+
+    So the name comes from the filer. Each annual filing carries its own fiscal
+    year focus and its own year end, and the difference between the two is the
+    filer's convention: 0 for a calendar-year filer, 1 for Kroger, 0 again for
+    Nike. The convention is what is returned, not the individual values, for
+    two reasons. It is stable where the values are not: Kroger tagged focus 2025
+    on both the year ended 1 February 2025 and the year ended 31 January 2026,
+    and Honeywell tagged 2020 on its 2021 annual report, so taking each year's
+    own value at face value would put two columns under one name. And it reaches
+    years no annual filing names, which is every year a company's first XBRL
+    filing carried as a comparative.
+
+    The commonest difference wins, and the most recent filing breaks a tie. A
+    filer that changes its fiscal year end changes its convention with it, and
+    this returns the one it used most; no fixture does that, and a filer that
+    does needs more than one number.
+
+    Returns 0 when the payload names no fiscal year at all, which is exactly the
+    end-year rule this replaces.
+    """
+    observed = _annual_report_year_ends(facts_data)
+    if not observed:
+        return 0
+
+    tally = {}
+    for end, filed, focus in observed.values():
+        try:
+            offset = int(end[:4]) - focus
+        except (ValueError, TypeError):
+            continue
+        count, latest = tally.get(offset, (0, ""))
+        tally[offset] = (count + 1, max(latest, filed))
+    if not tally:
+        return 0
+    return max(tally, key=lambda offset: (tally[offset][0], tally[offset][1]))
+
+
 def reported_provenance(dp):
     """Provenance for a value the filer tagged."""
     return {
@@ -925,16 +1025,28 @@ def missing_provenance(line_item, period_label, cik=None, pointer=None,
     }
 
 
-def period_label(period_end, fiscal_period=None, period_type="annual"):
+def period_label(period_end, fiscal_period=None, period_type="annual", fy_offset=0):
     """Name a period the way the tables name it: FY2023, or Q3 2023.
 
-    The year comes from the period end date rather than from EDGAR's fy field,
-    which labels the filing rather than the fact.
+    The year comes from the period end date rather than from the fy stamped on
+    whichever filing reported the fact. fy_offset is the filer's own naming
+    convention, from fiscal_year_offset: Kroger's year ending 31 January 2026
+    is FY2025 because Kroger says so, and Apple's offset is zero so nothing
+    about Apple moves.
+
+    A quarter keeps the calendar year of its end date. Naming it for the fiscal
+    year it belongs to is a separate question, and a bigger one: Apple's first
+    quarter ends in December, so the change would move every Apple quarter
+    label. PROGRESS.md open question 10.
     """
     if not period_end:
         return ""
     year = str(period_end)[:4]
     if period_type == "annual" or not fiscal_period or fiscal_period == "FY":
+        try:
+            year = str(int(year) - fy_offset)
+        except (ValueError, TypeError):
+            pass
         return "FY{}".format(year)
     return "{} {}".format(fiscal_period, year)
 

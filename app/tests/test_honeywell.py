@@ -140,6 +140,27 @@ def test_the_table_runs_through_the_most_recent_fiscal_year(honeywell_table):
     assert labels == ["FY{}".format(year) for year in range(2015, 2026)]
 
 
+def test_honeywells_own_mis_tagged_year_does_not_move_the_table(honeywell_facts,
+                                                                honeywell_table):
+    """A calendar-year filer, and one filing that says otherwise.
+
+    Honeywell's 10-K for the year ended 31 December 2021 tags a fiscal year
+    focus of 2020. Sixteen of its seventeen annual filings tag the year they
+    end in, so the offset is zero and every label is the one the end-year rule
+    already gave. Trusting each year's own focus would have named the 2021
+    column FY2020, against a 10-K cover page that says 2021.
+    """
+    assert xbrl.fiscal_year_offset(honeywell_facts) == 0
+
+    observed = xbrl._annual_report_year_ends(honeywell_facts)
+    odd = {end: focus for end, _filed, focus in observed.values()
+           if int(end[:4]) != focus}
+    assert odd == {"2021-12-31": 2020}
+
+    _entity, columns, _rows, _scope = honeywell_table
+    assert {col["key"]: col["label"] for col in columns}["2021-12-31"] == "FY2021"
+
+
 # Honeywell's FY2025 10-K, in millions, for the year ended 31 December 2025.
 FY2025_10K = {
     "Revenue": 37_442,

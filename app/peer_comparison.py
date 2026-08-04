@@ -101,7 +101,7 @@ def _fill_derived_periods(result_items):
                 [_derivation_input(n, p) for n, p in inputs])
 
 
-def _explain_underivable_periods(result_items, cik, pointers):
+def _explain_underivable_periods(result_items, cik, pointers, fy_offset=0):
     """Say which component was missing where an arithmetic-only row is blank.
 
     Runs before the derivation inputs are dropped, for the same reason and with
@@ -126,8 +126,8 @@ def _explain_underivable_periods(result_items, cik, pointers):
                     absent.append(input_name)
             end = period.get("period_end")
             period["provenance"] = xbrl.missing_provenance(
-                name, xbrl.period_label(end), cik, pointers.get(end),
-                xbrl.FLAG_DERIVATION_UNAVAILABLE, absent)
+                name, xbrl.period_label(end, fy_offset=fy_offset), cik,
+                pointers.get(end), xbrl.FLAG_DERIVATION_UNAVAILABLE, absent)
 
 
 def fetch_peer_data(cik, line_items, n_periods=5):
@@ -195,6 +195,10 @@ def fetch_peer_data(cik, line_items, n_periods=5):
     # filing reported each period last.
     pointers = xbrl.filing_pointers(facts)
 
+    # The filer's own name for a fiscal year, so a pointer in this view names
+    # the same year the single-company table's heading does.
+    fy_offset = xbrl.fiscal_year_offset(facts)
+
     result_items = {}
     for li in wanted:
         info = deduped.get(li) or {}
@@ -224,7 +228,8 @@ def fetch_peer_data(cik, line_items, n_periods=5):
                     "source_tag": None,
                     "flags": [],
                     "provenance": xbrl.missing_provenance(
-                        li, xbrl.period_label(end), cik, pointers.get(end),
+                        li, xbrl.period_label(end, fy_offset=fy_offset), cik,
+                        pointers.get(end),
                         xbrl.FLAG_PERIOD_UNRESOLVED if tagged else xbrl.FLAG_NOT_TAGGED),
                 })
             else:
@@ -246,7 +251,7 @@ def fetch_peer_data(cik, line_items, n_periods=5):
         result_items[li] = {"tag_used": tag_used, "periods": item_periods}
 
     _fill_derived_periods(result_items)
-    _explain_underivable_periods(result_items, cik, pointers)
+    _explain_underivable_periods(result_items, cik, pointers, fy_offset)
     result_items = {name: info for name, info in result_items.items()
                     if name in requested}
 

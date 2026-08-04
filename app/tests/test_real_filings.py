@@ -421,6 +421,26 @@ def apple_table(apple_facts, monkeypatch):
     return entity, columns, {row["line_item"]: row for row in rows}, scope
 
 
+def test_apples_september_year_end_is_named_exactly_as_it_always_was(apple_table,
+                                                                     apple_facts):
+    """Reading the filer's own fiscal-year focus must leave Apple alone.
+
+    Apple's year ends in late September and Apple names it for that calendar
+    year, so its offset is zero and the label is the one the end-year rule
+    already produced. Eighteen annual filings and not a single disagreement,
+    which is the fixture that proves the change is a correction for Kroger
+    rather than a shift for everybody.
+    """
+    _entity, columns, _rows, _scope = apple_table
+
+    assert xbrl.fiscal_year_offset(apple_facts) == 0
+    assert [col["label"] for col in columns] == [
+        "FY{}".format(year) for year in range(2015, 2026)]
+
+    observed = xbrl._annual_report_year_ends(apple_facts)
+    assert {int(end[:4]) - focus for end, _filed, focus in observed.values()} == {0}
+
+
 def test_every_apple_value_declares_a_state(apple_table):
     """The whole grid, 15 items by 11 years, with nothing unaccounted for.
 

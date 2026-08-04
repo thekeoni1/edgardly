@@ -362,7 +362,7 @@ def _missing_derivation_inputs(name, rows_by_item, key):
     return absent
 
 
-def _fill_underivable_cells(rows, columns, cik, pointers, period_type):
+def _fill_underivable_cells(rows, columns, cik, pointers):
     """Explain a hole in a row that is arithmetic rather than a tag.
 
     Runs before the derivation-input rows are dropped, because the explanation
@@ -385,7 +385,10 @@ def _fill_underivable_cells(rows, columns, cik, pointers, period_type):
             key = col["key"]
             if row["cells"].get(key) is not None:
                 continue
-            label = xbrl.period_label(key, col.get("fp"), period_type)
+            # The column's own name. Built once, where the filer's fiscal-year
+            # convention is known, so a pointer cannot send a reader to the
+            # FY2026 10-K of a company whose table says FY2025.
+            label = col.get("label") or ""
             row["cells"][key] = {
                 "value": None,
                 "formatted": None,
@@ -403,7 +406,7 @@ def _fill_underivable_cells(rows, columns, cik, pointers, period_type):
             }
 
 
-def _fill_missing_cells(rows, columns, cik, pointers, period_type, tagged_ends=None):
+def _fill_missing_cells(rows, columns, cik, pointers, tagged_ends=None):
     """Give every remaining hole a pointer to where the number would be.
 
     After this runs, every (row, column) in the table is exactly one of the
@@ -422,7 +425,7 @@ def _fill_missing_cells(rows, columns, cik, pointers, period_type, tagged_ends=N
             key = col["key"]
             if row["cells"].get(key) is not None:
                 continue
-            label = xbrl.period_label(key, col.get("fp"), period_type)
+            label = col.get("label") or ""
             flag = (xbrl.FLAG_PERIOD_UNRESOLVED if key in tagged
                     else xbrl.FLAG_NOT_TAGGED)
             row["cells"][key] = {
@@ -493,11 +496,16 @@ def _build_xbrl_result(cik, start_year, end_year, period_type):
     in_range = {end: fp for end, fp in confirmed.items()
                 if start_year <= int(end[:4]) <= end_year}
 
+    # What this filer calls its own fiscal years. Zero for a calendar-year
+    # filer, so most companies are named exactly as they were; Kroger's late
+    # January year end is where the two conventions part.
+    fy_offset = xbrl.fiscal_year_offset(facts)
+
     columns = []
     for end in sorted(in_range):
         fp = in_range[end]
-        yr = int(end[:4])
-        label = "FY{}".format(yr) if period_type == "annual" else "{} {}".format(fp, yr)
+        label = xbrl.period_label(end, fp, period_type, fy_offset)
+        yr = int(end[:4]) - (fy_offset if period_type == "annual" else 0)
         columns.append({"key": end, "label": label, "fp": fp, "fy": yr})
 
     # Every displayed item, then the derivation inputs, which are dropped again
@@ -525,15 +533,14 @@ def _build_xbrl_result(cik, start_year, end_year, period_type):
     # every remaining hole a pointer. Order matters -- a derivable period is a
     # derived value, not a missing one.
     _fill_derived_cells(rows, columns)
-    _fill_underivable_cells(rows, columns, cik, xbrl.filing_pointers(facts), period_type)
+    _fill_underivable_cells(rows, columns, cik, xbrl.filing_pointers(facts))
     rows = [row for row in rows if row["line_item"] in line_items.UI_LINE_ITEMS]
 
     tagged_ends = {
         name: {dp.get("end") for dp in info.get("data", []) if dp.get("value") is not None}
         for name, info in deduped.items()
     }
-    _fill_missing_cells(rows, columns, cik, xbrl.filing_pointers(facts), period_type,
-                        tagged_ends)
+    _fill_missing_cells(rows, columns, cik, xbrl.filing_pointers(facts), tagged_ends)
     for row in rows:
         row["tag_summary"] = _tag_summary(row, columns)
 
