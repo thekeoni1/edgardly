@@ -388,3 +388,59 @@ def test_the_extract_endpoint_carries_the_scope_verdict(bank_facts, monkeypatch)
     assert payload["scope"]["message"].startswith(
         "Bank and insurance financial statements do not fit")
     assert payload["rows"]
+
+
+# ---------------------------------------------------------------------------
+# What the corrected EPS check says about a bank
+# ---------------------------------------------------------------------------
+
+def test_jpmorgans_eps_never_reconciles_and_the_reason_is_preferred_stock(bank_facts):
+    """Fifty-two flagged periods, every one of them true, and one cause.
+
+    JPMorgan's diluted EPS is computed on net income available to common
+    shareholders. This check divides total net income, so every period comes
+    out high by the preferred dividend: about 8 percent of a normal year, and
+    far more where earnings were small and the dividend was not, which is why
+    2009 shows gaps of 40 and 150 percent.
+
+    Nothing is silenced. A reader multiplying this bank's diluted share count
+    by its diluted EPS will not get its net income, and being told so is
+    correct; the message names preferred dividends as one of the two things it
+    can be. Proof of the cause rather than assertion: JPMorgan tags the
+    available-to-common figure for ten of these periods, and substituting it
+    brings all ten inside tolerance.
+    """
+    deduped = xbrl.deduplicate_all_line_items(xbrl.extract_all_line_items(bank_facts))
+    flags = [f for f in xbrl.validate_financials(deduped)["EPS Diluted"]
+             if f["flag_type"] == xbrl.FLAG_EPS_RECONCILIATION]
+
+    assert len(flags) == 52
+    assert all(f["details"]["computed_eps"] > f["details"]["reported_eps"]
+               for f in flags if f["details"]["reported_eps"] > 0), (
+        "a preferred dividend can only make computed EPS too high, never too low")
+    assert "preferred" in flags[0]["message"]
+
+
+def test_a_bank_out_of_scope_for_scaffolds_still_gets_its_flags(bank_facts, monkeypatch):
+    """The gate refuses a scaffold. It does not make the puller quieter.
+
+    FY2018 rather than FY2023 because the gap is proportional: JPMorgan's
+    preferred dividend was 5.7 percent of its 2018 earnings and under the 5
+    percent tolerance by 2021, so its recent years reconcile and its older ones
+    do not. That is the check behaving as a tolerance should.
+    """
+    monkeypatch.setattr(xbrl, "fetch_company_facts", lambda cik: bank_facts)
+    monkeypatch.setattr(edgar_api, "get_company_meta", lambda cik: {"sic": "6021"})
+
+    _entity, _columns, rows, scope = flask_app._build_xbrl_result(
+        19617, 2018, 2023, "annual")
+    by_item = {row["line_item"]: row for row in rows}
+
+    assert scope["in_scope"] is False
+
+    def _reconciliation(end):
+        return [f for f in by_item["EPS Diluted"]["cells"][end]["flags"]
+                if f["type"] == xbrl.FLAG_EPS_RECONCILIATION]
+
+    assert _reconciliation("2018-12-31")
+    assert not _reconciliation("2023-12-31")

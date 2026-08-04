@@ -8,6 +8,7 @@ Reuses _rate_limited_get from edgar_api for consistent rate limiting and User-Ag
 import datetime
 
 import line_items
+import periods
 from edgar_api import _rate_limited_get
 
 XBRL_BASE = "https://data.sec.gov/api/xbrl"
@@ -448,6 +449,20 @@ def _check_zero_among_nonzero(line_item_name, data_points):
     ]
 
 
+def _span_key(dp):
+    """Identify a period by its dates alone, so series in different units meet.
+
+    _period_key leads with the unit, which is right for deduplication: two
+    values in different units are different facts. It is fatal here. Net income
+    is in USD, a share count is in shares, and EPS is in USD-per-share, so no
+    two of the three can ever share a _period_key and this check returned
+    nothing for every company that has ever been run through it (PROGRESS.md
+    open question 7). The dates are the only thing the three can agree on, and
+    they are what makes them comparable.
+    """
+    return (dp.get("start"), dp.get("end"))
+
+
 def _check_eps_reconciliation(net_income_points, diluted_shares_points, diluted_eps_points,
                                tolerance=0.05):
     """
@@ -456,14 +471,28 @@ def _check_eps_reconciliation(net_income_points, diluted_shares_points, diluted_
 
     Skipped when any of the three values is missing for a period, or when shares = 0.
     Shares are reported in ones; EPS is reported per share.
+
+    Only periods that measure as one quarter or one year are compared. A
+    year-to-date column carries the same end date as the quarter that closes
+    it, and a flag raised on one would be shown against the other, because a
+    flag reaches a cell by its end date. The same rule app/periods.py applies
+    to values applies here to the checks on them.
+
+    What the flag means when it fires: the three numbers were reported on
+    different bases. A share split or a share-count restatement lands in the
+    payload one filing at a time, so a period can hold an EPS recomputed on the
+    new basis beside a share count still on the old one. A filer with preferred
+    stock is the other case, and a systematic one: its EPS is computed on income
+    available to common shareholders, and this check divides total net income,
+    so every period comes out high by the preferred dividend.
     """
     shares_by_key = {
-        _period_key(dp): dp
+        _span_key(dp): dp
         for dp in diluted_shares_points
         if dp.get("value") is not None and dp["value"] != 0
     }
     eps_by_key = {
-        _period_key(dp): dp
+        _span_key(dp): dp
         for dp in diluted_eps_points
         if dp.get("value") is not None
     }
@@ -472,7 +501,10 @@ def _check_eps_reconciliation(net_income_points, diluted_shares_points, diluted_
         ni = dp.get("value")
         if ni is None:
             continue
-        key = _period_key(dp)
+        if not (periods.covers_one_period(dp, periods.ANNUAL)
+                or periods.covers_one_period(dp, periods.QUARTERLY)):
+            continue
+        key = _span_key(dp)
         shares_dp = shares_by_key.get(key)
         eps_dp = eps_by_key.get(key)
         if shares_dp is None or eps_dp is None:
@@ -486,9 +518,13 @@ def _check_eps_reconciliation(net_income_points, diluted_shares_points, diluted_
         if diff_pct > tolerance:
             flags.append(_make_flag(
                 FLAG_EPS_RECONCILIATION,
-                (f"Computed EPS ({computed_eps:.4f}) differs from reported Diluted EPS "
-                 f"({reported_eps:.4f}) by {diff_pct*100:.1f}% -- possible share count "
-                 f"or unit mismatch"),
+                (f"Net income divided by diluted shares is {computed_eps:.4f}, and the "
+                 f"filer reports diluted EPS of {reported_eps:.4f}, a difference of "
+                 f"{diff_pct*100:.1f}%. The three figures were reported on different "
+                 f"bases: either a share split or share-count restatement has reached "
+                 f"one row and not the others, or this filer's EPS is computed on income "
+                 f"available to common shareholders and the gap is its preferred "
+                 f"dividend"),
                 dp.get("end"), reported_eps,
                 {"net_income": ni, "shares": shares, "computed_eps": computed_eps,
                  "reported_eps": reported_eps, "diff_pct": diff_pct},

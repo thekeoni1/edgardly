@@ -351,6 +351,59 @@ def test_apples_short_term_debt_is_no_longer_a_chain_pick(apple_facts):
 
 
 # ---------------------------------------------------------------------------
+# The EPS check on a filer that split its stock twice
+# ---------------------------------------------------------------------------
+
+def test_apples_split_basis_quarters_are_flagged(apple_deduped, apple_facts):
+    """Five quarters where the EPS was restated for a split and the shares were not.
+
+    Apple split 7 for 1 in June 2014 and 4 for 1 in August 2020. Each time, a
+    later 10-K restated the affected quarters' EPS onto the new basis. Neither
+    time did anything restate the weighted average share count for those
+    quarters, so the only copies of it left in the payload are the pre-split
+    ones from the original 10-Qs. The result is a column whose EPS is on one
+    basis and whose denominator is on another, and the ratio between them is
+    exactly the split factor.
+
+    Nothing here is wrong with resolution: each row shows the most recent
+    figure any filing reports for it. The two rows simply cannot be multiplied
+    together, and that is what the flag is for.
+    """
+    flags = {f["period_end"]: f for f in xbrl.validate_financials(apple_deduped)["EPS Diluted"]
+             if f["flag_type"] == xbrl.FLAG_EPS_RECONCILIATION}
+
+    assert sorted(flags) == ["2012-12-29", "2013-03-30",
+                             "2018-12-29", "2019-03-30", "2019-06-29"]
+
+    seven_for_one = flags["2012-12-29"]["details"]
+    assert seven_for_one["reported_eps"] == 1.97
+    assert round(seven_for_one["computed_eps"] / seven_for_one["reported_eps"]) == 7
+
+    four_for_one = flags["2018-12-29"]["details"]
+    assert four_for_one["reported_eps"] == 1.05
+    assert round(four_for_one["computed_eps"] / four_for_one["reported_eps"]) == 4
+
+    # The evidence, in the payload: one restated EPS, no restated share count.
+    eps = [dp for dp in xbrl._extract_tag_data(apple_facts, "EarningsPerShareDiluted")
+           if dp["end"] == "2012-12-29" and dp["start"] == "2012-09-30"]
+    shares = [dp for dp in xbrl._extract_tag_data(
+                  apple_facts, "WeightedAverageNumberOfDilutedSharesOutstanding")
+              if dp["end"] == "2012-12-29" and dp["start"] == "2012-09-30"]
+    assert {dp["value"] for dp in eps} == {13.81, 1.97}
+    assert {dp["value"] for dp in shares} == {947_217_000}
+
+
+def test_the_eps_check_is_quiet_on_apples_annual_columns(apple_deduped):
+    """Every flag is a quarter. The years the table shows all reconcile."""
+    flags = [f for f in xbrl.validate_financials(apple_deduped)["EPS Diluted"]
+             if f["flag_type"] == xbrl.FLAG_EPS_RECONCILIATION]
+    annual_ends = {dp["end"] for dp in apple_deduped["Revenue"]["data"]
+                   if xbrl._is_annual_period(dp)}
+
+    assert not [f for f in flags if f["period_end"] in annual_ends]
+
+
+# ---------------------------------------------------------------------------
 # Peer comparison keeps working
 # ---------------------------------------------------------------------------
 

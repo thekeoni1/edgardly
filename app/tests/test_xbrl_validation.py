@@ -297,6 +297,47 @@ def test_eps_reconciliation_skipped_zero_reported_eps():
     assert not flags, "Zero reported EPS skips division"
 
 
+def test_eps_reconciliation_matches_across_three_different_units():
+    """PROGRESS.md open question 7: the reason this check never fired.
+
+    Net income is in USD, a share count is in shares, EPS is in USD-per-share.
+    The three series were matched on a key that led with the unit, so no two of
+    them could ever meet and the check returned nothing for every company ever
+    run through it. The tests above passed only because the helper gave all
+    three points the same unit.
+    """
+    ni_pts = [_dp(1_000_000_000)]
+    sh_pts = [_dp(1_000_000_000)]
+    eps_pts = [_dp(2.00)]
+    for dp, unit in ((ni_pts[0], "USD"), (sh_pts[0], "shares"),
+                     (eps_pts[0], "USD/shares")):
+        dp["unit"] = unit
+
+    assert _flags_of_type(_check_eps_reconciliation(ni_pts, sh_pts, eps_pts),
+                          FLAG_EPS_RECONCILIATION)
+
+
+def test_eps_reconciliation_ignores_a_year_to_date_column():
+    """A nine-month column ends on the same day as the quarter that closes it.
+
+    A flag reaches a cell by its end date, so one raised on the year-to-date
+    figure would be shown against the quarter, describing numbers that are not
+    the ones in that column.
+    """
+    ytd = _dp(1_000_000_000, end="2023-09-30", start="2023-01-01")
+    shares = _dp(1_000_000_000, end="2023-09-30", start="2023-01-01")
+    eps = _dp(2.00, end="2023-09-30", start="2023-01-01")
+
+    assert not _check_eps_reconciliation([ytd], [shares], [eps])
+
+    # The quarter that ends on the same day is compared as usual.
+    quarter = dict(ytd, start="2023-07-01")
+    assert _flags_of_type(
+        _check_eps_reconciliation([quarter], [dict(shares, start="2023-07-01")],
+                                  [dict(eps, start="2023-07-01")]),
+        FLAG_EPS_RECONCILIATION)
+
+
 # ---------------------------------------------------------------------------
 # 6. Large YoY Change
 # ---------------------------------------------------------------------------

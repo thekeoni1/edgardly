@@ -403,6 +403,44 @@ def test_gross_profit_is_derived_once_honeywell_stops_tagging_it(honeywell_table
 
 
 # ---------------------------------------------------------------------------
+# The column the EPS check exists for
+# ---------------------------------------------------------------------------
+
+def _eps_flags(facts):
+    deduped = xbrl.deduplicate_all_line_items(xbrl.extract_all_line_items(facts))
+    return [f for f in xbrl.validate_financials(deduped)["EPS Diluted"]
+            if f["flag_type"] == xbrl.FLAG_EPS_RECONCILIATION]
+
+
+def test_the_q2_2025_share_basis_mismatch_is_flagged(honeywell_facts):
+    """PROGRESS.md open question 7, on the column that exposed it.
+
+    Honeywell halved its share count in 2026, and the restatement reached the
+    rows one filing at a time. For the quarter ended 30 June 2025 the EPS comes
+    from the FY2025 10-K, which predates the change, and the share count from a
+    10-Q filed after it. So the column holds net income of 1,570 million beside
+    321 million shares and an EPS of 2.45, and 1,570 over 321 is 4.90. Both
+    figures describe the same earnings; only the denominator moved.
+
+    Session 4A went looking for the flag that should have caught this and found
+    a check that had never fired for anyone. This is it firing.
+    """
+    flags = {f["period_end"]: f for f in _eps_flags(honeywell_facts)}
+
+    assert "2025-06-30" in flags
+    detail = flags["2025-06-30"]["details"]
+    assert detail["net_income"] == 1_570 * MILLION
+    assert detail["reported_eps"] == 2.45
+    assert round(detail["computed_eps"], 2) == 4.90
+    assert detail["diff_pct"] > 0.5
+
+
+def test_that_is_the_only_column_honeywell_fails_on(honeywell_facts):
+    """One flag, not a rash of them: the check has to be quiet to mean anything."""
+    assert [f["period_end"] for f in _eps_flags(honeywell_facts)] == ["2025-06-30"]
+
+
+# ---------------------------------------------------------------------------
 # The two views agree
 # ---------------------------------------------------------------------------
 
