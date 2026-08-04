@@ -306,6 +306,97 @@ def test_a_focus_stamped_on_a_period_the_filing_cannot_have_reported_is_ignored(
 
 
 # ---------------------------------------------------------------------------
+# What a quarter is called
+# ---------------------------------------------------------------------------
+
+# Kroger's calendar, which is the one that breaks everything: a 52-week year
+# ending on the Saturday nearest 31 January, in quarters of 16, 12, 12 and 12
+# weeks rather than four equal thirteens.
+KROGER_YEAR_ENDS = ["2024-02-03", "2025-02-01", "2026-01-31"]
+
+
+def test_a_quarter_is_numbered_by_where_it_sits_in_its_year():
+    """16 weeks in is still the first quarter, and 54 percent through the second."""
+    assert periods.quarter_of("2025-05-24", KROGER_YEAR_ENDS) == "Q1"
+    assert periods.quarter_of("2025-08-16", KROGER_YEAR_ENDS) == "Q2"
+    assert periods.quarter_of("2025-11-08", KROGER_YEAR_ENDS) == "Q3"
+    assert periods.quarter_of("2026-01-31", KROGER_YEAR_ENDS) == "Q4"
+
+
+def test_the_quarter_that_closes_the_year_is_the_fourth_not_the_first():
+    """The whole of open question 9, in one line.
+
+    A fourth quarter ends on the fiscal year end, so the only filing that
+    carries it as a quarter is the following year's first-quarter 10-Q, and
+    EDGAR stamps that filing's label on it. Position does not care what
+    carried it.
+    """
+    payload = facts({"Revenues": [
+        entry("2024-02-04", "2025-02-01", 95, "2025-04-01", fy=2024),
+        entry("2025-02-02", "2026-01-31", 100, "2026-03-31", fy=2025),
+        entry("2025-11-09", "2026-01-31", 25, "2026-06-15", fy=2026,
+              fp="Q1", form="10-Q"),
+    ]})
+    resolved = deduped(payload, ["Revenue"])
+
+    assert periods.period_ends(resolved, ["Revenue"], periods.QUARTERLY) == {
+        "2026-01-31": "Q4"}
+
+
+def test_a_quarter_in_a_year_that_has_not_closed_uses_the_filers_year_length():
+    """There is no year end after it yet, so the years already reported stand in."""
+    assert periods.quarter_of("2026-05-23", KROGER_YEAR_ENDS) == "Q1"
+    assert periods.quarter_of("2026-08-15", KROGER_YEAR_ENDS) == "Q2"
+
+
+def test_the_year_length_is_the_median_so_one_odd_year_cannot_stretch_it():
+    assert periods.typical_year_days(KROGER_YEAR_ENDS) == 364
+
+    # A 53-week year is 371 days and is outvoted by the 52-week years around it.
+    with_long_year = ["2023-01-28"] + KROGER_YEAR_ENDS
+    assert periods.typical_year_days(with_long_year) == 364
+
+    assert periods.typical_year_days(["2024-12-31"]) == 365
+    assert periods.typical_year_days([]) == 365
+
+
+def test_a_quarter_with_no_fiscal_year_end_before_it_keeps_the_label_it_arrived_with():
+    """Nothing to number against is not a licence to guess.
+
+    A filer whose first confirmed fiscal year end comes after this quarter
+    gives the engine no year to place it in. The filing's own label is then the
+    only evidence there is, and it is kept rather than replaced by a number
+    nothing supports.
+    """
+    payload = facts({"Revenues": [
+        entry("2024-01-01", "2024-03-31", 25, "2024-04-25", fp="Q1", form="10-Q")]})
+    resolved = deduped(payload, ["Revenue"])
+
+    assert periods.quarter_of("2024-03-31", []) is None
+    assert periods.period_ends(resolved, ["Revenue"], periods.QUARTERLY) == {
+        "2024-03-31": "Q1"}
+
+
+def test_numbering_decides_what_a_quarter_is_called_not_whether_it_happened():
+    """The boundary this change deliberately did not cross.
+
+    A 10-K's comparative quarters carry the label FY, and a period no filing
+    ever called a quarter is still not a quarter column. Numbering answers the
+    name; which columns exist is untouched, so no value moved into or out of
+    the quarterly view.
+    """
+    payload = facts({"Revenues": [
+        entry("2024-01-01", "2024-12-31", 100, "2025-02-14"),
+        entry("2024-04-01", "2024-06-30", 25, "2025-02-14"),      # labeled FY by the 10-K
+        entry("2023-01-01", "2023-12-31", 90, "2024-02-14"),
+    ]})
+    resolved = deduped(payload, ["Revenue"])
+
+    assert periods.quarter_of("2024-06-30", ["2023-12-31", "2024-12-31"]) == "Q2"
+    assert periods.period_ends(resolved, ["Revenue"], periods.QUARTERLY) == {}
+
+
+# ---------------------------------------------------------------------------
 # Which value covers a period
 # ---------------------------------------------------------------------------
 

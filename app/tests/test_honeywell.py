@@ -34,6 +34,7 @@ import app as flask_app
 import edgar_api
 import line_items
 import peer_comparison as pc
+import periods
 import xbrl_extractor as xbrl
 
 FIXTURE_PATH = os.path.join(os.path.dirname(__file__), "fixtures", "cik773840.json")
@@ -48,6 +49,14 @@ MILLION = 1_000_000
 def honeywell_facts():
     with open(FIXTURE_PATH, encoding="utf-8") as handle:
         return json.load(handle)
+
+
+@pytest.fixture(scope="module")
+def honeywell_quarters(honeywell_facts):
+    """Every quarter end this filer confirms, mapped to the number it is given."""
+    deduped = xbrl.deduplicate_all_line_items(
+        xbrl.extract_all_line_items(honeywell_facts, list(xbrl.TAG_MAP)))
+    return periods.period_ends(deduped, xbrl.TAG_MAP, periods.QUARTERLY)
 
 
 @pytest.fixture
@@ -125,6 +134,41 @@ def test_the_annual_report_is_the_one_the_row_keeps(honeywell_facts):
     assert winner["form"] == "10-K"
     assert winner["fiscal_period"] == "FY"
     assert winner["accn"] == "0000773840-26-000013"
+
+
+def test_a_third_quarter_a_filing_itself_called_the_second_is_numbered_third(
+        honeywell_facts, honeywell_quarters):
+    """fp is unreliable even where nothing borrowed it.
+
+    Two filings report the quarter ended 30 September 2020. Its own 10-Q, filed
+    that October, calls it Q3. The 10-Q filed a year later carries it as a
+    comparative and is itself stamped Q2, which it is not either. Resolution
+    keeps the later filing, so the label that reached the column was Q2 from a
+    filing that was neither. Position between two fiscal year ends does not
+    consult the label: 30 September is three quarters of the way through a
+    calendar year, and that is the whole argument.
+    """
+    stamped = sorted((dp["filed"], dp["fiscal_period"])
+                     for dp in xbrl._extract_tag_data(honeywell_facts,
+                                                      "CostOfGoodsAndServicesSold")
+                     if dp["end"] == "2020-09-30" and dp["start"] == "2020-07-01")
+
+    assert stamped == [("2020-10-30", "Q3"), ("2021-10-22", "Q2")]
+    assert honeywell_quarters["2020-09-30"] == "Q3"
+
+
+def test_every_honeywell_quarter_is_numbered_by_its_calendar_month(honeywell_quarters):
+    """A December year end makes the right answer checkable by eye.
+
+    Honeywell's quarters end in March, June, September and December, so the
+    month says the number and nothing has to be looked up. This is the check
+    that the change corrects Kroger without disturbing an ordinary filer.
+    """
+    expected = {3: "Q1", 6: "Q2", 9: "Q3", 12: "Q4"}
+    wrong = {end: label for end, label in honeywell_quarters.items()
+             if expected.get(int(end[5:7])) != label}
+
+    assert wrong == {}
 
 
 # ---------------------------------------------------------------------------

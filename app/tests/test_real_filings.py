@@ -30,6 +30,7 @@ import app as flask_app
 import edgar_api
 import line_items
 import peer_comparison as pc
+import periods
 import xbrl_extractor as xbrl
 
 FIXTURE_PATH = os.path.join(os.path.dirname(__file__), "fixtures", "cik320193.json")
@@ -439,6 +440,27 @@ def test_apples_september_year_end_is_named_exactly_as_it_always_was(apple_table
 
     observed = xbrl._annual_report_year_ends(apple_facts)
     assert {int(end[:4]) - focus for end, _filed, focus in observed.values()} == {0}
+
+
+def test_apples_quarters_are_numbered_exactly_as_they_always_were(apple_facts):
+    """Numbering by position must leave an ordinary filer alone.
+
+    Apple's fiscal year ends in late September, so its quarters end in
+    December, March, June and September, and the quarter ending in December
+    opens the year rather than closing it. All 55 quarter ends in this fixture
+    come out with the number the filings already gave them, which is the
+    control for the eighteen Kroger columns the change moves.
+    """
+    deduped = xbrl.deduplicate_all_line_items(
+        xbrl.extract_all_line_items(apple_facts, list(xbrl.TAG_MAP)))
+    quarters = periods.period_ends(deduped, xbrl.TAG_MAP, periods.QUARTERLY)
+
+    by_month = {12: "Q1", 3: "Q2", 4: "Q2", 6: "Q3", 7: "Q3"}
+    wrong = {end: label for end, label in quarters.items()
+             if by_month.get(int(end[5:7])) != label}
+
+    assert wrong == {}
+    assert len(quarters) == 55
 
 
 def test_every_apple_value_declares_a_state(apple_table):

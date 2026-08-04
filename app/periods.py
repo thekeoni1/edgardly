@@ -87,6 +87,74 @@ def covers_one_period(dp, period_type=ANNUAL):
     return low <= days <= high
 
 
+def _days_between(earlier, later):
+    try:
+        return (datetime.date.fromisoformat(later)
+                - datetime.date.fromisoformat(earlier)).days
+    except (ValueError, TypeError):
+        return None
+
+
+def typical_year_days(annual_ends):
+    """How long this filer's fiscal year runs, from its own year ends.
+
+    The median gap between consecutive confirmed year ends, so one short or
+    long transition year cannot stretch it. 365 when there is nothing to
+    measure, which only matters for a filer with a single confirmed year.
+    """
+    gaps = sorted(g for g in (_days_between(a, b)
+                              for a, b in zip(annual_ends, annual_ends[1:]))
+                  if g and 300 <= g <= 425)
+    if not gaps:
+        return 365
+    return gaps[len(gaps) // 2]
+
+
+def quarter_of(end, annual_ends):
+    """Which quarter of its fiscal year a period ending on this date is.
+
+    EDGAR stamps fp on the filing rather than on the fact, so a quarter carried
+    as a comparative takes the name of whichever quarter repeated it. Kroger
+    shows it plainly: the flow from 9 November 2025 to 31 January 2026 is its
+    fourth quarter, the only filing carrying it is the first-quarter 10-Q of the
+    following year, and the label that arrives is Q1 (PROGRESS.md open question
+    9).
+
+    Position between two confirmed fiscal year ends says it instead, from dates
+    the engine already has. How far through the year the period ends, in
+    quarters, rounded to the nearest one. That admits Kroger's 16-week first
+    quarter, which is 30 percent of the year rather than 25, and the 14-week
+    quarter a 53-week year carries, without either being told what a quarter is
+    meant to measure.
+
+    A quarter in a fiscal year that has not closed yet has no year end after it
+    to measure against, so the filer's typical year length stands in. Returns
+    None when no fiscal year end precedes the date at all, which leaves the
+    caller nothing to number from and nothing to guess with.
+
+    annual_ends must be sorted.
+    """
+    if not end:
+        return None
+    earlier = [a for a in annual_ends if a < end]
+    if not earlier:
+        return None
+    opening = earlier[-1]
+
+    later = [a for a in annual_ends if a >= end]
+    length = _days_between(opening, later[0]) if later else None
+    if not length or length <= 0:
+        length = typical_year_days(annual_ends)
+
+    elapsed = _days_between(opening, end)
+    if elapsed is None:
+        return None
+    # int(x + 0.5) rather than round(), which rounds a half to even and would
+    # name the same fraction of a year differently in different years.
+    number = int(elapsed * 4.0 / length + 0.5)
+    return QUARTER_LABELS[min(max(number, 1), 4) - 1]
+
+
 def period_ends(deduped, names=None, period_type=ANNUAL):
     """Return {period end date: period label} for the periods a filer confirms.
 
@@ -102,8 +170,14 @@ def period_ends(deduped, names=None, period_type=ANNUAL):
     which only has to match a date once some other item has confirmed it.
 
     names limits which line items may witness a period; it defaults to every
-    item in the dict. Ordering is not significant except for the label of a
-    quarter, where the first witness names it.
+    item in the dict. Ordering is not significant.
+
+    A quarter's number does not come from the label that confirmed it. The
+    label says which filing the fact turned up in, and a quarter carried as a
+    comparative takes its repeater's name; the number comes from where the
+    period sits between two confirmed fiscal year ends. Which quarters exist is
+    unchanged, and still needs a filing to have called the date a quarter at
+    all: numbering answers what a period is called, not whether it happened.
     """
     if names is None:
         names = list(deduped)
@@ -127,6 +201,13 @@ def period_ends(deduped, names=None, period_type=ANNUAL):
                     continue
                 if is_instant(dp) or covers_one_period(dp, QUARTERLY):
                     ends.setdefault(end, fp)
+
+    if period_type != ANNUAL:
+        annual_ends = sorted(period_ends(deduped, names, ANNUAL))
+        # A filer with no confirmed fiscal year end has nothing to number
+        # against, and the label it came with is better than no label.
+        ends = {end: (quarter_of(end, annual_ends) or fp)
+                for end, fp in ends.items()}
     return ends
 
 

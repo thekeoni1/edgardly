@@ -265,26 +265,54 @@ def test_the_offset_comes_from_krogers_filings_and_survives_its_own_mis_tagging(
     assert sorted(offsets) == [0, 0] + [1] * 17
 
 
-@pytest.mark.xfail(reason="quarter labels still come from EDGAR's fp, which names the "
-                          "filing rather than the fact. PROGRESS.md open question 9.",
-                   strict=True)
 def test_the_fourth_quarter_is_not_labelled_the_first(kroger_facts):
-    """R5 shadowing, still alive in the quarterly view.
+    """R5 shadowing, and the last place it was still alive.
 
     The flow from 9 November 2025 to 31 January 2026 is Kroger's fourth
     quarter. The only filing that carries it is the first-quarter 10-Q of
     fiscal 2026, which reports it as a comparative, and EDGAR stamps that
-    filing's fiscal-period label on the fact. So the quarterly view confirms
-    the period from its dates, correctly, and then takes its name from a label
-    that belongs to a different quarter.
+    filing's fiscal-period label on the fact, so the column used to be named
+    Q1. The number now comes from where the period sits between two confirmed
+    fiscal year ends: it closes the year, so it is the fourth quarter, and no
+    label is consulted to say so.
 
-    Annual columns are unaffected: they are labelled FY from the period type,
-    never from fp, which is why the annual table and the peer table agree.
+    Annual columns were never affected: they are labelled FY from the period
+    type, never from fp, which is why the annual table and the peer table
+    agreed through all of this.
     """
     deduped = _deduped(kroger_facts)
     quarters = periods.period_ends(deduped, xbrl.TAG_MAP, periods.QUARTERLY)
 
     assert quarters[FISCAL_2025_END] == "Q4"
+    # Every year end in the fixture closes a fourth quarter, and every one of
+    # them used to read Q3 or Q1 depending on which filing repeated it last.
+    annual = periods.period_ends(deduped, xbrl.TAG_MAP, periods.ANNUAL)
+    closing = {end: quarters[end] for end in annual if end in quarters}
+    assert set(closing.values()) == {"Q4"}
+    assert len(closing) == 5
+
+
+def test_krogers_sixteen_week_first_quarter_is_numbered_first(kroger_facts):
+    """The quarter that most exercises numbering by position.
+
+    Kroger's year is 16 + 12 + 12 + 12 weeks, so its first quarter ends 30
+    percent of the way through rather than 25, and its second ends 54 percent
+    rather than 50. Rounding to the nearest quarter absorbs both. EDGAR's own
+    label disagreed for every year before fiscal 2019, calling the May quarter
+    Q2 and, in a 53-week year, calling the August quarter Q3.
+    """
+    quarters = periods.period_ends(_deduped(kroger_facts), xbrl.TAG_MAP,
+                                   periods.QUARTERLY)
+
+    assert quarters["2025-05-24"] == "Q1"      # 16 weeks in
+    assert quarters["2025-08-16"] == "Q2"      # 28 weeks in
+    assert quarters["2025-11-08"] == "Q3"      # 40 weeks in
+    assert quarters["2026-01-31"] == "Q4"      # the year end itself
+
+    # A 53-week year, where the quarters sit at slightly different fractions.
+    assert quarters["2013-05-25"] == "Q1"
+    assert quarters["2013-08-17"] == "Q2"
+    assert quarters["2013-11-09"] == "Q3"
 
 
 # ---------------------------------------------------------------------------
