@@ -35,6 +35,7 @@ open questions the next session needs to know about.
 | 2026-08-03 | 2 | V2_PLAN 1.1, 1.2, part of 1.5, and the frontend half of the Session 1 consolidation. Five commits: session prompt amended, registry built, per-period stitching, fixture generator plus the Apple fixture, classification served to the browser. | 0 | Open question 2 closed; 1 and 3 still open; two new ones. |
 | 2026-08-03 | 3 | V2_PLAN 1.3 and 1.4, and the rest of 1.5. Four commits: session prompt amended, fixture generator extended plus the JPMorgan and SAP fixtures, provenance and the scope gate, tooltip element moved. | 0 | Open question 5 closed, 3 partly addressed; 1, 3, and 4 still open; one new one. |
 | 2026-08-04 | 4A | The period engine, V2_PLAN R5. Four commits: Session 4 split into 4A and 4B, annual report forms ranked above every other form, the Honeywell fixture, one shared period engine in app/periods.py. | 0 | Open questions 3 and 6 closed. 1 sharpened by the Honeywell fixture and still open, as is 4; both go to 4B. One new one, 7. |
+| 2026-08-04 | 4B | The chain corrections and the Phase 1 exit review. Six commits: session prompt amended, the Kroger fixture, the Long-Term Debt chain, four more chain corrections, Short-Term Debt summed and Total Debt surfaced, the EPS reconciliation check. Phase 1 declared done. | 1 | Open questions 1, 4 and 7 closed. Two new ones, 8 and 9, both about labels rather than values, both raised by Kroger. |
 
 ### Session 1 detail
 
@@ -268,25 +269,183 @@ disagreed on 21 cells for Apple, 19 for Honeywell and 11 for JPMorgan, which is
 R5 measured rather than asserted; a test in test_periods.py asks every committed
 fixture the same question so it cannot drift back.
 
+### Session 4B detail
+
+Suite state: 540 tests, all passing, one xfail. 494 mocked tests run offline in
+about 6 seconds; 46 integration tests hit live EDGAR or start a browser and take
+about 40 seconds. Session 4A left 489. The 51 new tests are 27 against the Kroger
+fixture, 9 more in the Honeywell module, 5 more in the Apple module, 4 for the
+registry, 3 for the EPS check on synthetic points, 2 for the scope-gate module's
+bank, and 1 for the provenance module.
+
+The one xfail is deliberate and is open question 9: Kroger's fourth quarter comes
+out labeled Q1. It is strict, so it fails the moment the label is fixed.
+
+**The Kroger fixture.** CIK 56873, verified as KR against the live ticker lookup
+before downloading. Its fiscal year is 52 or 53 weeks and ends on the Saturday
+nearest 31 January, which is what it is in the acceptance set for. The period
+engine took all of it: nineteen consecutive year ends 364 or 371 days apart with
+nothing in between and no year missing, the three 53-week years are the three the
+filings name, and the 111-day first quarter is measured as a quarter rather than
+rejected. The cell-for-cell view-agreement test in test_periods.py picked the
+fixture up on its own and passed on the first run.
+
+Two things about Kroger are wrong and are not fixed here, because both are about
+what a period is called rather than what it holds, and both need a decision
+rather than a correction. They are open questions 8 and 9.
+
+**Chain corrections, five of them, each against the filing it comes from.**
+Every registry chain was resolved against all five fixtures and the result read
+against the statements. Five chains were wrong in the same way: the filer reports
+the line, tags it with an element the chain does not list, and the row comes back
+blank or wrong.
+
+| Chain | Tag added | Evidence | What it moved |
+| --- | --- | --- | --- |
+| Long-Term Debt | LongTermDebtAndCapitalLeaseObligations, ahead of LongTermDebt | Honeywell's FY2025 balance sheet shows long-term debt of 27,141 million; the LongTermDebt tag holds 29,046, which is neither that nor the 28,687 balance-sheet total including current maturities | Honeywell FY2025 29,046 to 27,141, FY2024 27,265 to 25,440, and the row goes from 17 years across two tags to 18 from one |
+| Cost of Revenue | CostOfGoodsAndServiceExcludingDepreciationDepletionAndAmortization, last | Kroger's income statement line "Merchandise costs ... excluding items shown separately below", 113,240 million for fiscal 2025 | Kroger's cost row goes from 11 years to 19, and its Gross Profit from none to every year |
+| PP&E Net | PropertyPlantAndEquipmentAndFinanceLeaseRightOfUseAssetAfterAccumulatedDepreciationAndAmortization | The two tags agree to the dollar in each filer's transition year: 5,471 million for Honeywell at 2022-12-31, 21,871 for Kroger at 2020-02-01 | Honeywell 15 years to 18, Kroger 12 to 18 |
+| Interest Expense | InterestAndDebtExpense, then InterestIncomeExpenseNonoperatingNet | Honeywell's line "Interest and other financial charges", 1,344 million for FY2025; Kroger's "Net interest expense (639)" | Honeywell 0 years to 19, Kroger 17 to 19 |
+| Accounts Payable | AccountsPayableTradeCurrent | The two agree to the dollar in the year Kroger tags both, 10,381 million at 2024-02-03 | Kroger 3 years to 18 |
+
+Two of those carry a caveat into the registry rather than out of it. The new cost
+tag excludes depreciation and amortization where the others include it, so a row
+crossing that seam changes meaning and the seam is flagged. Kroger's interest tag
+is a net figure carrying the filer's own sign, so its row reads 441 for fiscal
+2023 and -639 for fiscal 2025 while the interest bill went up; the sign note says
+so.
+
+Four rows stay blank on purpose, because the only tags available mean something
+else. Kroger's inventory is a FIFO amount and a LIFO reserve on two lines with no
+net element tagged. Kroger tags no operating expense element the registry reads.
+Honeywell tags no Liabilities at all, and no OperatingIncomeLoss before 2022, its
+income statement having no such subtotal. A new test lists the three chain tags
+no fixture exercises, so a proposed chain cannot pass for a verified one.
+
+**Total Debt, and what it took to show it.** Open question 4 said the fix was a
+summed derivation rather than a chain reorder, and open question 1 said the
+long-term row had to be strictly non-current first, and both were right: neither
+half works alone. Honeywell is the proof. With the old chain its long-term row
+read 29,046, which overlaps its current maturities, so any sum would have double
+counted; with the old Short-Term Debt chain its short-term side would have been
+the borrowings line alone and would have dropped the current maturities entirely.
+
+Short-Term Debt keeps one tag, DebtCurrent, which is the only element that means
+the whole current debt balance. Not one of the five fixtures uses it. So for all
+of them the row is a sum of three current-liability lines, each now a registry
+item of its own with its own tag and filing: current maturities, commercial
+paper, and short-term borrowings. The terms are optional and at least one must be
+present, which is the first derivation rule in the project to work that way and
+is confined to this one; the decisions log records why.
+
+OtherShortTermBorrowings is in no chain deliberately. Apple tags it and
+CommercialPaper for 2019-09-28 with the same 5,980 million, so it is an alias for
+that line rather than a second balance, and treating it as a term would have
+double counted the whole of it.
+
+The results, each against its own balance sheet:
+
+| Filer | Long-term | Short-term | Total Debt |
+| --- | --- | --- | --- |
+| Apple FY2023 | 95,281 | 9,822 + 5,985 = 15,807 | 111,088 |
+| Honeywell FY2025 | 27,141 | 1,546 + 5,893 = 7,439 | 34,580 |
+| Kroger fiscal 2025 | 14,509 | 1,366 | 15,875 |
+| JPMorgan | not reported | 64,776 | missing |
+
+Apple's is the figure open question 4 named, against the 105,103 the chain used
+to produce. Kroger's 15,875 is exactly what Kroger's own LongTermDebt tag holds
+for that instant, which is a cross-check from a tag the row does not read.
+JPMorgan gets no row: it reports short-term borrowings and no long-term debt, and
+a total missing an input stays missing.
+
+Surfacing it needed two smaller things. The provenance model had two missing
+flags and needed a third: a row that is arithmetic and blank was being told "not
+tagged in XBRL", which is true of Total Debt for every filer that ever lived and
+sends a reader hunting for a line no balance sheet carries. DERIVATION_UNAVAILABLE
+names the component that was absent instead. And because the short-term half is
+itself a sum, the provenance nests one level, so the tooltip and the Source Tags
+sheet descend into it and every leaf a reader sees is a tag with a filing behind
+it. The decisions log is amended for that one level, with its reason.
+
+The tripwire Session 3 left, asserting Total Debt appeared in no payload, was
+retired in the same commit that made it wrong, and replaced by tests that guard
+the fix.
+
+**The EPS check, fired for the first time.** Keying on (start, end) rather than
+on (unit, start, end) is the whole fix; the three series are in three units and
+could never meet. It now also skips periods that are not one quarter or one year,
+because a year-to-date column ends on the same day as the quarter that closes it
+and a flag reaches a cell by its end date.
+
+Fifty-eight periods flag across the five fixtures. Every one was read; none was
+silenced and no tolerance was tuned.
+
+- **Honeywell, one.** The quarter ended 30 June 2025, which is the column Session
+  4A went looking for. Net income 1,570 million, 321 million shares, reported EPS
+  2.45, computed 4.90.
+- **Apple, five.** The quarters either side of its 7-for-1 and 4-for-1 splits. A
+  later 10-K restated each quarter's EPS onto the post-split basis and nothing
+  ever restated the share count, so the ratio of computed to reported is exactly
+  7 for the 2012 and 2013 quarters and exactly 4 for the 2018 and 2019 ones. Both
+  rows are the newest figure any filing reports; they cannot be multiplied
+  together, which is what the flag says.
+- **Kroger and SAP, none.**
+- **JPMorgan, fifty-two, one cause.** Its diluted EPS is computed on net income
+  available to common shareholders and the check divides total net income, so
+  every period is high by the preferred dividend. Proven rather than assumed:
+  JPMorgan tags the available-to-common figure for ten of the fifty-two, and
+  substituting it brings all ten inside tolerance. Kept, because a reader
+  multiplying this bank's diluted share count by its diluted EPS really will not
+  get its net income. The tolerance sorts it without help: only three of the
+  fifty-two are 2021 or later, as the dividend shrank against earnings.
+
+The message changed rather than the threshold. It used to assert "possible share
+count or unit mismatch" and now names the two things it can actually be.
+
+## Phase 1 exit review
+
+Run 2026-08-04 against the exit criteria in V2_PLAN Part 3. All four pass, so
+**Phase 1 is done.** Phase 2 begins at Session 5.
+
+| Criterion | Verdict | Evidence |
+| --- | --- | --- |
+| Registry covers all 38 items with tests against real fixtures | Pass | 41 entries: the 38 the plan enumerates plus the three current-liability lines Short-Term Debt sums, which the plan wrote as a chain and which open question 4 showed could not be one. Every chain resolves against all five fixtures; the only entry that resolves for none is Short-Term Debt itself, whose one tag no fixture uses, and which is derived for all five. Three chain tags are exercised by no fixture and a test names them, so a proposal cannot pass for a verified chain. |
+| Every value in the API payload and exports carries reported, derived or missing provenance | Pass | 1,185 values across the five fixtures in the single-company table, every one in exactly one of the three states: 913 reported, 81 derived, 191 missing. The peer table returns the same counts for the same companies, and test_periods.py asserts value and state agree cell for cell on every fixture. The Excel Source Tags sheet writes one line per value, checked at rows times columns for each fixture, and the CSV names every tag a row used. |
+| Banks, insurers and IFRS filers get explicit messages | Pass | JPMorgan Chase is refused on the SIC range with the message V2_PLAN fixes, SAP SE on having no us-gaap facts at all, and the statement-shape heuristic is exercised synthetically because a correctly classified bank cannot test a misclassification. Neither refusal touches the puller: JPMorgan's table still loads and its balance sheet still ties. test_scope_gate.py. |
+| Existing single-company and peer features unchanged from the user's point of view except for honest labels | Pass, with one deliberate addition | Every v1 feature is still covered by the restored suite, all green. The changes a user sees are the ones the plan asked for: honest labels, three-state provenance, per-value source tags, refusal messages, and years that used to be dropped. The addition is the Total Debt row, which V2_PLAN 1.1 lists as a derived item and Session 3 deliberately withheld until its derivation was right. |
+
+Two caveats recorded rather than waived. Open questions 8 and 9 are both about
+what a period is called, not what it holds: Kroger's fiscal 2025 is labelled
+FY2026, and its fourth quarter is labelled Q1. No value is wrong in either case
+and the annual table, which is the one the app shows, is unaffected by the
+second. They matter first at Phase 2's hand-check, where a column heading that
+disagrees with the 10-K's own will cost the checker time, so they should be
+settled before Session 6.
+
 ## Open questions
 
-1. **LongTermDebt is not strictly non-current, and for Honeywell it is not the
-   balance sheet either.** Honeywell resolves the Long-Term Debt row through the
-   us-gaap LongTermDebt tag, whose definition can include current maturities, so
-   for that filer the row is broader than its label. Session 2 wrote the caveat
-   into the registry entry and into the Total Debt derivation note, since summing
-   a LongTermDebt row with Short-Term Debt double-counts the current maturities.
-   The Honeywell fixture, added in Session 4A, settles what the tag holds and
-   makes it worse than expected. For 2024-12-31 Honeywell's 10-Qs tag LongTermDebt
-   as 26,826 million, which is exactly the balance sheet:
-   LongTermDebtAndCapitalLeaseObligations of 25,479 plus a current portion of
-   1,347. The FY2024 10-K tags the same instant as 27,265, another 439 higher.
-   Since Session 4A ranks the annual report first, the row shows 27,265, a figure
-   that is neither the non-current balance nor the balance-sheet total. Honeywell
-   does report LongTermDebtAndCapitalLeaseObligations, which is the non-current
-   line the row claims to be, so this looks like a one-line chain correction.
-   Session 4B owns it, together with open question 4, because the two share the
-   same arithmetic.
+1. **Closed.** The Long-Term Debt chain gains
+   LongTermDebtAndCapitalLeaseObligations between LongTermDebtNoncurrent and
+   LongTermDebt, and despite its name it is a non-current balance: its current
+   half is a separate tag the row does not read. Honeywell's row now reads
+   27,141 million for FY2025, its balance sheet's own long-term debt line,
+   against the 29,046 the LongTermDebt tag holds, and comes from one tag for all
+   eighteen years where the old chain seamed at every restatement.
+
+   One number came out other than predicted, and the reason is worth keeping.
+   This entry expected FY2024 to read 25,479. It reads 25,440, because
+   Honeywell's FY2025 10-K re-presents the 2024 balance sheet for the Solstice
+   spin-off and moves 39 million of debt into liabilities held for sale. Both
+   are the same line, and the row takes the one the most recent annual report
+   gives, which is the same rule that already puts FY2024 revenue at 34,717
+   rather than the 38,498 first reported. What the correction promised is what
+   it delivered: 27,265 stops winning, and so does the 26,826 the 10-Qs put in
+   the same tag. Tests assert all three.
+
+   The caveat stays in the registry because the LongTermDebt fallback stays, and
+   it now names who reaches it: Apple for FY2012 and FY2013, when it carried no
+   current maturities for the tag to be broader by, and JPMorgan throughout, for
+   which no scaffold is generated anyway.
 
 2. **Closed.** app/templates/index.html no longer carries its own DOLLAR_ITEMS,
    EPS_ITEMS, SHARE_ITEMS, or ALL_LINE_ITEMS. The homepage injects
@@ -305,20 +464,32 @@ fixture the same question so it cannot drift back.
    carries a period's end date while covering some other span; test_periods.py
    holds the case, since no committed fixture has one.
 
-4. **Short-Term Debt understates for filers that skip DebtCurrent.** Apple tags
-   no DebtCurrent, so the row falls through to LongTermDebtCurrent, which is
-   current maturities only, and misses the 5,985 million of commercial paper on
-   the FY2023 balance sheet. The derived Total Debt is short by exactly that
-   amount: 105,103 million against a real 111,088 million. A test asserts both
-   figures rather than hiding the gap. Closing it needs a summed derivation
-   (current maturities plus commercial paper plus short-term borrowings), not a
-   chain reorder, because a chain picks one tag and the components have to add.
-   Decide in Session 4B alongside the other chain corrections, and alongside open
-   question 1, whose Honeywell evidence is the other half of the same sum. Until
-   then, no view
-   shows Total Debt, so nothing user-facing is wrong today. Session 3 kept it that
-   way deliberately and left a test that fails the moment Total Debt appears in a
-   payload, so the next session has to fix the derivation before surfacing it.
+4. **Closed.** Short-Term Debt keeps one tag, DebtCurrent, which is the only
+   element that means a filer's whole current debt balance, and is otherwise a
+   sum of three current-liability lines that are now registry items of their own:
+   current maturities of long-term debt, commercial paper, and short-term
+   borrowings. Not one of the five fixtures tags DebtCurrent, so for all of them
+   the row is the sum. The terms are optional and at least one must be present,
+   which is the first rule in the project to work that way; the decisions log
+   records why, and why it is confined to this one.
+
+   Apple's FY2023 Total Debt reads 111,088 million, the figure this entry named,
+   against the 105,103 the chain produced. Honeywell's FY2025 reads 34,580,
+   which is 27,141 plus 1,546 plus 5,893 off the face of its balance sheet with
+   nothing counted twice, and that needed open question 1 fixed first: on the old
+   chain its long-term row overlapped its own current maturities. Kroger's reads
+   15,875, which is exactly what Kroger's own LongTermDebt tag holds for that
+   instant, a cross-check from a tag the row does not read. JPMorgan gets no row,
+   because it reports no long-term debt and a total missing an input stays
+   missing.
+
+   OtherShortTermBorrowings is deliberately in no chain: Apple tags it and
+   CommercialPaper for the same instant with the same 5,980 million, so it is an
+   alias for that line and would have double counted the whole of it.
+
+   Total Debt is now displayed in both tables, both workbooks and the CSV. The
+   tripwire Session 3 left was retired in the commit that made it wrong, and
+   replaced by tests that guard the fix.
 
 5. **Closed.** The Excel Source Tags sheet is one line per value, in both the
    single-company and the peer workbook: line item, period, state, tag, filed
@@ -334,19 +505,33 @@ fixture the same question so it cannot drift back.
    still in the payload and test_scope_gate.py asserts both, so the rule cannot
    quietly revert. See the Session 4A detail for everything else the change moved.
 
-7. **The EPS reconciliation check has never fired on real data.** It looks up
-   net income, diluted shares and diluted EPS by _period_key, which is
-   (unit, start, end). Net income is in USD, shares are in shares, and EPS is in
-   USD/shares, so the keys can never match and the check returns nothing for
-   every company. Its tests pass because the helper builds all three points with
-   the same unit. Found in Session 4A while looking for the flag that should have
-   caught Honeywell's Q2 2025 column, where EPS of 2.46 sits beside a share count
-   of 318.8 million and net income of 1,570 million because the EPS figure comes
-   from the FY2025 10-K and the share count from a 10-Q filed after Honeywell
-   halved its shares. Left alone deliberately: fixing it raises new flags on
-   every company, and Session 4A was constrained not to change peer results
-   beyond the proxy correction. The fix is to key the three series on
-   (start, end) and ignore the unit, which is the only thing they can agree on.
+7. **Closed.** The three series now meet on (start, end) and ignore the unit,
+   which is the only thing net income in USD, a share count in shares, and EPS in
+   USD-per-share can agree on. The check also skips periods that are not one
+   quarter or one year: a year-to-date column ends on the same day as the quarter
+   that closes it, and a flag reaches a cell by its end date, so the flag would
+   have been shown against the wrong numbers.
+
+   Fifty-eight periods flag across the five fixtures and every one was read.
+   Honeywell's Q2 2025 is one of them, which is what the check was wanted for.
+   Apple contributes five, the quarters either side of its two stock splits,
+   where a later 10-K restated the EPS and nothing ever restated the share count,
+   so the ratio between reported and computed is exactly the split factor. Kroger
+   and SAP contribute none. JPMorgan contributes fifty-two, all one cause: its
+   EPS is computed on income available to common shareholders while the check
+   divides total net income, so every period is high by the preferred dividend.
+   That was proven rather than assumed, by substituting the available-to-common
+   figure for the ten periods JPMorgan tags it and watching all ten come inside
+   tolerance. They are kept, because a reader multiplying that bank's diluted
+   share count by its diluted EPS really will not get its net income; the
+   tolerance sorts the rest, and only three of the fifty-two are 2021 or later.
+
+   Nothing was silenced and no tolerance was tuned. The message changed: it used
+   to assert "possible share count or unit mismatch" and now names the two things
+   it can be. Using available-to-common as the numerator where a filer reports it
+   would close JPMorgan's fifty-two properly, and is worth a later session; it
+   needs another registry item and another fixture regeneration for a filer no
+   scaffold is generated for.
 
 8. **A fiscal year is named for the calendar year it ends in, and Kroger
    disagrees.** Edgardly labels a period FY plus the year of its end date, so
