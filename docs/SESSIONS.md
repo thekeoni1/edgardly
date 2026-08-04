@@ -1,9 +1,10 @@
 # Edgardly v2 session prompts
 
-Seven staggered work sessions covering the pre-Phase-1 fixes, Phase 1, and Phase 2 of
+Staggered work sessions covering the pre-Phase-1 fixes, Phase 1, and Phase 2 of
 docs/V2_PLAN.md. Each prompt is self-contained: paste one into a fresh Claude Code session,
 and it loads its own context before doing anything. Session 4 was split into 4A and 4B once
-it was clear how much moved with the period engine; the entry says why.
+it was clear how much moved with the period engine; the entry says why. Session 4C is a
+short interstitial that settles the two naming questions Phase 1's exit review left open.
 
 Rules of use:
 
@@ -173,6 +174,37 @@ filer stays a flagged blank, never a substitute.
 
 Exit criteria: suite green, single-company and peer views agree on periods for all fixture
 companies, Phase 1 declared done in PROGRESS.md.
+
+## Session 4C. Period names
+
+A short interstitial before Phase 2. Phase 1's exit review passed with two caveats, open
+questions 8 and 9, and both are about what a period is called rather than what it holds.
+They are settled here because Phase 2's hand-check is the first place a column heading that
+disagrees with the filer's own costs somebody time.
+
+Read PROGRESS.md open questions 8 and 9 and the Session 4B detail first.
+
+0. Amend this Session 4C entry to match the steps below. Commit separately or with step 1.
+1. Fix fiscal-year naming per open question 8: take the label from the filer's dei
+   DocumentFiscalYearFocus, read from the earliest annual filing that first reported the
+   period end (the same lookup filing_pointers uses), falling back to the current end-year
+   rule only when no focus value exists. Kroger's 2025-02-02 to 2026-01-31 year must read
+   FY2025; Apple's and Honeywell's labels must not change; add a synthetic test for a
+   Nike-shaped filer (May FYE named for the later year) to pin the reason the
+   calendar-majority rule was rejected.
+2. Fix quarter numbering per open question 9: number quarters by position between two
+   confirmed fiscal year ends, from dates the engine already has, instead of trusting the
+   filing's fp. The strict xfail in test_kroger.py must flip to a pass. Verify quarter
+   labels are unchanged for Apple and Honeywell.
+3. Regenerate no fixtures; both fixes read data already captured. If DocumentFiscalYearFocus
+   turns out not to be in the companyfacts payload (it is a dei fact), extend
+   make_fixture.py to capture it and regenerate; note which path was taken in PROGRESS.md.
+
+Constraints: no network in tests; never guess values; annual values, provenance, and peer
+alignment must be byte-identical before and after, labels only.
+
+Exit criteria: suite green with the OQ9 xfail now a plain pass, Kroger headers match its
+10-K cover page, PROGRESS.md updated and open questions 8 and 9 closed.
 
 ## Session 5. Scaffold engine and Excel kit (2.1, 2.2, 2.2b, 2.5)
 
