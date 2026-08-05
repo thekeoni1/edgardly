@@ -155,6 +155,39 @@ def quarter_of(end, annual_ends):
     return QUARTER_LABELS[min(max(number, 1), 4) - 1]
 
 
+def closing_fiscal_year(end, annual_ends):
+    """The calendar year of the fiscal year end that closes the year *end* sits in.
+
+    A quarter belongs to the fiscal year that has not finished when the quarter
+    does, which is the year ending on the first confirmed year end at or after
+    it. Apple's quarter ending 28 December 2024 falls inside the year ending
+    27 September 2025, so it comes back 2025 rather than the 2024 its own end
+    date shows. A quarter that is itself a year end closes its own year, which
+    is Kroger's fourth quarter and why the comparison is inclusive.
+
+    A quarter inside a fiscal year that has not closed has no year end after it
+    to name it. The last confirmed year end plus this filer's typical year
+    length says where the next one falls, which is the same stand-in
+    quarter_of already uses for the same case.
+
+    Returns None when no year end has been confirmed at all. The caller then has
+    nothing to name the year from, and nothing here will guess one.
+
+    annual_ends must be sorted.
+    """
+    if not end or not annual_ends:
+        return None
+    later = [a for a in annual_ends if a >= end]
+    if later:
+        return int(later[0][:4])
+    try:
+        projected = (datetime.date.fromisoformat(annual_ends[-1])
+                     + datetime.timedelta(days=typical_year_days(annual_ends)))
+    except (ValueError, TypeError):
+        return None
+    return projected.year
+
+
 def period_ends(deduped, names=None, period_type=ANNUAL):
     """Return {period end date: period label} for the periods a filer confirms.
 

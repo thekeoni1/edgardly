@@ -208,21 +208,43 @@ Exit criteria: suite green with the OQ9 xfail now a plain pass, Kroger headers m
 
 ## Session 5. Scaffold engine and Excel kit (2.1, 2.2, 2.2b, 2.5)
 
-Read docs/V2_PLAN.md (Part 4 and Part 8 R1, R2, R4) and PROGRESS.md first.
+The first Phase 2 session. Read docs/V2_PLAN.md (Part 4 and Part 8 R1, R2, R4) and
+PROGRESS.md first, especially the Session 4B and 4C details, the decisions log, and open
+question 10.
 
-1. Build app/scaffold/three_statement.py: the model spec of rows, periods, and provenance,
-   including plug rows per the decisions log, and flag any plug exceeding 10 percent of its
-   statement total.
-2. Build app/scaffold/excel.py as a reusable kit per V2_PLAN 2.2: statement blocks, asm_*
-   named inputs, forecast rows guarded with IF(ISBLANK(...)), check rows, and provenance
-   comments. Do not hardcode sheet names or column counts.
-3. Add the formula-evaluation harness using the `formulas` library: tests generate a workbook
-   from a fixture, evaluate it, and assert that the balance check equals zero and that
-   forecasts are blank when assumptions are blank. Constrain scaffold formulas to what the
-   library evaluates.
+0. Amend this Session 5 entry to match the steps below. Commit separately or with step 1.
+1. Close open question 10 per the decisions log: a quarter is named for the fiscal year it
+   belongs to, using the fiscal-year offset from open question 8. Kroger's fourth quarter of
+   fiscal 2025 reads Q4 FY2025; Apple's quarter ending 2024-12-28 reads Q1 FY2025. Annual
+   labels, values, and provenance are untouched. Record the convention in the decisions log.
+   Commit before starting the scaffold work.
+2. Build app/scaffold/three_statement.py per V2_PLAN 2.1: the model spec of rows, periods,
+   and provenance, built from the registry (41 entries; the three Short-Term Debt components
+   are items in their own right). Plug rows per the decisions log, flagging any plug over 10
+   percent of its statement total (task 2.2b). By-design blanks are first-class: a row the
+   filer does not report is present, flagged, and explained, never silently plugged.
+   Honeywell's missing Liabilities means its balance-sheet check cannot be
+   Assets = Liabilities + Equity verbatim; derive the missing side from what is reported and
+   say so. Rows crossing the Cost of Revenue meaning seam inherit its flag.
+3. Build app/scaffold/excel.py per V2_PLAN 2.2: statement blocks, asm_* named inputs,
+   forecast rows guarded with IF(ISBLANK(...)), check rows, and provenance comments. No
+   hardcoded sheet names or column counts. Nested derivations (Total Debt standing on the
+   Short-Term Debt sum) become formulas referencing other derived cells, so every leaf in the
+   workbook traces to a tag and filing. Underivable totals carry DERIVATION_UNAVAILABLE, not
+   "not tagged in XBRL".
+4. Add the formula-evaluation harness per task 2.5 using the `formulas` library: tests
+   generate a workbook from a fixture, evaluate it, assert the balance check equals zero (or
+   the filer's documented residual), and assert forecasts are blank when assumptions are
+   blank. Constrain scaffold formulas to what the library evaluates; if an exception proves
+   necessary, record it and the manual-check burden it creates in PROGRESS.md.
 
-Exit criteria: suite green including evaluated-formula tests for Apple, and the workbook
-opens in Excel with no repair prompt (manual check, noted in PROGRESS.md).
+Constraints: no network in tests; never guess or auto-fill a value, assumption, or forecast;
+existing puller and peer features unchanged apart from the quarter-label convention in step 1.
+
+Exit criteria: suite green including evaluated-formula tests for Apple and Honeywell (one
+clean filer, one with by-design blanks), a generated workbook opens in real Excel with no
+repair prompt (manual check, noted in PROGRESS.md), PROGRESS.md updated and open question 10
+closed.
 
 ## Session 6. Endpoint, UI, and acceptance (2.3, 2.4)
 

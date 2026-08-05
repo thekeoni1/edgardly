@@ -501,10 +501,17 @@ def _build_xbrl_result(cik, start_year, end_year, period_type):
     # January year end is where the two conventions part.
     fy_offset = xbrl.fiscal_year_offset(facts)
 
+    # A quarter is named for the fiscal year it sits in rather than the calendar
+    # year it ends in, so the quarterly view and the annual view agree about the
+    # same date. That needs the confirmed year ends, which for the annual view
+    # are the columns themselves and for the quarterly view are a separate ask.
+    annual_ends = (sorted(confirmed) if period_type == "annual"
+                   else sorted(periods.period_ends(deduped, xbrl.TAG_MAP, periods.ANNUAL)))
+
     columns = []
     for end in sorted(in_range):
         fp = in_range[end]
-        label = xbrl.period_label(end, fp, period_type, fy_offset)
+        label = xbrl.period_label(end, fp, period_type, fy_offset, annual_ends)
         yr = int(end[:4]) - (fy_offset if period_type == "annual" else 0)
         columns.append({"key": end, "label": label, "fp": fp, "fy": yr})
 

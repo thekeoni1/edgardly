@@ -397,6 +397,63 @@ def test_numbering_decides_what_a_quarter_is_called_not_whether_it_happened():
 
 
 # ---------------------------------------------------------------------------
+# Which year a quarter is called after (open question 10)
+# ---------------------------------------------------------------------------
+
+# Apple's calendar, which breaks the rule from the other side: the fiscal year
+# ends in September, so the first quarter of each year ends the December before.
+APPLE_YEAR_ENDS = ["2023-09-30", "2024-09-28", "2025-09-27"]
+
+
+def test_a_quarter_belongs_to_the_year_that_has_not_closed_when_it_does():
+    """The fiscal year a quarter sits in is the one ending at or after it."""
+    assert periods.closing_fiscal_year("2024-12-28", APPLE_YEAR_ENDS) == 2025
+    assert periods.closing_fiscal_year("2025-06-28", APPLE_YEAR_ENDS) == 2025
+
+    # A quarter that is itself a year end closes its own year, which is why the
+    # comparison has to be inclusive. Kroger's fourth quarter is the case.
+    assert periods.closing_fiscal_year("2026-01-31", KROGER_YEAR_ENDS) == 2026
+    assert periods.closing_fiscal_year("2025-05-24", KROGER_YEAR_ENDS) == 2026
+
+
+def test_a_quarter_past_the_last_confirmed_year_end_projects_the_next_one():
+    """The year has not closed, so the filer's own year length says where it will."""
+    assert periods.closing_fiscal_year("2026-05-23", KROGER_YEAR_ENDS) == 2027
+    assert periods.closing_fiscal_year("2026-06-27", APPLE_YEAR_ENDS) == 2026
+
+
+def test_no_confirmed_year_end_places_no_quarter():
+    assert periods.closing_fiscal_year("2024-03-31", []) is None
+    assert periods.closing_fiscal_year("", KROGER_YEAR_ENDS) is None
+
+
+def test_a_quarter_is_named_for_its_fiscal_year_not_its_calendar_year():
+    """Open question 10, both filers it was about, in one place.
+
+    Kroger's fourth quarter ends 31 January 2026 and used to read "Q4 2026"
+    beside an annual column for the same date reading FY2025. Apple's first
+    quarter ends in December and used to read a year early. Both now read the
+    year of the annual column they belong under.
+    """
+    assert xbrl.period_label("2026-01-31", "Q4", "quarterly", 1,
+                             KROGER_YEAR_ENDS) == "Q4 FY2025"
+    assert xbrl.period_label("2025-05-24", "Q1", "quarterly", 1,
+                             KROGER_YEAR_ENDS) == "Q1 FY2025"
+    assert xbrl.period_label("2024-12-28", "Q1", "quarterly", 0,
+                             APPLE_YEAR_ENDS) == "Q1 FY2025"
+    assert xbrl.period_label("2025-06-28", "Q3", "quarterly", 0,
+                             APPLE_YEAR_ENDS) == "Q3 FY2025"
+
+
+def test_naming_a_quarter_for_its_fiscal_year_leaves_the_annual_label_alone():
+    """The annual column for the same date reads what it read before."""
+    assert xbrl.period_label("2026-01-31", "FY", "annual", 1,
+                             KROGER_YEAR_ENDS) == "FY2025"
+    assert xbrl.period_label("2025-09-27", "FY", "annual", 0,
+                             APPLE_YEAR_ENDS) == "FY2025"
+
+
+# ---------------------------------------------------------------------------
 # Which value covers a period
 # ---------------------------------------------------------------------------
 

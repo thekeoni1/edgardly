@@ -23,6 +23,7 @@ wrong, change it here with a dated note saying why.
 | 2026-08-04 | One derivation may have optional terms, and only for a sum of separately reported lines | Every other rule needs every input: gross profit without a cost of revenue is unknown, not equal to revenue. Short-Term Debt is a sum of three current-liability lines, and a filer carries the ones it has. Apple shows term debt and commercial paper, Honeywell current maturities and one combined borrowings line, Kroger current maturities alone. An absent term there is a line the balance sheet does not have, not a number nobody knows. At least one term must be present, so a total of nothing stays missing rather than becoming zero, and the formula that ships with each value names only the terms that were added. |
 | 2026-08-04 | Periods are decided by dates, never by the fiscal_period label | Both views run on app/periods.py. A flow item covers a period when its span is 10 to 14 months (a year) or 2 to 4 months (a quarter); an instant, having no span, is anchored to a period some measurable item already confirmed. EDGAR stamps fp on the filing rather than the fact, so the label describes whoever filed last, not the fact. Nothing invents a period: a value carrying a confirmed end date that covers something else is reported as PERIOD_UNRESOLVED, not shown. |
 | 2026-08-04 | A fiscal year is named by the filer's convention, not by its own year's focus value | The name comes from dei DocumentFiscalYearFocus, but what is read from it is the offset between a filing's focus and the calendar year of its own year end, with the commonest offset winning across the filer's annual filings. Face value does not work: Kroger tagged focus 2025 on two consecutive years and Honeywell tagged 2020 on its 2021 annual report, so year-by-year reading puts two columns under one name, and no focus value at all exists for the comparative years a company's first XBRL filing carried. An offset of zero is exactly the old end-year rule, which is also the fallback where a payload names no fiscal year. A filer that changes its fiscal year end changes its convention with it and would need more than one number; none in the acceptance set does. |
+| 2026-08-05 | A quarter is named for the fiscal year it belongs to | The year on a quarter label is the year of the fiscal year the quarter sits inside, which is the first confirmed year end at or after it, named by the same offset a fiscal year is named by. Kroger's fourth quarter ending 31 January 2026 reads Q4 FY2025 and no longer reads "Q4 2026" beside an annual column for the same date reading FY2025; Apple's quarter ending 28 December 2024 reads Q1 FY2025 rather than "Q1 2024", because Apple's first quarter ends the December before its September year end. The calendar year of the end date was the old rule and was wrong for both filers in opposite directions. A quarter in a year that has not closed is placed by projecting the filer's own year length forward, and a quarter with no confirmed year end anywhere keeps the calendar year of its end date, which is the old rule as a fallback. Labels only: no annual label, no value, and no provenance record moves. |
 | 2026-08-04 | A quarter is numbered by position between two fiscal year ends | How far through its fiscal year the period ends, in quarters, rounded to the nearest one, against year ends the engine has already confirmed. Never from fp, which names the filing: Kroger's fourth quarter is carried only by the next year's first-quarter 10-Q, and Honeywell's third quarter of 2020 sits in a 10-Q that is itself mis-stamped Q2. An unclosed year is measured against the filer's median year length; a quarter with no year end before it keeps the label it arrived with, because there is nothing to number from. Numbering decides the name only: which quarters exist still needs a filing to have called the date a quarter, so no value moves into or out of the view. |
 
 ## Session log
@@ -700,21 +701,25 @@ about the calendar year a quarter label carries rather than about the quarter.
    and every value in it are identical before and after. Numbering answers what
    a period is called, not whether it happened.
 
-10. **A quarter label carries the calendar year of its end date, and for two
-    filers that is the wrong year.** Kroger's fourth quarter of fiscal 2025 ends
-    31 January 2026 and reads "Q4 2026", beside an annual column for the same
-    period end that now reads FY2025. Apple has the mirror problem from the
-    other direction: its first quarter ends in December, so the quarter ending
-    28 December 2024 reads "Q1 2024" and is Apple's first quarter of fiscal
-    2025. Naming a quarter for the fiscal year it belongs to fixes both, and
-    the fiscal-year offset that open question 8 introduced is all the machinery
-    it needs.
+10. **Closed.** A quarter is named for the fiscal year it belongs to, which is
+    the year ending on the first confirmed year end at or after it, named by
+    the same offset open question 8 introduced. Kroger's fourth quarter reads
+    Q4 FY2025 where it read "Q4 2026", and Apple's quarter ending 28 December
+    2024 reads Q1 FY2025 where it read "Q1 2024". Both were wrong in opposite
+    directions under the calendar-year rule, which is why fixing one filer's
+    labels by hand would have broken the other's.
 
-    Not done in Session 4C because that session's prompt required Apple's and
-    Honeywell's quarter labels to be unchanged, and this changes every Apple
-    quarter label by a year. It is a decision about a convention rather than a
-    correction of a defect, and it wants stating before it is made: today the
-    annual and quarterly views of the same period end can disagree about the
-    year, which is worse than either convention consistently applied. The
-    annual table, which is the one the app shows and the one Phase 2 hand-checks,
-    is unaffected either way.
+    All 223 quarter columns across the four us-gaap fixtures are relabelled and
+    no column set changes. Honeywell's 55 and JPMorgan's 54 gain the FY prefix
+    and keep their year, being calendar-year filers whose quarters end inside
+    the year they are named for. Apple's 18 December quarters each move forward
+    a year and its other 37 keep theirs. Kroger's 59 all move back a year, its
+    offset being one. Every annual label, every value and every provenance
+    record is identical before and after; the comparison was run cell by cell
+    over both views on all five fixtures.
+
+    A quarter of a fiscal year that has not closed has no year end after it, so
+    the filer's own median year length projects where the next one falls, which
+    is the stand-in quarter numbering already used for the same case. A quarter
+    with no confirmed year end anywhere keeps the calendar year of its end
+    date, which is exactly the rule this replaces.

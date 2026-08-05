@@ -463,6 +463,33 @@ def test_apples_quarters_are_numbered_exactly_as_they_always_were(apple_facts):
     assert len(quarters) == 55
 
 
+def test_apples_december_quarter_opens_the_next_fiscal_year(apple_facts, monkeypatch):
+    """Open question 10 from the side Kroger cannot show.
+
+    Apple's fiscal year ends in September, so its first quarter ends the
+    December before, and the calendar year on the label was a year behind the
+    fiscal year the quarter belongs to. The quarter ending 28 December 2024 is
+    Apple's first quarter of fiscal 2025, and the annual column it rolls up
+    into reads FY2025. Apple's offset is zero, so this moves nothing about the
+    naming convention itself; it moves which year a quarter is placed in.
+    """
+    monkeypatch.setattr(xbrl, "fetch_company_facts", lambda cik: apple_facts)
+    monkeypatch.setattr(edgar_api, "get_company_meta",
+                        lambda cik: {"sic": "3571", "sic_description": "Electronic Computers"})
+    _e, columns, _r, _s = flask_app._build_xbrl_result(320193, 2005, 2035, "quarterly")
+    by_end = {col["key"]: col["label"] for col in columns}
+
+    assert by_end["2024-12-28"] == "Q1 FY2025"
+    assert by_end["2025-03-29"] == "Q2 FY2025"
+    assert by_end["2025-06-28"] == "Q3 FY2025"
+
+    # Every December quarter in the fixture is the first of the year after it.
+    december = {end: label for end, label in by_end.items() if end[5:7] == "12"}
+    assert all(label == "Q1 FY{}".format(int(end[:4]) + 1)
+               for end, label in december.items())
+    assert len(december) == 18
+
+
 def test_every_apple_value_declares_a_state(apple_table):
     """The whole grid, 15 items by 11 years, with nothing unaccounted for.
 

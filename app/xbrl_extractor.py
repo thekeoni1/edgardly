@@ -1025,19 +1025,27 @@ def missing_provenance(line_item, period_label, cik=None, pointer=None,
     }
 
 
-def period_label(period_end, fiscal_period=None, period_type="annual", fy_offset=0):
-    """Name a period the way the tables name it: FY2023, or Q3 2023.
+def period_label(period_end, fiscal_period=None, period_type="annual", fy_offset=0,
+                 annual_ends=()):
+    """Name a period the way the tables name it: FY2023, or Q3 FY2023.
 
-    The year comes from the period end date rather than from the fy stamped on
-    whichever filing reported the fact. fy_offset is the filer's own naming
-    convention, from fiscal_year_offset: Kroger's year ending 31 January 2026
-    is FY2025 because Kroger says so, and Apple's offset is zero so nothing
-    about Apple moves.
+    A fiscal year is named for the calendar year its period ends in, shifted by
+    the filer's own convention. fy_offset comes from fiscal_year_offset: Kroger's
+    year ending 31 January 2026 is FY2025 because Kroger says so, and Apple's
+    offset is zero so nothing about Apple's annual labels moves.
 
-    A quarter keeps the calendar year of its end date. Naming it for the fiscal
-    year it belongs to is a separate question, and a bigger one: Apple's first
-    quarter ends in December, so the change would move every Apple quarter
-    label. PROGRESS.md open question 10.
+    A quarter is named for the fiscal year it belongs to, not for the calendar
+    year it ends in, which is the same year its own annual column carries. The
+    two used to disagree about the same date: Kroger's fourth quarter ended
+    31 January 2026 read "Q4 2026" beside an annual column reading FY2025, and
+    Apple's quarter ending 28 December 2024 read "Q1 2024" when it is Apple's
+    first quarter of fiscal 2025 (PROGRESS.md open question 10). Which fiscal
+    year a quarter is in comes from closing_fiscal_year, which needs the year
+    ends the period engine has already confirmed; annual_ends must be sorted.
+
+    Without confirmed year ends there is nothing to place a quarter in, and the
+    calendar year of its end date stands in, which is what the labels carried
+    before. That is a name, never a value: no number moves either way.
     """
     if not period_end:
         return ""
@@ -1048,7 +1056,13 @@ def period_label(period_end, fiscal_period=None, period_type="annual", fy_offset
         except (ValueError, TypeError):
             pass
         return "FY{}".format(year)
-    return "{} {}".format(fiscal_period, year)
+
+    closing = periods.closing_fiscal_year(period_end, annual_ends)
+    try:
+        year = str((closing if closing is not None else int(year)) - fy_offset)
+    except (ValueError, TypeError):
+        pass
+    return "{} FY{}".format(fiscal_period, year)
 
 
 def flag_summary(all_flags):

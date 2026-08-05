@@ -315,6 +315,38 @@ def test_krogers_sixteen_week_first_quarter_is_numbered_first(kroger_facts):
     assert quarters["2013-11-09"] == "Q3"
 
 
+def test_the_quarterly_and_annual_views_now_name_the_same_year(kroger_facts, monkeypatch):
+    """Open question 10, on the filer that raised it.
+
+    The fourth quarter ends on the fiscal year end, so the two views describe
+    the same date. They used to name it differently: the annual column read
+    FY2025, its own convention, and the quarterly column read "Q4 2026", the
+    calendar year the date falls in. A quarter now takes the year of the fiscal
+    year it closes, so the two agree.
+    """
+    monkeypatch.setattr(xbrl, "fetch_company_facts", lambda cik: kroger_facts)
+    monkeypatch.setattr(edgar_api, "get_company_meta",
+                        lambda cik: {"sic": "5411",
+                                     "sic_description": "Retail-Grocery Stores"})
+
+    _e, annual, _r, _s = flask_app._build_xbrl_result(56873, 2005, 2035, "annual")
+    _e, quarterly, _r, _s = flask_app._build_xbrl_result(56873, 2005, 2035, "quarterly")
+
+    by_end = {col["key"]: col["label"] for col in quarterly}
+    assert by_end[FISCAL_2025_END] == "Q4 FY2025"
+    assert by_end[FISCAL_2024_END] == "Q4 FY2024"
+    assert by_end["2025-05-24"] == "Q1 FY2025"
+
+    # Every date both views show is named for the same fiscal year in each.
+    for col in annual:
+        if col["key"] in by_end:
+            assert by_end[col["key"]].endswith(col["label"]), col["key"]
+
+    # A quarter of the year that has not closed yet is placed by the filer's
+    # own year length, so the newest column keeps counting rather than stalling.
+    assert by_end["2026-05-23"] == "Q1 FY2026"
+
+
 # ---------------------------------------------------------------------------
 # Chain corrections Kroger forced
 # ---------------------------------------------------------------------------

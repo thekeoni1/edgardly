@@ -176,8 +176,19 @@ def test_missing_provenance_uses_the_statement_the_registry_names():
 def test_period_label_reads_the_year_off_the_period_end():
     """EDGAR's fy field labels the filing, not the fact, so the date decides."""
     assert xbrl.period_label("2023-09-30", "FY", "annual") == "FY2023"
-    assert xbrl.period_label("2023-06-30", "Q3", "quarterly") == "Q3 2023"
+    assert xbrl.period_label("2023-06-30", "Q3", "quarterly") == "Q3 FY2023"
     assert xbrl.period_label("", "FY", "annual") == ""
+
+
+def test_a_quarter_with_no_confirmed_year_ends_keeps_its_own_year():
+    """Nothing to place the quarter in, so its end date's year stands in.
+
+    The fallback is a name, not a value. Passing no year ends is what a caller
+    that has confirmed none does, and the answer is the one the labels carried
+    before quarters were named for their fiscal year.
+    """
+    assert xbrl.period_label("2023-06-30", "Q3", "quarterly", 0, ()) == "Q3 FY2023"
+    assert xbrl.period_label("2026-01-31", "Q4", "quarterly", 1, ()) == "Q4 FY2025"
 
 
 # ---------------------------------------------------------------------------
