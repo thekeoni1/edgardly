@@ -45,6 +45,7 @@ open questions the next session needs to know about.
 | 2026-08-04 | 4B | The chain corrections and the Phase 1 exit review. Six commits: session prompt amended, the Kroger fixture, the Long-Term Debt chain, four more chain corrections, Short-Term Debt summed and Total Debt surfaced, the EPS reconciliation check. Phase 1 declared done. | 1 | Open questions 1, 4 and 7 closed. Two new ones, 8 and 9, both about labels rather than values, both raised by Kroger. |
 | 2026-08-04 | 4C | Period names, an interstitial before Phase 2. Three commits: session prompt added, fiscal years named by the filer's own convention, quarters numbered by position. No fixture regenerated and no value changed anywhere. | 0 | Open questions 8 and 9 closed. One new one, 10, about the calendar year a quarter label carries. |
 | 2026-08-05 | 5 | The first Phase 2 session: V2_PLAN 2.1, 2.2, 2.2b and 2.5. Four commits: session prompt amended and quarters named for their fiscal year, the model spec in app/scaffold/three_statement.py, the writer kit in app/scaffold/excel.py, the formula-evaluation harness. | 0 | Open question 10 closed. Two new ones, 11 and 12, both raised by measuring the scaffold rather than by building it. |
+| 2026-08-05 | 6 | The last Phase 2 session: V2_PLAN 2.3 and 2.4. Three commits: open questions 11 and 12 settled, the endpoint and the button, the acceptance documents and the generator. Phase 2's exit review is written and its last criterion is the user's hand-check, which has not run. | 0 | Open questions 11 and 12 closed. None new. |
 
 ### Session 1 detail
 
@@ -666,6 +667,147 @@ earnings and none of those is a registry item. Apple's FY2025 residual is 91,699
 million, almost exactly its buyback. So the row is labelled a residual, is left
 uncoloured, and reports the number instead of failing a test it was never going
 to pass. Open question 12.
+
+### Session 6 detail
+
+Suite state: 683 tests, all passing, zero xfails. 637 mocked tests run offline in
+about 70 seconds; 46 integration tests hit live EDGAR or start a browser and take
+about 49 seconds. Session 5 left 650. The 33 new tests are 20 for the endpoint and
+the button, 10 for coverage and the flag summary, 2 for the workbook, and 1 in the
+evaluation harness.
+
+**Open question 11, and what it cost to close.** The threshold is untouched at 10
+percent. What moved is where the flag is raised: the income statement and the cash
+flow statement keep it, the balance sheet reports the same measurement as a
+coverage percentage on the Checks sheet. Flagged plug cells across the three
+filers fall from 122 to 50, which is exactly the 72 balance-sheet ones, and 75
+measured cells take their place, five sections over five years per filer.
+
+Coverage is written as arithmetic over two cells the balance sheet already shows,
+the subtotal less its plug over the subtotal, rather than as a percentage this
+code computed and typed in. So it is one minus the plug's share by construction; a
+test asserts that identity on all 75 cells, and the evaluation harness asserts
+Excel's own answer matches the spec on the 50 belonging to Apple and Honeywell.
+
+Nothing is clamped and no absolute value is taken:
+
+| Section | Apple FY2025 | Honeywell FY2025 | Kroger FY2025 |
+| --- | --- | --- | --- |
+| Total current assets | 68 | 88 | 38 |
+| Total assets | 59 | 85 | 84 |
+| Total current liabilities | 55 | 59 | 66 |
+| Total liabilities | 85 | 86 | 74 |
+| Total equity | -19 | 339 | 486 |
+
+The equity row is the one that proves the point. It has a single component,
+retained earnings, measured against a total that treasury stock and accumulated
+other comprehensive income pull down, so it runs from minus 34 to plus 486 percent
+across these filers and every one of those is the honest reading. Forcing it into
+a nought-to-one range would have hidden the only thing that section has to say.
+The sheet's note says what above 100 and below zero mean, and says that a figure
+far from 100 limits the breakdown above it and never the subtotal itself.
+
+**Open question 12** is a document change and nothing else. The workbook already
+labelled the retained earnings row a residual, already left it uncoloured and
+already reported the number; only the checklist asked for a green tie that cannot
+happen. What the residual actually is, per filer, is worth knowing before the
+hand-check, because it is not uniformly large: Apple's runs 79 to 97 billion, which
+is its buyback programme, Honeywell's is 19 to 83 million in three years and minus
+1,624 million in FY2025, and Kroger's is 4 to 27 million. A checker who expects a
+big number everywhere would misread two of the three.
+
+**The endpoint decides nothing.** POST /api/scaffold/three-statement fetches the
+payload, looks up the SIC the gate needs, calls build_model and write_workbook,
+and turns a refusal into a response. The test that matters builds the same spec
+directly and compares the two workbooks cell for cell across all seven sheets,
+because the way scaffold rules leak into app.py is one convenience at a time and
+nothing else would notice.
+
+Refusals carry the gate's own sentence and write no file at all: not an empty
+workbook, not one with the refusal typed into it. JPMorgan is refused on SIC 6021,
+SAP on reporting no us-gaap facts, and an insurer on SIC alone, which is tested by
+serving Apple's payload under SIC 6311 since no insurer fixture exists. That last
+one is the honest test of a deterministic gate: the refusal is the code, and a
+filer with perfectly ordinary tagging is still refused. CSV is refused too, since
+flattening seven linked sheets to values destroys the only thing the workbook is
+for.
+
+A failed SIC lookup does not stop a scaffold. The submissions API is a second
+request and is allowed to fail; refusing to build anything when it does would make
+an unrelated outage look like a verdict about the company.
+
+**Two bugs in the flag summary, found by looking at its output rather than by a
+test.** The summary moved from excel.py to three_statement.py in the same commit,
+because a statement about flags is not an Excel concern and the endpoint needed it
+too.
+
+- It keyed on (flag type, row), and a flag that names no row has no row. Kroger
+  tags no SG&A, R&D, inventory, short-term investments, commercial paper or
+  short-term borrowings, and all six of those messages collapsed into one line:
+  the Checks sheet reported one and silently dropped five. It now keys on the
+  message where there is no row.
+- A plug flagged in five years reported the first year's percentage under a line
+  saying it happened in all five. Kroger's operating plug read "773 percent of
+  operating income (5 of 5 historical periods)" when it reaches 1,720 percent in
+  another of those five. The summary now reports the worst year and says
+  "reaches" so the number reads as a range rather than a fact about one column.
+
+Both were invisible to the suite, which checked that a line existed rather than
+that it said the right thing, and both are now tested.
+
+**The button, driven in a real browser offline.** Chromium against the committed
+fixtures: Apple builds and the confirmation names the file, the columns and what
+the workbook flags; JPMorgan shows the gate's refusal in its own element rather
+than as an error, and no file appears on disk. No page errors, and the single
+console line is Chromium noting the 422 itself, which is unavoidable for a fetch
+that returns a non-2xx status and is not a fault in the page.
+
+**The three acceptance workbooks.** Built through the endpoint by
+scripts/generate_acceptance.py, five historical years and three forecast columns
+each, from the committed fixtures. Nothing generated is committed; app/exports is
+gitignored and the workbooks are working copies for the hand-check.
+
+Opened in Excel 16.0 on this machine through COM automation with a full
+recalculation forced. All seven sheets, all 48 defined names and all 402 or 403
+cell comments survive in every file. Excel's own arithmetic puts the balance check
+at zero in all five historical columns for all three filers, and its coverage
+figures match the model spec to the digit shown. Kroger's cash tie is zero in
+every column; Apple's and Honeywell's carry the currency residuals their filings
+report.
+
+That is the same automation check Session 5 ran and it has the same limit: alerts
+are suppressed, so what is verified is that no content was lost and everything
+recalculated, not that no repair dialog would have been shown. The interactive
+open is a line on each checklist copy and only the user can tick it.
+
+**What is not done.** The hand-check itself. Three checklist copies exist, all
+three are unsigned, and the breakage log is empty because nothing has been checked
+rather than because nothing was found. Phase 2's exit review below records that as
+the one open criterion.
+
+## Phase 2 exit review
+
+Run 2026-08-05 against the exit criteria in V2_PLAN Part 4. Five of six pass on
+evidence in the repo. The sixth is the acceptance hand-check, which is the user's
+and has not run, so **Phase 2 is not yet declared done.** This section is filled
+in and dated at the moment the three signed copies exist and the breakage log is
+empty or fully resolved; nothing else is waiting on it.
+
+| Criterion | Verdict | Evidence |
+| --- | --- | --- |
+| A workbook with linked historical IS, BS and CF, real cross-sheet formulas, and forecast columns wired to a blank Assumptions sheet | Pass | Seven sheets in the order V2_PLAN names them, 58 rows over five historical and three forecast columns. Every derived cell is a formula over other cells rather than a number, every forecast cell references a named assumption or another forecast cell, and the evaluation harness computes all of it and compares 184 derived historical cells against the spec. |
+| Plug rows are explicit derived formulas, never filled numbers, with the size flag of task 2.2b | Pass, with the 2026-08-05 amendment | Eleven plug rows, each written as the reported total less the components, tested cell by cell against that definition on all three filers. The size flag stays on the income statement and cash flow, where 50 cells raise it; the balance sheet reports per-section coverage instead, which is the same measurement without a sentence that fired on 72 of 75 cells. |
+| The endpoint and UI button exist and surface refusals | Pass | POST /api/scaffold/three-statement, tested against five fixtures, returning the scope gate's exact message and no file for a bank, an insurer and an IFRS-only filer. The button is in the XBRL view and was driven in a real browser offline for both an acceptance and a refusal. |
+| Formula-evaluation harness, with the vocabulary constrained to what it evaluates | Pass | 16 tests in test_formula_eval.py. Nothing evaluates to an error, the balance check is zero in every historical column, blank assumptions produce blank forecasts and filled ones produce three statements that tie. The vocabulary is still the eight functions Session 5 recorded; coverage needed none of them, being two references and two operators. |
+| Acceptance harness exists: checklist and breakage log | Pass | docs/acceptance/3s_checklist.md, three resumable copies with a sitting log each, and docs/acceptance/breakage_log.md with the rule that every entry ends fixed or as a flagged blank. Two lines depart from V2_PLAN Part 4's template and say so in the document. |
+| All three checklists signed off, every discrepancy fixed or converted into a flagged blank | **Open** | The three workbooks are generated and the checklists are printed and waiting. No copy is signed and the breakage log has no entries, which means the check has not run rather than that it found nothing. This is the criterion Phase 2 ends on, it is hours of careful work against three 10-Ks, and V2_PLAN R10 is the risk that it is a solo bottleneck. It may take several sittings and this file says so until it is done. |
+
+Two things the hand-check should expect rather than log as bugs, both established
+before it starts. Honeywell's balance check is zero by construction, because it
+tags no Liabilities element and its total is derived from the identity the check
+tests; the row is flagged and left uncoloured for that reason. And Kroger's
+inventory, SG&A and R&D rows are blank because it tags no element for them, with
+the plug beside each saying what it absorbed. Everything else is fair game.
 
 ## Phase 1 exit review
 
