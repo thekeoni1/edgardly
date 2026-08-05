@@ -62,11 +62,12 @@ def _use_fixtures():
     edgar_api.get_company_meta = meta
 
 
-def _checklist_section(name):
+def _checklist_section(short):
     """One company's copy of the checklist, read out of the document itself.
 
     Printed rather than rewritten, so there is one checklist and the thing on
-    screen cannot drift away from the thing in the repo.
+    screen cannot drift away from the thing in the repo. Matched on the short
+    name, which is what the copy headings carry.
     """
     if not os.path.exists(CHECKLIST):
         return "docs/acceptance/3s_checklist.md not found."
@@ -74,9 +75,9 @@ def _checklist_section(name):
         text = handle.read()
     marker = "## Copy"
     for block in text.split(marker)[1:]:
-        if name.lower() in block.split("\n", 1)[0].lower():
+        if short.lower() in block.split("\n", 1)[0].lower():
             return (marker + block).rstrip()
-    return "No copy for {} in the checklist.".format(name)
+    return "No copy headed {} in {}.".format(short, CHECKLIST)
 
 
 def main(argv=None):
@@ -143,7 +144,7 @@ def main(argv=None):
         print("    Years in workbook:  {} historical, {} forecast".format(
             len(payload["historical"]), len(payload["forecast"])))
         print("=" * 78 + "\n")
-        print(_checklist_section(name))
+        print(_checklist_section(short))
     return 0
 
 
