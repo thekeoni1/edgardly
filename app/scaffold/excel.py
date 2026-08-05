@@ -921,45 +921,12 @@ def _write_checks(workbook, layout, spec, placements, columns):
     heading.value = "What this scaffold flags about this filer"
     heading.font = Font(name=BASE_FONT, size=11, bold=True, color=COLOR_HEADER)
     row_number += 1
-    for flag in _summarised_flags(spec):
+    for flag in ts.summarised_flags(spec):
         cell = worksheet.cell(row=row_number, column=layout.label_column)
         cell.value = "[{}] {}".format(flag["flag_type"], flag["message"])
         cell.font = Font(name=BASE_FONT, size=10, color=COLOR_FLAG)
         row_number += 1
     return worksheet
-
-
-def _summarised_flags(spec):
-    """One line per flagged row, not one per flagged cell.
-
-    A plug that is too large is usually too large in every year, and thirty
-    copies of the same sentence is a way of not being read.
-    """
-    summary = {}
-    for flag in spec.flags:
-        details = flag.get("details") or {}
-        key = (flag["flag_type"], details.get("row"))
-        entry = summary.setdefault(key, {"flag_type": flag["flag_type"],
-                                         "message": flag["message"],
-                                         "details": dict(details), "periods": []})
-        if flag.get("period_end"):
-            entry["periods"].append(flag["period_end"])
-        share = details.get("share_of_total")
-        if share is not None:
-            entry["details"]["share_of_total"] = max(
-                share, entry["details"].get("share_of_total", 0))
-    out = []
-    for entry in summary.values():
-        message = entry["message"]
-        row = entry["details"].get("row")
-        if row:
-            message = "{}: {}".format(row, message)
-        if entry["periods"]:
-            message = "{} ({} of {} historical periods)".format(
-                message, len(set(entry["periods"])), len(spec.periods) - 3
-                if len(spec.periods) > 3 else len(spec.periods))
-        out.append({"flag_type": entry["flag_type"], "message": message})
-    return out
 
 
 def _write_source_tags(workbook, layout, spec):

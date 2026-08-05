@@ -1570,7 +1570,7 @@ def api_scaffold_three_statement():
         "historical": [p.label for p in scaffold_model.historical_periods(spec)],
         "forecast": [p.label for p in scaffold_model.forecast_periods(spec)],
         "flags": [{"flag_type": f["flag_type"], "message": f["message"]}
-                  for f in spec.flags],
+                  for f in scaffold_model.summarised_flags(spec)],
     })
 
 

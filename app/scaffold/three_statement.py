@@ -791,6 +791,24 @@ def _missing_terms(cells, terms, key, period_keys):
     return absent
 
 
+_PLUG_TOO_LARGE_TAIL = (
+    "This filer's XBRL is too sparse for this section of the scaffold to be "
+    "relied on: most of the subtotal sits in elements the registry does not "
+    "read, so the components above do not describe it.")
+
+
+def _plug_too_large_message(share, total_row, reaches=False):
+    """One sentence, written once, so a cell and a summary cannot disagree.
+
+    The summary form says "reaches" and carries the worst year's share, because
+    a row flagged in five years with five different percentages has to report
+    one of them and the smallest would be the wrong one to pick.
+    """
+    return "This plug {} {:.0f} percent of {}. {}".format(
+        "reaches" if reaches else "is", 100.0 * share, total_row,
+        _PLUG_TOO_LARGE_TAIL)
+
+
 def _flag(flag_type, message, period_end=None, details=None):
     return {"flag_type": flag_type, "message": message, "period_end": period_end,
             "details": details or {}}
@@ -928,11 +946,7 @@ def _fill_plug(spec, cells, period_keys):
                 and abs(value) > PLUG_FLAG_THRESHOLD * abs(total)):
             flags.append(_flag(
                 FLAG_PLUG_TOO_LARGE,
-                "This plug is {:.0f} percent of {}. This filer's XBRL is too "
-                "sparse for this section of the scaffold to be relied on: most of "
-                "the subtotal sits in elements the registry does not read, so the "
-                "components above do not describe it.".format(
-                    100.0 * abs(value) / abs(total), spec.total),
+                _plug_too_large_message(abs(value) / abs(total), spec.total),
                 key, {"share_of_total": abs(value) / abs(total),
                       "total_row": spec.total, "plug": value, "total": total}))
         built[key] = Cell(value, CELL_DERIVED,
@@ -1360,6 +1374,54 @@ def plug_flags(spec):
     never appears here; see PLUG_FLAG_STATEMENTS for why.
     """
     return tuple(f for f in spec.flags if f["flag_type"] == FLAG_PLUG_TOO_LARGE)
+
+
+def summarised_flags(spec):
+    """One line per flagged row, not one per flagged cell.
+
+    A plug that is too large is usually too large in every year, and thirty
+    copies of the same sentence is a way of not being read. So a flag that
+    names a row is collapsed to that row, keeping the worst share it reached
+    and counting the periods it covered; anything else is collapsed by its own
+    message, which is what keeps six rows that each say "this filer tags no
+    value for it" from collapsing into one row's worth of news.
+    """
+    summary = {}
+    order = []
+    for flag in spec.flags:
+        details = flag.get("details") or {}
+        key = (flag["flag_type"], details.get("row") or flag["message"])
+        if key not in summary:
+            summary[key] = {"flag_type": flag["flag_type"],
+                            "message": flag["message"],
+                            "details": dict(details), "periods": []}
+            order.append(key)
+        entry = summary[key]
+        if flag.get("period_end"):
+            entry["periods"].append(flag["period_end"])
+        share = details.get("share_of_total")
+        if share is not None:
+            entry["details"]["share_of_total"] = max(
+                share, entry["details"].get("share_of_total", 0))
+    total = len(historical_periods(spec))
+    out = []
+    for key in order:
+        entry = summary[key]
+        message = entry["message"]
+        row = entry["details"].get("row")
+        periods_seen = len(set(entry["periods"]))
+        if entry["flag_type"] == FLAG_PLUG_TOO_LARGE:
+            message = _plug_too_large_message(entry["details"]["share_of_total"],
+                                              entry["details"]["total_row"],
+                                              reaches=periods_seen > 1)
+        if row:
+            message = "{}: {}".format(row, message)
+        if entry["periods"]:
+            message = "{} ({} of {} historical periods)".format(
+                message, periods_seen, total)
+        out.append({"flag_type": entry["flag_type"], "message": message,
+                    "details": entry["details"]})
+    return tuple(out)
 
 
 def coverage_for(spec, total_row):

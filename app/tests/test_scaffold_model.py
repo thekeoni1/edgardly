@@ -376,6 +376,65 @@ def test_coverage_says_what_it_finds_even_when_it_is_not_a_share(honeywell):
 
 
 # ---------------------------------------------------------------------------
+# The flag summary
+# ---------------------------------------------------------------------------
+
+def test_a_plug_flagged_every_year_is_one_line_that_says_how_many(apple):
+    """Thirty copies of one sentence is a way of not being read."""
+    lines = [f for f in ts.summarised_flags(apple)
+             if "Other investing activities" in f["message"]]
+
+    assert len(lines) == 1
+    assert lines[0]["message"].endswith("(5 of 5 historical periods)")
+    assert lines[0]["details"]["share_of_total"] > 1.0
+
+
+def test_a_summarised_plug_reports_the_worst_year_and_says_so(kroger):
+    """Five years at five different percentages have to report one of them.
+
+    Kroger's operating plug runs from 670 to 1,720 percent of operating income
+    across the five years. Reporting the first year's figure under a line that
+    says it happened in all five would understate it by a factor of two, so the
+    summary reports the worst and changes the verb to say it is a range.
+    """
+    line = [f for f in ts.summarised_flags(kroger)
+            if "Other operating items" in f["message"]][0]
+    worst = max(
+        flag["details"]["share_of_total"]
+        for row in kroger.rows if row.name.startswith("Other operating items")
+        for period in ts.historical_periods(kroger)
+        for flag in row.cells[period.key].flags
+        if flag["flag_type"] == ts.FLAG_PLUG_TOO_LARGE)
+
+    assert "This plug reaches {:.0f} percent".format(100 * worst) in line["message"]
+    assert line["message"].endswith("(5 of 5 historical periods)")
+
+
+def test_six_rows_with_nothing_to_forecast_stay_six_lines(kroger):
+    """The grouping is by row, and a flag with no row groups by its own message.
+
+    Kroger tags no SG&A, R&D, inventory, short-term investments, commercial
+    paper or short-term borrowings, and each of those is a different thing for a
+    reader to know. Collapsing them on the flag type alone would report one of
+    the six and silently drop five.
+    """
+    lines = [f for f in ts.summarised_flags(kroger)
+             if f["flag_type"] == ts.FLAG_NO_REPORTED_HISTORY]
+
+    assert len(lines) == 6
+    assert {line["message"].split(" has no forecast")[0] for line in lines} == {
+        "SG&A", "R&D", "Inventory", "Short-Term Investments", "Commercial Paper",
+        "Short-Term Borrowings"}
+
+
+def test_the_summary_keeps_every_flag_type_the_spec_raised(apple, honeywell,
+                                                           kroger):
+    for spec in (apple, honeywell, kroger):
+        assert {f["flag_type"] for f in ts.summarised_flags(spec)} == \
+            {f["flag_type"] for f in spec.flags}
+
+
+# ---------------------------------------------------------------------------
 # Blanks that are there by design
 # ---------------------------------------------------------------------------
 
