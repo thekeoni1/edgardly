@@ -248,15 +248,35 @@ closed.
 
 ## Session 6. Endpoint, UI, and acceptance (2.3, 2.4)
 
-Read docs/V2_PLAN.md (Part 4) and PROGRESS.md first.
+The last Phase 2 session. Read docs/V2_PLAN.md (Part 4) and PROGRESS.md first, especially
+the Session 5 detail and open questions 11 and 12.
 
-1. Add POST /api/scaffold/three-statement plus a UI button, with refusal messages surfaced.
-2. Create docs/acceptance/3s_checklist.md and docs/acceptance/breakage_log.md from the
-   templates in V2_PLAN Part 4.
-3. Generate scaffolds for Apple, Honeywell, and Kroger. The human hand-checks them against
-   the 10-Ks using the checklist, which is resumable across sittings. Fix or convert to
-   flagged blanks everything logged.
+0. Amend this Session 6 entry to match the steps below. Commit separately or with step 1.
+1. Close open questions 11 and 12 per the decisions the user made on 2026-08-05, recording
+   both in the decisions log with their reasons. Balance-sheet sections report a per-section
+   coverage percentage on the Checks sheet in place of the plug warning; the 10 percent
+   warning stays on the income statement and cash flow only. The retained earnings checklist
+   line becomes the residual-explained form. Commit before the endpoint work.
+2. Add POST /api/scaffold/three-statement and a UI button per V2_PLAN 2.3. Refusals (banks,
+   insurers, IFRS-only) surface the scope gate's exact messages. The endpoint composes what
+   Session 5 built; it should contain no scaffold logic of its own.
+3. Create docs/acceptance/3s_checklist.md and docs/acceptance/breakage_log.md from the
+   V2_PLAN Part 4 templates, with the retained-earnings line in its amended form and a
+   coverage-percentage line in place of the old plug-warning line. Plain prose, no em dashes.
+4. Generate the three acceptance workbooks (Apple, Honeywell, Kroger) through the new
+   endpoint, not by calling the library directly, and commit nothing generated. Print the
+   checklist per filer. The human hand-check then runs against the actual 10-Ks, resumable
+   across sittings; everything found goes in the breakage log, and each entry is fixed or
+   converted to a flagged blank before sign-off.
+5. After the three checklists are signed, declare Phase 2 done in PROGRESS.md with a
+   criterion-by-criterion exit review like Phase 1's, including the no-repair-prompt result
+   per workbook.
 
-Exit criteria: three signed checklists, breakage log empty or all entries resolved, Phase 2
-declared done in PROGRESS.md. Phase 3 planning happens only after the trading comps course
-gate opens.
+Constraints: no network in tests; never guess or auto-fill a financial value, assumption, or
+forecast; existing features unchanged.
+
+Exit criteria: suite green, endpoint and UI tested against fixtures, three printed checklists
+awaiting the human pass, PROGRESS.md updated. Phase 2 is declared done only when the user's
+three signed checklists exist and the breakage log is empty or fully resolved; that sign-off
+may land in a later sitting and PROGRESS.md says so until then. Phase 3 planning happens only
+after the trading comps course gate opens.

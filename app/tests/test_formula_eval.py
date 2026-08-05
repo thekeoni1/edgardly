@@ -325,6 +325,36 @@ def test_the_workbook_computes_the_same_numbers_the_model_spec_holds(apple_blank
 
 
 @pytest.mark.timeout(180)
+def test_the_coverage_rows_evaluate_to_the_share_the_spec_holds(apple_blank,
+                                                                honeywell_blank):
+    """Open question 11's replacement for the plug warning, computed in Excel.
+
+    The row is written as arithmetic on two cells of the balance sheet rather
+    than as a number, so this is where the arithmetic and the spec's own figure
+    are made to meet. Apple's equity coverage is negative and Honeywell's is
+    over three, which is why neither is clamped.
+    """
+    compared = 0
+    for book in (apple_blank, honeywell_blank):
+        sheet = book.workbook["Checks"]
+        columns = _columns(sheet)
+        for entry in book.spec.coverage:
+            row = _row_of(sheet, entry["total_row"])
+            for period in ts.historical_periods(book.spec):
+                expected = entry["cells"][period.key]
+                value = book.values.get("CHECKS!{}{}".format(
+                    columns[period.label], row))
+                if expected is None:
+                    assert _is_blank(value)
+                    continue
+                assert value == pytest.approx(expected, abs=1e-9), (
+                    "{} {} {}".format(book.spec.entity, entry["total_row"],
+                                      period.label))
+                compared += 1
+    assert compared == 50
+
+
+@pytest.mark.timeout(180)
 def test_a_schedule_foots_in_every_historical_column(apple_blank):
     """Opening, movements, residual, closing. The residual is what makes it foot."""
     sheet = apple_blank.workbook["Schedules"]

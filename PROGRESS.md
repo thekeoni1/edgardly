@@ -26,6 +26,8 @@ wrong, change it here with a dated note saying why.
 | 2026-08-05 | A plug is measured against the total it plugs to | The decisions log's "10 percent of its statement total" is read as the subtotal the plug ties to, not the statement's headline total. A subtotal is never larger than the statement it sits in, so this is the stricter of the two readings, and it names something a reader can act on: "this plug is 32 percent of total current assets" says which section not to trust, where a share of total assets does not. Both readings flag Apple's balance sheet everywhere, so this is not a choice that was made to change an outcome. |
 | 2026-08-05 | A forecast cell needs an assumption, an anchor, or neither and then nothing | Three rules, settled together because they are one idea. A row whose assumption column is incomplete produces nothing, enforced by a readiness cell per year that requires that year's inputs and every earlier year's, so a blank Assumptions sheet gives blank forecasts rather than zeros. A row that would have to start from a hole in the last reported column gets no forecast and says which input was missing, because a forecast built on a hole is a guess with a formula in front of it. And a row the filer does not tag in any year of the model gets no forecast either, but for the opposite reason: it is not a hole, whatever it holds is already inside a plug that is carried forward, and modelling it separately would count it twice. The third rule is also what keeps the forecast balance sheet tying, because the cash flow statement's working capital line has to see the same movement the balance sheet does. |
 | 2026-08-05 | A quarter is named for the fiscal year it belongs to | The year on a quarter label is the year of the fiscal year the quarter sits inside, which is the first confirmed year end at or after it, named by the same offset a fiscal year is named by. Kroger's fourth quarter ending 31 January 2026 reads Q4 FY2025 and no longer reads "Q4 2026" beside an annual column for the same date reading FY2025; Apple's quarter ending 28 December 2024 reads Q1 FY2025 rather than "Q1 2024", because Apple's first quarter ends the December before its September year end. The calendar year of the end date was the old rule and was wrong for both filers in opposite directions. A quarter in a year that has not closed is placed by projecting the filer's own year length forward, and a quarter with no confirmed year end anywhere keeps the calendar year of its end date, which is the old rule as a fallback. Labels only: no annual label, no value, and no provenance record moves. |
+| 2026-08-05 | The balance sheet reports coverage where the other two statements warn | Amends the 2026-08-03 plug entry above, which raised a flag on any plug over 10 percent of the total it plugs to. The threshold and the flag are unchanged on the income statement and the cash flow statement, where they fire on 19 of 44 and 31 of 45 plug cells across the acceptance filers and therefore still single something out. On the balance sheet they fired on 72 of 75, because a 41-item registry meets a real balance sheet with right-of-use assets, deferred tax, vendor non-trade receivables and a dozen other captions it has no item for. Every instance was true and the warning was still worthless, because a reader who sees the same sentence on every subtotal stops reading it, which is worse than not flagging at all. So each balance-sheet section reports the same measurement as a coverage percentage on the Checks sheet: the share of the reported subtotal the registry's own lines account for, written as live arithmetic over the subtotal and its plug. The number was never the problem; the sentence attached to it was. The registry is not widened, which is the other way out and needs its own session and a time-box (V2_PLAN R3). |
+| 2026-08-05 | The retained earnings line is a residual to be explained, not a tie to be green | V2_PLAN Part 4's checklist template asks for the retained earnings tie to be green in every historical column. It cannot be for any filer, and the reason is structural rather than a bug: filers charge share retirements, treasury stock and other equity movements to retained earnings and none of those is a registry item. Apple's FY2025 residual is 91,699 million against a buyback of 90,711 million, so the figure is not mysterious, only non-zero. The workbook already labels the row a residual, leaves it uncoloured and reports the number. The checklist line now matches: the checker confirms the residual is explained by buybacks and other equity movements rather than confirming a zero that cannot happen. A line item that can never be signed off is not a check, it is a checklist nobody finishes. The alternative, adding the equity-movement items to the registry so the row can tie, is the same trade-off as the coverage entry above and was rejected for the same reason. |
 | 2026-08-04 | A quarter is numbered by position between two fiscal year ends | How far through its fiscal year the period ends, in quarters, rounded to the nearest one, against year ends the engine has already confirmed. Never from fp, which names the filing: Kroger's fourth quarter is carried only by the next year's first-quarter 10-Q, and Honeywell's third quarter of 2020 sits in a 10-Q that is itself mis-stamped Q2. An unclosed year is measured against the filer's median year length; a quarter with no year end before it keeps the label it arrived with, because there is nothing to number from. Numbering decides the name only: which quarters exist still needs a filing to have called the date a quarter, so no value moves into or out of the view. |
 
 ## Session log
@@ -874,52 +876,56 @@ about the calendar year a quarter label carries rather than about the quarter.
     with no confirmed year end anywhere keeps the calendar year of its end
     date, which is exactly the rule this replaces.
 
-11. **Most balance-sheet plugs are over the 10 percent threshold, and the
-    threshold is right.** 122 of 164 plug cells across the three acceptance
-    filers are flagged, 72 of them on the balance sheet, and Apple is among the
-    worst: its non-current asset plug is 41 percent of total assets and its
-    current asset plug 32 percent of current assets. None of that is a defect
-    in a filer's tagging or in the plug arithmetic. It is the 41-item registry
-    meeting a real balance sheet, which has vendor non-trade receivables,
-    right-of-use assets, deferred tax and a dozen other captions the registry
-    has no item for.
+11. **Closed.** The second of the three ways out was taken: the threshold is
+    untouched and what changed is where the flag is raised. The income
+    statement and the cash flow statement keep it, because there it still
+    singles something out. The balance sheet reports the same measurement as a
+    per-section coverage percentage on the Checks sheet, written as live
+    arithmetic over the subtotal and its plug rather than as a number this code
+    computed and typed in.
 
-    So the flag is true and is nearly always on, which makes it useless as a
-    signal even though each instance is correct. Three ways out, and this is a
-    decision rather than a correction:
+    That removes 72 flagged cells and adds 25 measured ones per filer, five
+    sections over five years. Coverage is the components' share of the
+    subtotal, so it is one minus the plug's share and the two readings cannot
+    disagree; a test asserts the identity on all 75 cells across the three
+    filers, and the evaluation harness asserts the workbook's own arithmetic
+    agrees with the spec on 50 of them.
 
-    - Widen the registry for balance-sheet detail. This is the honest fix and
-      the expensive one, and V2_PLAN R3 warns against exactly this kind of
-      open-ended tag archaeology. It would need its own session and a
-      time-box.
-    - Keep the threshold and change what the flag is for: stop treating it as
-      "this scaffold is unreliable" and treat it as a per-section coverage
-      figure, shown as a percentage on the Checks sheet rather than as a
-      warning. The number is useful; the sentence attached to it is what
-      overclaims.
-    - Set different thresholds per statement, since the income statement and
-      cash flow statement behave much better than the balance sheet.
+    What the numbers say now they are reported rather than warned about:
 
-    Nothing was tuned in this session, because the decisions log fixes 10
-    percent and an inconvenient measurement is not grounds for re-opening a
-    settled decision. Session 6 should settle it before the hand-check, because
-    a checker who sees the same warning on almost every subtotal will stop
-    reading it, which is worse than not flagging at all.
+    | Section | Apple FY2025 | Honeywell FY2025 | Kroger FY2025 |
+    | --- | --- | --- | --- |
+    | Total current assets | 68 | 88 | 38 |
+    | Total assets | 59 | 85 | 84 |
+    | Total current liabilities | 55 | 59 | 66 |
+    | Total liabilities | 85 | 86 | 74 |
+    | Total equity | -19 | 339 | 486 |
 
-12. **The retained earnings tie cannot be green, for any filer, and the
-    acceptance checklist asks for it to be.** V2_PLAN Part 4's template has
-    "Retained earnings tie green in every historical column" as a line item.
-    Closing retained earnings less opening less net income plus dividends is
-    not zero for Apple, Honeywell or Kroger, and the reason is structural:
-    filers charge share retirements, treasury stock and other equity movements
-    to retained earnings, and none of those is a registry item. Apple's FY2025
-    residual is 91,699 million against a buyback of 90,711 million, so the
-    number is not mysterious, just not zero.
+    Nothing is clamped and no absolute value is taken. Equity has one
+    component, retained earnings, measured against a total that treasury stock
+    and accumulated other comprehensive income pull down, so the figure runs
+    from minus 34 to plus 486 percent across these filers and every one of
+    those is the honest reading. Forcing it into a nought-to-one range would
+    hide the only thing that section has to say. The sheet's note says what
+    above 100 and below zero mean, and says that a figure far from 100 limits
+    the breakdown above it and never the subtotal itself, which is the filer's
+    own reported number either way.
 
-    The workbook currently labels the row a residual, leaves it uncoloured, and
-    reports the figure. That is the honest treatment of a row that cannot tie,
-    but it means the checklist item as written can never be signed off. Either
-    the checklist line changes to "residual is explained by the buyback and
-    other equity movements", or the registry gains the equity-movement items
-    that would let it tie, which is the same trade-off as open question 11 and
-    should probably be decided with it.
+    The registry was not widened. That is the honest fix and the expensive one,
+    it is exactly the open-ended tag archaeology V2_PLAN R3 warns against, and
+    it needs its own session and a time-box.
+
+12. **Closed.** The checklist line changes rather than the registry. It now
+    reads that the retained earnings residual is explained by buybacks and
+    other equity movements, and the checker records the figure and what
+    accounts for it instead of confirming a zero that cannot happen for any
+    filer. The workbook is unchanged: the row was already labelled a residual,
+    already left uncoloured, and already reported its number.
+
+    Adding the equity-movement items so the row could tie is the same trade-off
+    as open question 11 and was rejected for the same reason. A line item that
+    can never be signed off is not a check; it is a checklist nobody finishes.
+
+    docs/acceptance/3s_checklist.md says where it departs from V2_PLAN Part 4's
+    template and why, because the template is the planning-time original and
+    Part 9's convention is that the running copy of a decision lives here.

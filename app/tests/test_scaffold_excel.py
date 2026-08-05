@@ -229,11 +229,20 @@ def test_a_derived_cell_carries_its_formula_and_descends_into_nested_inputs(appl
 
 
 def test_a_flagged_cell_carries_the_flag_in_its_comment_and_a_fill(apple_book):
-    sheet = apple_book["Balance Sheet"]
-    cell = _cell(sheet, "Other current assets (plug to reported total)", "FY2025")
+    sheet = apple_book["Cash Flow"]
+    cell = _cell(sheet, "Other investing activities (plug to reported total)",
+                 "FY2025")
 
     assert ts.FLAG_PLUG_TOO_LARGE in cell.comment.text
     assert cell.fill.fgColor.rgb.endswith(excel.FILL_FLAG)
+
+
+def test_a_balance_sheet_plug_is_not_flagged_for_its_size(apple_book):
+    """Open question 11: the balance sheet reports coverage instead of warning."""
+    sheet = apple_book["Balance Sheet"]
+    cell = _cell(sheet, "Other current assets (plug to reported total)", "FY2025")
+
+    assert ts.FLAG_PLUG_TOO_LARGE not in (cell.comment.text if cell.comment else "")
 
 
 def test_a_row_label_carries_the_registry_note_and_the_forecast_convention(apple_book):
@@ -437,7 +446,30 @@ def test_the_checks_sheet_lists_what_the_scaffold_flags_about_this_filer(apple_b
 
     assert any(ts.FLAG_PLUG_TOO_LARGE in line for line in lines)
     assert sum(1 for line in lines
-               if "Other current assets (plug to reported total)" in line) == 1
+               if "Other investing activities (plug to reported total)" in line) == 1
+
+
+def test_the_checks_sheet_reports_coverage_for_every_balance_sheet_section(
+        apple_book, apple_spec):
+    """The measurement that replaced the warning, as live arithmetic.
+
+    Written as the subtotal less the plug over the subtotal rather than as a
+    percentage this code computed and typed in, so a reader who distrusts it can
+    follow it to the two cells the balance sheet already shows.
+    """
+    sheet = apple_book["Checks"]
+    heading = _find_row(sheet,
+                        "How much of each balance sheet section this scaffold reaches")
+    assert ts.COVERAGE_NOTE in sheet.cell(
+        row=heading, column=excel.DEFAULT_LAYOUT.label_column).comment.text
+
+    for offset, entry in enumerate(apple_spec.coverage):
+        row = heading + 1 + offset
+        assert sheet.cell(row=row, column=1).value == entry["total_row"]
+        cell = sheet.cell(row=row, column=_column_for(sheet, "FY2025"))
+        assert cell.value.startswith("=(")
+        assert cell.value.count("!") == 3      # three references, all off-sheet
+        assert cell.number_format == excel.FORMAT_PERCENT
 
 
 # ---------------------------------------------------------------------------

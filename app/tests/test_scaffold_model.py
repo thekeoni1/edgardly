@@ -246,28 +246,30 @@ def test_a_plug_is_exactly_the_total_less_the_components(apple, honeywell, kroge
 
 
 def test_a_plug_over_a_tenth_of_its_total_says_the_registry_is_too_sparse(apple):
-    """Task 2.2b, on the filer that shows why the threshold matters.
+    """Task 2.2b, on a statement where the threshold still says something.
 
-    Apple's four tagged current asset lines are two thirds of its current
-    assets; the rest is vendor non-trade receivables and other buckets the
-    registry does not reach. The plug is nearly a third of the subtotal, and
-    the flag says so rather than letting a section that is mostly residual pass
-    for a statement.
+    Apple's investing section is dominated by purchases and maturities of
+    marketable securities, none of which is a registry item, so capex is a small
+    part of it and the plug is nearly twice the reported subtotal. The flag says
+    so rather than letting a section that is almost entirely residual pass for a
+    statement.
     """
-    cell = _cell(apple, "Other current assets (plug to reported total)", "FY2025")
+    cell = _cell(apple, "Other investing activities (plug to reported total)",
+                 "FY2025")
     flags = _flags_of(cell, ts.FLAG_PLUG_TOO_LARGE)
 
     assert len(flags) == 1
     assert flags[0]["details"]["share_of_total"] > ts.PLUG_FLAG_THRESHOLD
-    assert flags[0]["details"]["total_row"] == "Total Current Assets"
+    assert flags[0]["details"]["total_row"] == "Cash from Investing"
     assert "too sparse" in flags[0]["message"]
 
 
-def test_a_plug_within_the_threshold_is_not_flagged(honeywell):
-    """Honeywell's current assets are mostly rows the registry does read."""
-    cell = _cell(honeywell, "Other current assets (plug to reported total)", "FY2021")
+def test_a_plug_within_the_threshold_is_not_flagged(apple):
+    """Apple's FY2022 operating adjustments are mostly rows the registry reads."""
+    cell = _cell(apple, "Working capital and other operating items "
+                        "(plug to reported total)", "FY2022")
 
-    assert cell.value == pytest.approx(1_881 * MILLION, abs=0.5)
+    assert cell.value == pytest.approx(2_206 * MILLION, abs=0.5)
     assert _flags_of(cell, ts.FLAG_PLUG_TOO_LARGE) == []
 
 
@@ -275,8 +277,102 @@ def test_the_plug_flag_appears_once_per_row_in_the_model_summary(apple):
     """Flagged on the cell, and gathered for a caller that wants the headline."""
     rows = {f["details"].get("row") for f in ts.plug_flags(apple)}
 
-    assert "Other current assets (plug to reported total)" in rows
+    assert "Other investing activities (plug to reported total)" in rows
     assert all(f["flag_type"] == ts.FLAG_PLUG_TOO_LARGE for f in ts.plug_flags(apple))
+
+
+# ---------------------------------------------------------------------------
+# Coverage, which is the same measurement without the sentence
+#
+# Open question 11, closed on 2026-08-05. The plug-size warning was true on 72
+# of 75 balance-sheet plug cells across these three filers, which made it
+# useless as a signal however correct each instance was. The balance sheet
+# reports the figure instead of warning about it.
+# ---------------------------------------------------------------------------
+
+def test_no_balance_sheet_plug_carries_the_size_warning(apple, honeywell, kroger):
+    """The half of the decision that removes something."""
+    for spec in (apple, honeywell, kroger):
+        for row in spec.rows:
+            if row.role != ts.ROLE_PLUG or row.statement != line_items.STATEMENT_BS:
+                continue
+            for period in ts.historical_periods(spec):
+                assert _flags_of(row.cells[period.key], ts.FLAG_PLUG_TOO_LARGE) == [], (
+                    "{} {} {}".format(spec.entity, row.name, period.label))
+
+
+def test_the_warning_survives_where_it_still_says_something(apple, honeywell,
+                                                            kroger):
+    """And the half that keeps it. Every filer still raises it somewhere."""
+    for spec in (apple, honeywell, kroger):
+        flagged = ts.plug_flags(spec)
+        assert flagged, spec.entity
+        for name in {f["details"].get("row") for f in flagged}:
+            assert ts.row_named(spec, name).statement in ts.PLUG_FLAG_STATEMENTS
+
+
+def test_every_balance_sheet_section_reports_its_coverage(apple, honeywell, kroger):
+    """One entry per balance-sheet plug, and no entry for any other statement."""
+    for spec in (apple, honeywell, kroger):
+        expected = [row.total for row in spec.rows
+                    if row.role == ts.ROLE_PLUG
+                    and row.statement == line_items.STATEMENT_BS]
+        assert [entry["total_row"] for entry in spec.coverage] == expected
+        assert expected == ["Total Current Assets", "Total Assets",
+                            "Total Current Liabilities", "Total Liabilities",
+                            "Total Equity"]
+
+
+def test_coverage_is_the_components_share_of_the_subtotal(apple, honeywell, kroger):
+    """The definition, on every section of every filer in every year.
+
+    Coverage and the plug are two readings of one measurement, so they have to
+    add to the whole subtotal or one of them is not what it says it is.
+    """
+    checked = 0
+    for spec in (apple, honeywell, kroger):
+        for entry in spec.coverage:
+            plug = ts.row_named(spec, entry["plug_row"])
+            total_row = ts.row_named(spec, entry["total_row"])
+            for period in ts.historical_periods(spec):
+                share = entry["cells"][period.key]
+                total = total_row.cells[period.key].value
+                if share is None:
+                    assert not total or plug.cells[period.key].value is None
+                    continue
+                assert share == pytest.approx(
+                    1.0 - plug.cells[period.key].value / total, abs=1e-9)
+                checked += 1
+    assert checked == 75
+
+
+def test_apples_current_assets_are_two_thirds_of_what_the_registry_reads(apple):
+    """The number open question 11 was raised over, now reported rather than warned.
+
+    Apple's four tagged current asset lines are 100,192 million of 147,957
+    million of current assets for FY2025. The rest is vendor non-trade
+    receivables and other buckets the 41-item registry has no item for, which is
+    a fact about the registry rather than a defect in Apple's tagging.
+    """
+    entry = ts.coverage_for(apple, "Total Current Assets")
+    key = [p.key for p in ts.historical_periods(apple) if p.label == "FY2025"][0]
+
+    assert entry["cells"][key] == pytest.approx(100_192.0 / 147_957.0, abs=1e-4)
+    assert entry["plug_row"] == "Other current assets (plug to reported total)"
+
+
+def test_coverage_says_what_it_finds_even_when_it_is_not_a_share(honeywell):
+    """Honeywell's retained earnings are more than three times its equity.
+
+    Treasury stock and accumulated other comprehensive income pull the total
+    down below the one component the registry reads, so the figure is over 100
+    percent. Clamping it, or taking an absolute value to keep it inside the
+    range, would hide the only thing it has to say about that section.
+    """
+    entry = ts.coverage_for(honeywell, "Total Equity")
+    key = [p.key for p in ts.historical_periods(honeywell) if p.label == "FY2025"][0]
+
+    assert entry["cells"][key] > 3.0
 
 
 # ---------------------------------------------------------------------------

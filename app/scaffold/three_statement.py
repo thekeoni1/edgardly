@@ -15,9 +15,13 @@ short-term investments, receivables and inventory, and those four are two
 thirds of its current assets; the rest is vendor non-trade receivables and
 other buckets the 41-item registry does not reach. So each subtotal carries an
 explicit plug row -- "Other current assets (plug to reported total)" -- written
-as arithmetic rather than filled in as a number, and flagged when it is more
-than a tenth of the total it plugs to. The registry stays 41 items; the gap
-between it and a filer's balance sheet is shown rather than closed by guessing.
+as arithmetic rather than filled in as a number. On the income statement and
+the cash flow statement a plug over a tenth of the total it plugs to is
+flagged; on the balance sheet the same measurement is reported as a per-section
+coverage percentage instead, because there it is true nearly everywhere and a
+warning shown nearly everywhere is one nobody reads. The registry stays 41
+items; the gap between it and a filer's balance sheet is shown rather than
+closed by guessing.
 
 **A blank is a fact about the filing.** A row a filer does not tag is present,
 missing, and explained: Kroger tags no InventoryNet, Honeywell tags no
@@ -83,6 +87,21 @@ CELL_MISSING = xbrl.PROVENANCE_MISSING
 # statement's headline total, which is the stricter of the two readings: a
 # subtotal is never larger than the statement it sits in.
 PLUG_FLAG_THRESHOLD = 0.10
+
+# Where that warning is worth raising, and where the same measurement is worth
+# reporting instead. On the income statement and the cash flow statement a plug
+# over the threshold is unusual and says something: it fires on 19 of 44 income
+# statement plug cells across the acceptance filers and on 31 of 45 cash flow
+# ones. On the balance sheet it fires on 72 of 75, because the 41-item registry
+# meets a real balance sheet with right-of-use assets, deferred tax, vendor
+# non-trade receivables and a dozen other captions it has no item for. Each
+# instance was true and the warning was still useless, because a reader who
+# sees it on every subtotal stops reading it. So the balance sheet reports the
+# measurement as a per-section coverage percentage on the Checks sheet, which
+# is the same number without the sentence that overclaimed. See the decisions
+# log entry of 2026-08-05 closing open question 11.
+PLUG_FLAG_STATEMENTS = (line_items.STATEMENT_IS, line_items.STATEMENT_CF)
+COVERAGE_STATEMENTS = (line_items.STATEMENT_BS,)
 
 FLAG_PLUG_TOO_LARGE = "PLUG_TOO_LARGE"
 FLAG_PLUG_ABSORBS_BLANK = "PLUG_ABSORBS_BLANK"
@@ -709,7 +728,9 @@ PERIOD_FORECAST = "forecast"
 
 ModelSpec = namedtuple(
     "ModelSpec",
-    "cik entity scope periods rows checks assumptions flags fiscal_year_offset")
+    "cik entity scope periods rows checks assumptions flags fiscal_year_offset "
+    "coverage")
+ModelSpec.__new__.__defaults__ = ((),)
 
 
 def _triples(terms):
@@ -903,7 +924,8 @@ def _fill_plug(spec, cells, period_keys):
                 "line holds, and the line itself is shown blank above rather than "
                 "quietly folded in here.".format(", ".join(absorbed)),
                 key, {"absorbed": absorbed}))
-        if total and abs(value) > PLUG_FLAG_THRESHOLD * abs(total):
+        if (spec.statement in PLUG_FLAG_STATEMENTS and total
+                and abs(value) > PLUG_FLAG_THRESHOLD * abs(total)):
             flags.append(_flag(
                 FLAG_PLUG_TOO_LARGE,
                 "This plug is {:.0f} percent of {}. This filer's XBRL is too "
@@ -1159,6 +1181,52 @@ def _build_checks(cells, period_keys, disarmed):
     return tuple(built)
 
 
+# -- Coverage ----------------------------------------------------------------
+
+COVERAGE_NOTE = (
+    "The share of this reported subtotal that the line items the registry reads "
+    "actually account for. The remainder is the plug row beside them, so a "
+    "section at 68 percent is one where roughly a third of the subtotal sits in "
+    "elements Edgardly does not read.\n\n"
+    "Above 100 percent means the components sum to more than the subtotal, and "
+    "below zero that they sum against it. Both are ordinary on the equity "
+    "section, where retained earnings is measured against a total that treasury "
+    "stock and accumulated other comprehensive income pull down: three of the "
+    "acceptance filers land between minus 34 and plus 486 percent there and none "
+    "of them is wrong.\n\n"
+    "What a figure far from 100 limits is the breakdown above it, never the "
+    "subtotal itself, which is the filer's own reported number either way. This "
+    "is a measurement rather than a warning, because on a balance sheet it is "
+    "low almost everywhere and a warning shown almost everywhere is one nobody "
+    "reads."
+)
+
+
+def _build_coverage(spec_rows, cells, period_keys):
+    """Per-section coverage on the statements that report it rather than warn.
+
+    One entry per plug on a covered statement, carrying the fraction of each
+    period's subtotal that its components reached. A section whose components
+    sum to more than the reported total comes out above 100 percent, which is
+    the honest reading of a negative plug rather than something to hide behind
+    an absolute value.
+    """
+    built = []
+    for spec in spec_rows:
+        if spec.role != ROLE_PLUG or spec.statement not in COVERAGE_STATEMENTS:
+            continue
+        cells_out = {}
+        for key in period_keys:
+            total = _cell_value(cells, spec.total, key)
+            plug = _cell_value(cells, spec.name, key)
+            cells_out[key] = (None if not total or plug is None
+                              else (total - plug) / total)
+        built.append({"name": spec.total, "total_row": spec.total,
+                      "plug_row": spec.name, "statement": spec.statement,
+                      "cells": cells_out})
+    return tuple(built)
+
+
 # -- Entry point -------------------------------------------------------------
 
 def build_model(cik, facts, sic=None, start_year=1990, end_year=2100,
@@ -1256,9 +1324,10 @@ def build_model(cik, facts, sic=None, start_year=1990, end_year=2100,
     checks = _build_checks(cells, period_keys, disarmed)
     for check in checks:
         model_flags.extend(check["flags"])
+    coverage = _build_coverage(ALL_ROW_SPECS, cells, period_keys)
 
     return ModelSpec(cik, entity, scope, historical + forecast, tuple(final_rows),
-                     checks, ASSUMPTIONS, tuple(model_flags), fy_offset)
+                     checks, ASSUMPTIONS, tuple(model_flags), fy_offset, coverage)
 
 
 # ---------------------------------------------------------------------------
@@ -1285,5 +1354,17 @@ def row_named(spec, name):
 
 
 def plug_flags(spec):
-    """Every plug that is more than a tenth of the total it plugs to."""
+    """Every flagged plug, which is an income statement or cash flow one.
+
+    A balance-sheet plug over the threshold is reported as coverage instead and
+    never appears here; see PLUG_FLAG_STATEMENTS for why.
+    """
     return tuple(f for f in spec.flags if f["flag_type"] == FLAG_PLUG_TOO_LARGE)
+
+
+def coverage_for(spec, total_row):
+    """One section's coverage entry, by the subtotal it measures."""
+    for entry in spec.coverage:
+        if entry["total_row"] == total_row:
+            return entry
+    return None

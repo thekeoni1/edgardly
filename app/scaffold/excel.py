@@ -546,6 +546,45 @@ def write_check_row(worksheet, layout, spec, check, placements, columns, row_num
     return row_number + 1
 
 
+def write_coverage_row(worksheet, layout, spec, entry, placements, columns,
+                       row_number):
+    """One section's coverage: the components' share of the subtotal, live.
+
+    Written as (subtotal less plug) divided by subtotal, which is arithmetic on
+    two cells already in the workbook rather than a percentage this module
+    computed and typed in. A reader who distrusts the figure can follow it to
+    the same two cells the statement shows.
+
+    Only where both cells hold a number and the subtotal is not zero. A ratio
+    over an empty cell is a division by zero, and Excel showing #DIV/0! across
+    a Checks sheet is the repair-dialog kind of damage in slower motion.
+    """
+    from openpyxl.styles import Font
+
+    label = worksheet.cell(row=row_number, column=layout.label_column)
+    label.value = entry["name"]
+    label.font = Font(name=BASE_FONT, size=11)
+
+    for index, period in enumerate(ts.historical_periods(spec)):
+        column = layout.first_data_column + index
+        cell = worksheet.cell(row=row_number, column=column)
+        cell.number_format = FORMAT_PERCENT
+        if entry["cells"].get(period.key) is None:
+            cell.font = Font(name=BASE_FONT, size=11, color=COLOR_MISSING,
+                             italic=True)
+            continue
+        context = FormulaContext(placements, columns, worksheet.title, index)
+        total = render(ts.ref(entry["total_row"]), context)
+        plug = render(ts.ref(entry["plug_row"]), context)
+        if total is None or plug is None:
+            cell.font = Font(name=BASE_FONT, size=11, color=COLOR_MISSING,
+                             italic=True)
+            continue
+        cell.value = "=({}-{})/{}".format(total, plug, total)
+        cell.font = Font(name=BASE_FONT, size=11)
+    return row_number + 1
+
+
 def _attach_check_note(cell, check):
     from openpyxl.comments import Comment
 
@@ -855,6 +894,27 @@ def _write_checks(workbook, layout, spec, placements, columns):
     note.value = ("Green is within one unit of zero. A row that is not a tie is not "
                   "coloured; hover its label for why.")
     note.font = Font(name=BASE_FONT, size=10, italic=True, color=COLOR_NOTE)
+
+    if spec.coverage:
+        row_number += 2
+        heading = worksheet.cell(row=row_number, column=layout.label_column)
+        heading.value = "How much of each balance sheet section this scaffold reaches"
+        heading.font = Font(name=BASE_FONT, size=11, bold=True, color=COLOR_HEADER)
+        from openpyxl.comments import Comment
+        comment = Comment(ts.COVERAGE_NOTE, "Edgardly")
+        comment.width = 440
+        comment.height = 180
+        heading.comment = comment
+        row_number += 1
+        for entry in spec.coverage:
+            row_number = write_coverage_row(worksheet, layout, spec, entry,
+                                            placements, columns, row_number)
+        note = worksheet.cell(row=row_number, column=layout.label_column)
+        note.value = ("The rest of each subtotal is in its plug row. These are "
+                      "measurements, not warnings: hover the heading for what a "
+                      "low figure does and does not mean.")
+        note.font = Font(name=BASE_FONT, size=10, italic=True, color=COLOR_NOTE)
+        row_number += 1
 
     row_number += 2
     heading = worksheet.cell(row=row_number, column=layout.label_column)
