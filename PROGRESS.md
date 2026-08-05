@@ -23,6 +23,8 @@ wrong, change it here with a dated note saying why.
 | 2026-08-04 | One derivation may have optional terms, and only for a sum of separately reported lines | Every other rule needs every input: gross profit without a cost of revenue is unknown, not equal to revenue. Short-Term Debt is a sum of three current-liability lines, and a filer carries the ones it has. Apple shows term debt and commercial paper, Honeywell current maturities and one combined borrowings line, Kroger current maturities alone. An absent term there is a line the balance sheet does not have, not a number nobody knows. At least one term must be present, so a total of nothing stays missing rather than becoming zero, and the formula that ships with each value names only the terms that were added. |
 | 2026-08-04 | Periods are decided by dates, never by the fiscal_period label | Both views run on app/periods.py. A flow item covers a period when its span is 10 to 14 months (a year) or 2 to 4 months (a quarter); an instant, having no span, is anchored to a period some measurable item already confirmed. EDGAR stamps fp on the filing rather than the fact, so the label describes whoever filed last, not the fact. Nothing invents a period: a value carrying a confirmed end date that covers something else is reported as PERIOD_UNRESOLVED, not shown. |
 | 2026-08-04 | A fiscal year is named by the filer's convention, not by its own year's focus value | The name comes from dei DocumentFiscalYearFocus, but what is read from it is the offset between a filing's focus and the calendar year of its own year end, with the commonest offset winning across the filer's annual filings. Face value does not work: Kroger tagged focus 2025 on two consecutive years and Honeywell tagged 2020 on its 2021 annual report, so year-by-year reading puts two columns under one name, and no focus value at all exists for the comparative years a company's first XBRL filing carried. An offset of zero is exactly the old end-year rule, which is also the fallback where a payload names no fiscal year. A filer that changes its fiscal year end changes its convention with it and would need more than one number; none in the acceptance set does. |
+| 2026-08-05 | A plug is measured against the total it plugs to | The decisions log's "10 percent of its statement total" is read as the subtotal the plug ties to, not the statement's headline total. A subtotal is never larger than the statement it sits in, so this is the stricter of the two readings, and it names something a reader can act on: "this plug is 32 percent of total current assets" says which section not to trust, where a share of total assets does not. Both readings flag Apple's balance sheet everywhere, so this is not a choice that was made to change an outcome. |
+| 2026-08-05 | A forecast cell needs an assumption, an anchor, or neither and then nothing | Three rules, settled together because they are one idea. A row whose assumption column is incomplete produces nothing, enforced by a readiness cell per year that requires that year's inputs and every earlier year's, so a blank Assumptions sheet gives blank forecasts rather than zeros. A row that would have to start from a hole in the last reported column gets no forecast and says which input was missing, because a forecast built on a hole is a guess with a formula in front of it. And a row the filer does not tag in any year of the model gets no forecast either, but for the opposite reason: it is not a hole, whatever it holds is already inside a plug that is carried forward, and modelling it separately would count it twice. The third rule is also what keeps the forecast balance sheet tying, because the cash flow statement's working capital line has to see the same movement the balance sheet does. |
 | 2026-08-05 | A quarter is named for the fiscal year it belongs to | The year on a quarter label is the year of the fiscal year the quarter sits inside, which is the first confirmed year end at or after it, named by the same offset a fiscal year is named by. Kroger's fourth quarter ending 31 January 2026 reads Q4 FY2025 and no longer reads "Q4 2026" beside an annual column for the same date reading FY2025; Apple's quarter ending 28 December 2024 reads Q1 FY2025 rather than "Q1 2024", because Apple's first quarter ends the December before its September year end. The calendar year of the end date was the old rule and was wrong for both filers in opposite directions. A quarter in a year that has not closed is placed by projecting the filer's own year length forward, and a quarter with no confirmed year end anywhere keeps the calendar year of its end date, which is the old rule as a fallback. Labels only: no annual label, no value, and no provenance record moves. |
 | 2026-08-04 | A quarter is numbered by position between two fiscal year ends | How far through its fiscal year the period ends, in quarters, rounded to the nearest one, against year ends the engine has already confirmed. Never from fp, which names the filing: Kroger's fourth quarter is carried only by the next year's first-quarter 10-Q, and Honeywell's third quarter of 2020 sits in a 10-Q that is itself mis-stamped Q2. An unclosed year is measured against the filer's median year length; a quarter with no year end before it keeps the label it arrived with, because there is nothing to number from. Numbering decides the name only: which quarters exist still needs a filing to have called the date a quarter, so no value moves into or out of the view. |
 
@@ -40,6 +42,7 @@ open questions the next session needs to know about.
 | 2026-08-04 | 4A | The period engine, V2_PLAN R5. Four commits: Session 4 split into 4A and 4B, annual report forms ranked above every other form, the Honeywell fixture, one shared period engine in app/periods.py. | 0 | Open questions 3 and 6 closed. 1 sharpened by the Honeywell fixture and still open, as is 4; both go to 4B. One new one, 7. |
 | 2026-08-04 | 4B | The chain corrections and the Phase 1 exit review. Six commits: session prompt amended, the Kroger fixture, the Long-Term Debt chain, four more chain corrections, Short-Term Debt summed and Total Debt surfaced, the EPS reconciliation check. Phase 1 declared done. | 1 | Open questions 1, 4 and 7 closed. Two new ones, 8 and 9, both about labels rather than values, both raised by Kroger. |
 | 2026-08-04 | 4C | Period names, an interstitial before Phase 2. Three commits: session prompt added, fiscal years named by the filer's own convention, quarters numbered by position. No fixture regenerated and no value changed anywhere. | 0 | Open questions 8 and 9 closed. One new one, 10, about the calendar year a quarter label carries. |
+| 2026-08-05 | 5 | The first Phase 2 session: V2_PLAN 2.1, 2.2, 2.2b and 2.5. Four commits: session prompt amended and quarters named for their fiscal year, the model spec in app/scaffold/three_statement.py, the writer kit in app/scaffold/excel.py, the formula-evaluation harness. | 0 | Open question 10 closed. Two new ones, 11 and 12, both raised by measuring the scaffold rather than by building it. |
 
 ### Session 1 detail
 
@@ -515,6 +518,153 @@ first quarter of fiscal 2025. The session prompt asked for Apple's and
 Honeywell's quarter labels to be unchanged and they are, so the year component
 was left alone and the question is open question 10 rather than a silent change.
 
+### Session 5 detail
+
+Suite state: 650 tests, all passing, zero xfails. 604 mocked tests run offline in
+about 27 seconds; 46 integration tests hit live EDGAR or start a browser and take
+about 135 seconds. Session 4C left 562. The 88 new tests are 32 for the model
+spec, 33 for the workbook, 15 for the formula-evaluation harness, and 8 for the
+quarter-label convention.
+
+The session added one dependency, `formulas` 1.3.4, which V2_PLAN R2 names.
+
+**Quarter labels, open question 10.** A quarter now takes the year of the fiscal
+year it sits inside rather than the calendar year it ends in. All 223 quarter
+columns across the four us-gaap fixtures are relabelled, no column set changes,
+and no value, annual label or provenance record moves; the whole of both views
+was compared cell by cell before and after. Kroger's 59 columns each move back a
+year and Apple's 18 December quarters each move forward one, which is the point:
+the two filers were wrong in opposite directions, so no rule that moved only one
+of them could have been right.
+
+**The scaffold, and the thing it measures.** app/scaffold/three_statement.py
+builds a model spec of 58 rows -- all 41 registry items, eleven plug rows, and
+six links and memo lines -- over five historical years and three forecast years,
+and app/scaffold/excel.py turns it into the seven-sheet workbook V2_PLAN Part 4
+describes. The two modules do not share a concern: the first imports no openpyxl
+and the second contains no finance, and every formula the writer emits is a
+rendering of an expression the spec handed it.
+
+Across the three acceptance filers, 870 historical cells: 533 reported, 277
+derived, 60 missing. Every one is in exactly one of those states and every one
+carries provenance, which is Phase 1's guarantee reaching the first thing built
+on top of it.
+
+**Plugs are much larger than the plan expected, and that is the finding.**
+V2_PLAN R1 anticipated that "some filers may need plugs so large the scaffold is
+misleading". It is not some filers. Of 164 plug cells across the three filers,
+**122 exceed the 10 percent threshold**, and the concentration is on the balance
+sheet: 72 of 75 balance-sheet plug cells are flagged, against 31 of 45 on the
+cash flow statement and 19 of 44 on the income statement.
+
+| Filer | Plug cells | Over threshold | IS | BS | CF |
+| --- | --- | --- | --- | --- | --- |
+| Apple | 55 | 33 | 0 | 25 | 8 |
+| Honeywell | 54 | 45 | 10 | 22 | 13 |
+| Kroger | 55 | 44 | 9 | 25 | 10 |
+
+Apple's is the clearest case and it is not a defect in Apple's tagging. Its four
+tagged current-asset lines are 100,192 million of 147,957 million of current
+assets for FY2025; the rest is vendor non-trade receivables and other buckets
+the registry has no item for. Its non-current asset plug is 41 percent of total
+assets, because the registry reads three non-current lines and Apple's balance
+sheet has more. The threshold is doing what the decisions log asked of it and
+reporting honestly that a 41-item registry does not reconstruct a balance sheet.
+
+The threshold was not tuned to quieten this, because the decisions log fixes it
+at 10 percent and a settled decision is not re-litigated by measuring an
+inconvenient result. What the number means for Session 6 is open question 11.
+
+The flag is measured against the total the plug ties to rather than against the
+statement's headline total. Both readings of "its statement total" flag Apple's
+balance sheet everywhere; the local one is the stricter, since a subtotal is
+never larger than the statement it sits in, and it names something a reader can
+act on.
+
+**By-design blanks behave as the session prompt required.** A row the filer does
+not tag is present, missing, flagged and explained, and the plug that absorbs it
+names it: Kroger's current-asset plug says it swallowed inventory and short-term
+investments, and its operating plug says it swallowed SG&A and R&D. Honeywell
+tags no Liabilities element for any year, so its liability total is derived as
+assets less equity -- the balance sheet equation solved for the one term the
+filer left untagged, which is exact -- and the balance check row is flagged
+CHECK_NOT_AVAILABLE, left uncoloured, and says it is zero because it was made
+zero. Apple's and Kroger's balance checks are real and are zero to the dollar in
+all five years.
+
+**The seam travels.** Kroger's cost of revenue chain ends in an element that
+excludes depreciation where the others include it. Its FY2018 seam flag now
+reaches gross profit and the operating plug above it, each message naming the
+row the flag started on rather than the row below. Apple's FY2015 cash flow seam
+reaches two levels up to closing cash the same way.
+
+**Two bugs the harness caught that nothing else would have.** Both are exactly
+the failure mode R2 predicts: formula text that openpyxl writes happily and no
+human would spot without opening Excel.
+
+- The operating income forecast subtracted its plug. The plug is a signed
+  residual and has to be added: it is negative for Kroger, whose whole operating
+  cost lands in it, and positive for Honeywell, whose operating income includes
+  items the three rows above it do not. Invisible on Apple, whose plug is exactly
+  zero in every year.
+- The working capital line lost its forecast for Kroger, because the rule that
+  refuses to model forward from a hole treated Kroger's untagged inventory as
+  one. The balance sheet then moved while the cash flow statement did not see it,
+  and the forecast balance check broke by 4.47 billion. The fix distinguishes a
+  hole in an otherwise reported row from a line the filer does not carry at all:
+  the first refuses a forecast, the second contributes nothing, which is both the
+  truth and what keeps the statements agreeing.
+
+Neither is visible in the historical columns, and neither would have failed a
+test that only re-read formula strings.
+
+**Formula vocabulary.** No exception proved necessary. The scaffold writes only
+cell references, the four arithmetic operators, and IF, OR and ISBLANK; the
+conditional formatting adds AND, ABS and ISNUMBER. All eight evaluate under the
+`formulas` library, and a test reads every formula in a generated workbook and
+fails if a ninth appears, so the constraint cannot lapse silently. There is no
+manual-check burden to record because nothing was left unevaluated.
+
+**Excel, opened for real.** The workbooks were opened in Excel 16.0 on this
+machine through COM automation, with a full recalculation forced. All seven
+sheets, all 48 defined names and all 401 cell comments survived intact in every
+file, and Excel's own arithmetic put the balance check at zero in all five
+historical columns for all three filers and in all three forecast columns of a
+workbook with its assumptions filled. Nothing was stripped, which is the damage a
+repair does and the observable signature R4 is about.
+
+That is stronger than a formula check and weaker than the acceptance checklist's
+line. Automation runs with alerts suppressed, so what was verified is that no
+content was lost and everything recalculated, not that no dialog would have been
+shown. The interactive open stays on the checklist for Session 6.
+
+**What the forecast does and does not do.** Fifteen assumptions per year, all
+blank. Every forecast cell is guarded by a readiness cell that is true only when
+its year's inputs and every earlier year's are filled, so a blank sheet produces
+blank forecasts, a filled one produces three statements that tie, and clearing it
+again empties them with no leftovers. All three are tested by evaluation rather
+than asserted.
+
+Rows with no driver get no forecast and say why: the per-share rows, because a
+share count needs a repurchase price this tool should not invent, and any row the
+filer never tags, because whatever it holds is already inside a plug that is
+carried forward and modelling it separately would count it twice.
+
+The forecast balance sheet ties by construction rather than by luck, and the one
+piece of real modelling in it is worth naming: the equity plug is the only plug
+not held flat, because stock compensation builds paid-in capital and buybacks
+consume equity, and holding it flat leaves the balance check short by exactly
+those two.
+
+**What the acceptance checklist will not get.** V2_PLAN's template asks for the
+retained earnings tie to be green in every historical column. It cannot be, for
+any of the three filers, and the reason is structural rather than a bug: filers
+charge share retirements, treasury stock and other equity movements to retained
+earnings and none of those is a registry item. Apple's FY2025 residual is 91,699
+million, almost exactly its buyback. So the row is labelled a residual, is left
+uncoloured, and reports the number instead of failing a test it was never going
+to pass. Open question 12.
+
 ## Phase 1 exit review
 
 Run 2026-08-04 against the exit criteria in V2_PLAN Part 3. All four pass, so
@@ -723,3 +873,53 @@ about the calendar year a quarter label carries rather than about the quarter.
     is the stand-in quarter numbering already used for the same case. A quarter
     with no confirmed year end anywhere keeps the calendar year of its end
     date, which is exactly the rule this replaces.
+
+11. **Most balance-sheet plugs are over the 10 percent threshold, and the
+    threshold is right.** 122 of 164 plug cells across the three acceptance
+    filers are flagged, 72 of them on the balance sheet, and Apple is among the
+    worst: its non-current asset plug is 41 percent of total assets and its
+    current asset plug 32 percent of current assets. None of that is a defect
+    in a filer's tagging or in the plug arithmetic. It is the 41-item registry
+    meeting a real balance sheet, which has vendor non-trade receivables,
+    right-of-use assets, deferred tax and a dozen other captions the registry
+    has no item for.
+
+    So the flag is true and is nearly always on, which makes it useless as a
+    signal even though each instance is correct. Three ways out, and this is a
+    decision rather than a correction:
+
+    - Widen the registry for balance-sheet detail. This is the honest fix and
+      the expensive one, and V2_PLAN R3 warns against exactly this kind of
+      open-ended tag archaeology. It would need its own session and a
+      time-box.
+    - Keep the threshold and change what the flag is for: stop treating it as
+      "this scaffold is unreliable" and treat it as a per-section coverage
+      figure, shown as a percentage on the Checks sheet rather than as a
+      warning. The number is useful; the sentence attached to it is what
+      overclaims.
+    - Set different thresholds per statement, since the income statement and
+      cash flow statement behave much better than the balance sheet.
+
+    Nothing was tuned in this session, because the decisions log fixes 10
+    percent and an inconvenient measurement is not grounds for re-opening a
+    settled decision. Session 6 should settle it before the hand-check, because
+    a checker who sees the same warning on almost every subtotal will stop
+    reading it, which is worse than not flagging at all.
+
+12. **The retained earnings tie cannot be green, for any filer, and the
+    acceptance checklist asks for it to be.** V2_PLAN Part 4's template has
+    "Retained earnings tie green in every historical column" as a line item.
+    Closing retained earnings less opening less net income plus dividends is
+    not zero for Apple, Honeywell or Kroger, and the reason is structural:
+    filers charge share retirements, treasury stock and other equity movements
+    to retained earnings, and none of those is a registry item. Apple's FY2025
+    residual is 91,699 million against a buyback of 90,711 million, so the
+    number is not mysterious, just not zero.
+
+    The workbook currently labels the row a residual, leaves it uncoloured, and
+    reports the figure. That is the honest treatment of a row that cannot tie,
+    but it means the checklist item as written can never be signed off. Either
+    the checklist line changes to "residual is explained by the buyback and
+    other equity movements", or the registry gains the equity-movement items
+    that would let it tie, which is the same trade-off as open question 11 and
+    should probably be decided with it.
