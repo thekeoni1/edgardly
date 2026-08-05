@@ -147,12 +147,19 @@
                     <label class="export-fmt-label"><input type="radio" name="xbrl-export-fmt" value="xlsx" checked> Excel</label>
                     <label class="export-fmt-label"><input type="radio" name="xbrl-export-fmt" value="csv"> CSV</label>
                     <button id="xbrl-export-btn" class="btn-export">Export</button>
+                    <button id="xbrl-scaffold-btn" class="btn-export">Build 3-Statement Model</button>
                 </div>
             </div>
             <div id="xbrl-export-confirm" class="export-confirm hidden" style="margin: 0 16px 8px;">
                 Exported: <a id="xbrl-export-link" class="export-link" href="#" target="_blank" rel="noopener noreferrer"></a>
                 <button id="xbrl-show-folder-btn" class="btn-show-folder">Show in folder</button>
             </div>
+            <div id="xbrl-scaffold-confirm" class="export-confirm hidden" style="margin: 0 16px 8px;">
+                Model built: <a id="xbrl-scaffold-link" class="export-link" href="#" target="_blank" rel="noopener noreferrer"></a>
+                <button id="xbrl-scaffold-folder-btn" class="btn-show-folder">Show in folder</button>
+                <div id="xbrl-scaffold-detail" class="xbrl-scaffold-detail"></div>
+            </div>
+            <div id="xbrl-scaffold-refusal" class="xbrl-scope-notice hidden" style="margin: 0 16px 8px;"></div>
             <div class="xbrl-table-wrap">
                 <table id="xbrl-table" class="xbrl-table">
                     <thead id="xbrl-thead"></thead>
@@ -1027,6 +1034,8 @@
             xbrlSetLoading('Fetching XBRL financial data from EDGAR…');
             xbrlResults.classList.add('hidden');
             document.getElementById('xbrl-export-confirm').classList.add('hidden');
+            document.getElementById('xbrl-scaffold-confirm').classList.add('hidden');
+            document.getElementById('xbrl-scaffold-refusal').classList.add('hidden');
             document.getElementById('xbrl-chart-area').classList.add('hidden');
             fetch('/api/xbrl/extract', {
                 method: 'POST',
@@ -1412,6 +1421,93 @@
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ folder: xbrlLastExportFolder }),
+            }).catch(() => {});
+        });
+
+        // Three-statement scaffold. The scope gate can refuse this where it does
+        // not refuse the table above it: a bank's extracted numbers are fine, they
+        // just do not roll up into a standard model. A refusal shows the gate's
+        // own sentence and writes no file.
+        let xbrlLastScaffoldFolder = null;
+
+        document.getElementById('xbrl-scaffold-btn').addEventListener('click', () => {
+            if (!xbrlSelectedCik.value) return;
+            const cik = xbrlSelectedCik.value;
+            const startYear = parseInt(document.getElementById('xbrl-start-date').value) || 2015;
+            const endYear   = parseInt(document.getElementById('xbrl-end-date').value) || new Date().getFullYear();
+            const years = Math.min(20, Math.max(1, endYear - startYear + 1));
+            const btn = document.getElementById('xbrl-scaffold-btn');
+            btn.disabled = true;
+            btn.textContent = 'Building…';
+            document.getElementById('xbrl-scaffold-confirm').classList.add('hidden');
+            document.getElementById('xbrl-scaffold-refusal').classList.add('hidden');
+            fetch('/api/scaffold/three-statement', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ cik, years, format: 'xlsx' }),
+            })
+            .then(r => r.json().then(data => ({ status: r.status, data })))
+            .then(({ status, data }) => {
+                btn.disabled = false;
+                btn.textContent = 'Build 3-Statement Model';
+                if (status === 422) { xbrlShowScaffoldRefusal(data.error); return; }
+                if (data.error) { xbrlSetStatus('Model build failed: ' + data.error, 'error'); return; }
+                const link = document.getElementById('xbrl-scaffold-link');
+                link.textContent = data.filename;
+                link.href = data.download_url;
+                xbrlLastScaffoldFolder = data.folder || null;
+                renderScaffoldDetail(data);
+                document.getElementById('xbrl-scaffold-confirm').classList.remove('hidden');
+            })
+            .catch(err => {
+                btn.disabled = false;
+                btn.textContent = 'Build 3-Statement Model';
+                xbrlSetStatus('Model build failed: ' + err.message, 'error');
+            });
+        });
+
+        function xbrlShowScaffoldRefusal(message) {
+            const el = document.getElementById('xbrl-scaffold-refusal');
+            el.textContent = message;
+            el.classList.remove('hidden');
+        }
+
+        // What the workbook holds and what it says about this filer. The Checks
+        // sheet carries all of it; repeating the headline here is so nobody opens
+        // the file believing it is more complete than it is.
+        function renderScaffoldDetail(data) {
+            const el = document.getElementById('xbrl-scaffold-detail');
+            el.textContent = '';
+            const summary = document.createElement('div');
+            const hist = (data.historical || []).length;
+            const fore = (data.forecast || []).length;
+            summary.textContent = hist + ' historical ' + (hist === 1 ? 'year' : 'years')
+                + (hist ? ' (' + data.historical[0] + ' to ' + data.historical[hist - 1] + ')' : '')
+                + ', ' + fore + ' blank forecast ' + (fore === 1 ? 'column' : 'columns')
+                + '. Fill the Assumptions sheet to populate them.';
+            el.appendChild(summary);
+            const flags = data.flags || [];
+            if (!flags.length) return;
+            const heading = document.createElement('div');
+            heading.textContent = 'Flagged for this filer, also on the Checks sheet:';
+            el.appendChild(heading);
+            const list = document.createElement('ul');
+            const seen = new Set();
+            flags.forEach(flag => {
+                if (seen.has(flag.message)) return;
+                seen.add(flag.message);
+                const item = document.createElement('li');
+                item.textContent = flag.message;
+                list.appendChild(item);
+            });
+            el.appendChild(list);
+        }
+
+        document.getElementById('xbrl-scaffold-folder-btn').addEventListener('click', () => {
+            fetch('/api/open-folder', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ folder: xbrlLastScaffoldFolder }),
             }).catch(() => {});
         });
 

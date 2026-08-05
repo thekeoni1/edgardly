@@ -1132,6 +1132,21 @@ footer {
     line-height: 1.5;
 }
 
+/* The scaffold confirmation carries more than a filename: how many columns the
+   workbook holds and what it flagged about the filer, so the Checks sheet is
+   not the first place a reader learns there was something to read. */
+.xbrl-scaffold-detail {
+    margin-top: 6px;
+    color: var(--color-gray);
+    font-size: var(--text-sm);
+    line-height: 1.5;
+}
+
+.xbrl-scaffold-detail ul {
+    margin: 4px 0 0;
+    padding-left: 18px;
+}
+
 /* ===== Peer Comparison ===== */
 .peer-companies-row {
     display: flex;

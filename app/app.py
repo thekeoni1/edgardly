@@ -10,6 +10,8 @@ import line_items
 import periods
 import xbrl_extractor as xbrl
 import peer_comparison as pc
+from scaffold import excel as scaffold_excel
+from scaffold import three_statement as scaffold_model
 from flask import Flask, render_template, request, jsonify, send_from_directory, Response, stream_with_context
 
 app = Flask(__name__)
@@ -219,21 +221,23 @@ def _detect_share_scale(rows, columns):
 _DERIVED_UI_ITEMS = line_items.DERIVED_UI_ITEMS
 
 
-def _company_scope(cik, facts):
-    """Run the scope gate for a company, JSON-ready.
+def _company_sic(cik):
+    """The filer's SIC code, and whether the lookup that found it worked.
 
-    The SIC code lives in the submissions API, not in companyfacts, so this is
-    a second lookup. It is cached and it is allowed to fail: a scope verdict is
-    advisory for the puller, and a company should still load with its SIC
-    unknown rather than not load at all.
+    It lives in the submissions API rather than in companyfacts, so it is a
+    second request. It is cached and it is allowed to fail: a company should
+    still load with its SIC unknown rather than not load at all, and the scope
+    gate's shape heuristic still runs without it.
     """
-    sic = None
-    lookup = "submissions"
     try:
-        sic = (edgar_api.get_company_meta(cik) or {}).get("sic") or None
+        return (edgar_api.get_company_meta(cik) or {}).get("sic") or None, "submissions"
     except Exception:
-        lookup = "unavailable"
+        return None, "unavailable"
 
+
+def _company_scope(cik, facts):
+    """Run the scope gate for a company, JSON-ready."""
+    sic, lookup = _company_sic(cik)
     verdict = line_items.is_in_scope(sic, facts)
     detail = dict(verdict.detail)
     detail["sic_lookup"] = lookup
@@ -1468,6 +1472,106 @@ def api_xbrl_export():
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+# ---------------------------------------------------------------------------
+# Three-statement scaffold (V2_PLAN 2.3)
+#
+# Composition only. What a scaffold contains is decided in
+# app/scaffold/three_statement.py and what the file looks like in
+# app/scaffold/excel.py; this endpoint fetches the two things those need, calls
+# them in order, and turns a refusal into an HTTP response. No finance and no
+# openpyxl belong here, and the day a scaffold rule changes, nothing in this
+# file should have to.
+# ---------------------------------------------------------------------------
+
+SCAFFOLD_HISTORY_YEARS = 5
+SCAFFOLD_FORECAST_YEARS = 3
+SCAFFOLD_MAX_YEARS = 20
+
+
+def _scaffold_filename(entity, cik):
+    safe = "".join(c if c.isalnum() or c in " -_" else "" for c in entity)[:40].strip()
+    stem = safe.replace(" ", "_") or str(cik)
+    now = datetime.datetime.now()
+    return stem, "{}_3Statement_{}_{}.xlsx".format(
+        stem, now.strftime("%Y-%m-%d"), now.strftime("%H%M"))
+
+
+@app.route("/api/scaffold/three-statement", methods=["POST"])
+def api_scaffold_three_statement():
+    """Build one filer's three-statement scaffold workbook.
+
+    A filer the scope gate refuses gets 422 and the gate's own message, which is
+    the same sentence the XBRL view already shows under the table. The refusal
+    is the whole response: no half-built workbook is written and no file is left
+    behind for something else to pick up by mistake.
+    """
+    data = request.get_json(silent=True) or {}
+    cik = str(data.get("cik", "")).strip()
+    if not cik:
+        return jsonify({"error": "cik is required"}), 400
+    try:
+        years = int(data.get("years", SCAFFOLD_HISTORY_YEARS))
+        forecast_years = int(data.get("forecast_years", SCAFFOLD_FORECAST_YEARS))
+    except (ValueError, TypeError):
+        return jsonify({"error": "years and forecast_years must be integers"}), 400
+    if not 1 <= years <= SCAFFOLD_MAX_YEARS:
+        return jsonify({"error": "years must be between 1 and {}".format(
+            SCAFFOLD_MAX_YEARS)}), 400
+    if not 0 <= forecast_years <= SCAFFOLD_MAX_YEARS:
+        return jsonify({"error": "forecast_years must be between 0 and {}".format(
+            SCAFFOLD_MAX_YEARS)}), 400
+    fmt = data.get("format", "xlsx")
+    if fmt != "xlsx":
+        # A scaffold is linked formulas across seven sheets. CSV would flatten
+        # exactly the thing it exists to build, so it is refused rather than
+        # silently written as values.
+        return jsonify({"error": "format must be 'xlsx'; a scaffold is linked "
+                                 "formulas and cannot be written as CSV"}), 400
+
+    try:
+        facts = xbrl.fetch_company_facts(cik)
+        sic, sic_lookup = _company_sic(cik)
+        spec = scaffold_model.build_model(cik, facts, sic, history_years=years,
+                                          forecast_years=forecast_years)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+    scope = {"in_scope": spec.scope.in_scope, "reason": spec.scope.reason,
+             "message": spec.scope.message,
+             "detail": dict(spec.scope.detail, sic_lookup=sic_lookup)}
+    if not spec.scope.in_scope:
+        return jsonify({"error": spec.scope.message, "scope": scope,
+                        "entity": spec.entity}), 422
+    if not spec.rows:
+        message = (spec.flags[0]["message"] if spec.flags
+                   else "There is no model to build for this filer.")
+        return jsonify({"error": message, "scope": scope,
+                        "entity": spec.entity}), 422
+
+    try:
+        stem, filename = _scaffold_filename(spec.entity, cik)
+        folder = os.path.join(EXPORTS_DIR, stem)
+        os.makedirs(folder, exist_ok=True)
+        filepath = os.path.join(folder, filename)
+        scaffold_excel.write_workbook(spec, filepath)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+    rel_path = os.path.relpath(filepath, EXPORTS_DIR).replace("\\", "/")
+    return jsonify({
+        "status": "ok",
+        "entity": spec.entity,
+        "filename": filename,
+        "folder": folder,
+        "download_url": "/exports/" + rel_path,
+        "scope": scope,
+        "historical": [p.label for p in scaffold_model.historical_periods(spec)],
+        "forecast": [p.label for p in scaffold_model.forecast_periods(spec)],
+        "flags": [{"flag_type": f["flag_type"], "message": f["message"]}
+                  for f in spec.flags],
+    })
 
 
 # ---------------------------------------------------------------------------
