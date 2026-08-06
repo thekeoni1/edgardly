@@ -404,6 +404,32 @@ def test_the_eps_check_is_quiet_on_apples_annual_columns(apple_deduped):
     assert not [f for f in flags if f["period_end"] in annual_ends]
 
 
+def test_no_yoy_flag_on_apples_fy2021_gross_profit_or_net_income(apple_deduped):
+    """Breakage log row 1, on the filer that raised it.
+
+    Apple's FY2020 gross margin was 104,956 million and its net income 57,411,
+    so FY2021's 152,836 and 94,680 are ordinary years. Both were flagged as
+    519 and 647 percent moves, against Apple's fourth quarter of FY2020 -- the
+    thirteen weeks to 2020-09-26, which the fiscal_period label calls FY
+    because the 10-K carrying it is stamped FY.
+    """
+    flags = xbrl.validate_financials(apple_deduped)
+
+    for item in ("Gross Profit", "Net Income"):
+        yoy = [f for f in flags[item] if f["flag_type"] == xbrl.FLAG_LARGE_YOY_CHANGE]
+        assert yoy == [], "{}: {}".format(item, [f["message"] for f in yoy])
+
+
+def test_apple_raises_no_yoy_flag_anywhere_in_the_payload(apple_deduped):
+    """Not one of the five checked rows, in nineteen years of Apple filings."""
+    flags = xbrl.validate_financials(apple_deduped)
+    raised = [(item, f["period_end"], f["message"])
+              for item, item_flags in flags.items() for f in item_flags
+              if f["flag_type"] == xbrl.FLAG_LARGE_YOY_CHANGE]
+
+    assert raised == []
+
+
 # ---------------------------------------------------------------------------
 # Peer comparison keeps working
 # ---------------------------------------------------------------------------

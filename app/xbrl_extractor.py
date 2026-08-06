@@ -536,19 +536,28 @@ def _check_large_yoy_change(line_item_name, data_points, threshold=5.0):
     """
     Flag year-over-year changes exceeding `threshold` (default 500%, i.e. 5x).
 
-    Only compares consecutive annual periods (12-month flow items or year-end
-    balance sheet instants). Skips when the prior-year value is zero (would be
-    division by zero) or when either value is None.
+    Only compares consecutive annual periods, adjacent meaning 10 to 14 months
+    apart. Skips when the prior-year value is zero (would be division by zero)
+    or when either value is None.
 
     A 500% YoY change is the threshold: value went to >6x or <-4x the prior year.
-    Only compares FY periods whose end dates are 10-14 months apart, to avoid
-    false positives from gaps in historical XBRL data (e.g. early filings with
-    different reporting bases creating phantom large changes across many years).
+
+    Which periods are annual is decided by span through _is_annual_period, not
+    by the fiscal_period label, which is the whole of what this check used to
+    get wrong. EDGAR stamps fp on the filing rather than the fact, so every
+    comparative quarter inside a 10-K comes back labelled FY, and the label is
+    the one signal the 2026-08-04 decisions-log entry says never to trust. A
+    13-week fourth quarter ends 364 days before the next year end, so the date
+    gate admitted it and the check compared a year against a quarter: Apple's
+    FY2021 gross profit of 152,836 million was flagged as a 519 percent change
+    from the 24,689 of its Q4 FY2020, and Apple's FY2021 net income and two of
+    Kroger's rows the same way (breakage log rows 1 and 2). Both values were
+    correct and the sentence said "possible tagging error or unit mismatch"
+    about them.
     """
-    from datetime import datetime
     annual = sorted(
-        [dp for dp in data_points if dp.get("fiscal_period") == "FY"
-         and dp.get("value") is not None and dp.get("end")],
+        [dp for dp in data_points if dp.get("value") is not None
+         and dp.get("end") and _is_annual_period(dp)],
         key=lambda dp: dp.get("end") or ""
     )
     flags = []
@@ -560,8 +569,8 @@ def _check_large_yoy_change(line_item_name, data_points, threshold=5.0):
         if prev == 0 or prev is None:
             continue
         try:
-            prev_end = datetime.strptime(prev_dp["end"], "%Y-%m-%d")
-            curr_end = datetime.strptime(curr_dp["end"], "%Y-%m-%d")
+            prev_end = datetime.date.fromisoformat(prev_dp["end"])
+            curr_end = datetime.date.fromisoformat(curr_dp["end"])
             days_apart = (curr_end - prev_end).days
             if not (300 <= days_apart <= 425):  # 10-14 months
                 continue

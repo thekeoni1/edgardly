@@ -411,6 +411,42 @@ def test_large_yoy_change_skipped_non_fy():
     assert not flags, "Non-FY periods should not be compared"
 
 
+def test_large_yoy_change_ignores_a_comparative_quarter_labelled_fy():
+    """The defect of breakage log rows 1 and 2, in its smallest form.
+
+    EDGAR stamps fp on the filing, so a fourth quarter carried inside a 10-K
+    comes back labelled FY. A 13-week Q4 ends 364 days before the next fiscal
+    year end, which passes the check's own 10-to-14-month gate, so selecting on
+    the label compared a year against a quarter and called an ordinary year a
+    519 percent move. Selecting on span excludes it.
+    """
+    quarter = _dp(24_689_000_000, end="2020-09-26", start="2020-06-28",
+                  fiscal_period="FY")
+    year = _dp(152_836_000_000, end="2021-09-25", start="2020-09-27",
+               fiscal_period="FY")
+
+    assert not _check_large_yoy_change("Gross Profit", [quarter, year]), \
+        "a 13-week period labelled FY is not an annual point, whatever fp says"
+
+
+def test_large_yoy_change_still_flags_a_genuine_annual_move():
+    """The guard above must not silence the check it guards.
+
+    Two full-year spans 364 days apart, a tenfold move: exactly the unit
+    mismatch this flag exists for, and it still fires.
+    """
+    prior = _dp(1_000_000_000, end="2020-09-26", start="2019-09-29",
+                fiscal_period="FY")
+    current = _dp(10_000_000_000, end="2021-09-25", start="2020-09-27",
+                  fiscal_period="FY")
+
+    flags = _flags_of_type(_check_large_yoy_change("Revenue", [prior, current]),
+                           FLAG_LARGE_YOY_CHANGE)
+    assert len(flags) == 1
+    assert flags[0]["period_end"] == "2021-09-25"
+    assert "900%" in flags[0]["message"]
+
+
 # ---------------------------------------------------------------------------
 # 7. Missing Critical Data
 # ---------------------------------------------------------------------------

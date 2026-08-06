@@ -530,6 +530,45 @@ def test_what_kroger_leaves_blank_stays_blank(kroger_table, kroger_facts):
 
 
 # ---------------------------------------------------------------------------
+# The YoY check, on the second filer that raised it
+# ---------------------------------------------------------------------------
+
+def test_no_yoy_flag_on_krogers_fiscal_2021_operating_income_or_net_earnings(
+        kroger_facts):
+    """Breakage log row 2. Kroger's fiscal 2021 is an ordinary year.
+
+    Operating profit 3,477 million and net earnings 1,655 for the year ended
+    29 January 2022, and both were flagged as 2,301 and 2,249 percent moves
+    against a Kroger quarter that the fiscal_period label calls FY. The label
+    describes the filing; the span describes the fact.
+    """
+    ded = _deduped(kroger_facts)
+    flags = xbrl.validate_financials(ded)
+
+    for item in ("Operating Income", "Net Income"):
+        yoy = [f for f in flags[item]
+               if f["flag_type"] == xbrl.FLAG_LARGE_YOY_CHANGE
+               and f["period_end"] == "2022-01-29"]
+        assert yoy == [], "{}: {}".format(item, [f["message"] for f in yoy])
+
+
+def test_krogers_one_surviving_yoy_flag_is_a_real_annual_move(kroger_facts):
+    """What is left is a year Kroger really did report that way.
+
+    Net earnings of 70 million for the year ended 30 January 2010, after a
+    goodwill impairment, against 1,116 million the following year. Both spans
+    are full years and the two ends are 364 days apart, so this is the move the
+    check exists to surface rather than an artefact of the label.
+    """
+    flags = xbrl.validate_financials(_deduped(kroger_facts))
+    raised = [(item, f["period_end"])
+              for item, item_flags in flags.items() for f in item_flags
+              if f["flag_type"] == xbrl.FLAG_LARGE_YOY_CHANGE]
+
+    assert raised == [("Net Income", "2011-01-29")]
+
+
+# ---------------------------------------------------------------------------
 # The two views agree
 # ---------------------------------------------------------------------------
 
