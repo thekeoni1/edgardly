@@ -219,10 +219,16 @@ _REGISTRY_ITEMS = [
     ]),
 
     _item("Intangibles", STATEMENT_BS, KIND_INSTANT, UNIT_DOLLAR, [
-        "FiniteLivedIntangibleAssetsNet",
         "IntangibleAssetsNetExcludingGoodwill",
-    ], note="Excludes goodwill. The first tag also excludes indefinite-lived intangibles, "
-            "which the second one includes. IntangibleAssetsNetExcludingGoodwill is a "
+        "FiniteLivedIntangibleAssetsNet",
+    ], note="Excludes goodwill. The fallback also excludes indefinite-lived intangibles, "
+            "which the first tag includes, so it is narrower than the caption a filer "
+            "carrying both kinds reports and is second for that reason. It led until "
+            "2026-08-05 and Honeywell's row read 2,599 million at 2021-12-31 against an "
+            "\"Other intangible assets -- net\" caption of 3,613, short by the "
+            "indefinite-lived half in all five years, with the difference falling into "
+            "the non-current asset plug (breakage log row 9). "
+            "IntangibleAssetsNetExcludingGoodwill is a "
             "filer's whole intangibles balance and not the non-current half of it, and "
             "this row sits among non-current assets. A filer that splits the caption "
             "reports the current portion inside total current assets as well, so "

@@ -479,6 +479,26 @@ def test_apples_total_asset_coverage_drops_by_the_intangibles_it_had_taken(apple
     assert round(100 * entry["cells"][key], 1) == 55.1
 
 
+def test_the_intangibles_chain_reorder_costs_the_other_two_filers_nothing(apple,
+                                                                          kroger):
+    """Breakage log row 9's fix, checked from the side that must not move.
+
+    Kroger already resolved through IntangibleAssetsNetExcludingGoodwill, being
+    a filer whose caption is "Intangibles net", and Apple's row is a blank in
+    every year because no Apple annual report carries the line at all. Putting
+    the broader tag first is a correction to one filer and must be a no-op for
+    both of these.
+    """
+    for period, millions in zip(ts.historical_periods(kroger),
+                                (942, 899, 899, 834, 808)):
+        cell = ts.row_named(kroger, "Intangibles").cells[period.key]
+        assert cell.value == pytest.approx(millions * MILLION, rel=1e-9)
+        assert cell.provenance["tag"] == "IntangibleAssetsNetExcludingGoodwill"
+
+    assert all(ts.row_named(apple, "Intangibles").cells[p.key].value is None
+               for p in ts.historical_periods(apple))
+
+
 def test_a_filer_whose_annual_report_does_carry_the_line_is_untouched(kroger):
     """The rule must cost nothing where an annual report reports the item.
 

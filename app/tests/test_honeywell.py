@@ -436,6 +436,41 @@ def test_the_interest_row_reads_honeywells_own_interest_line(honeywell_facts):
     assert by_end[FY2024_END]["value"] == 1_048 * MILLION
 
 
+def test_the_intangibles_row_is_the_whole_caption_not_the_finite_lived_half(
+        honeywell_facts):
+    """Breakage log row 9, on the filer that raised it.
+
+    "Other intangible assets -- net" on Honeywell's balance sheet is 3,613,
+    3,222, 3,231, 6,621 and 6,736 million at the five year ends. The row read
+    2,599, 2,269, 2,260, 6,207 and 6,342, because FiniteLivedIntangibleAssetsNet
+    led the chain and excludes the indefinite-lived intangibles the caption
+    includes. The registry's own note recorded the caveat while the chain still
+    preferred the narrower tag, so the note was a description of a defect.
+
+    The difference fell into the non-current asset plug, so the balance sheet
+    still tied and nothing else moved -- which is why five years of a row being
+    short by 394 to 1,014 million was invisible to every check.
+    """
+    assert list(line_items.tags_for("Intangibles")) == [
+        "IntangibleAssetsNetExcludingGoodwill",
+        "FiniteLivedIntangibleAssetsNet",
+    ]
+
+    for end, millions in zip(
+            ("2021-12-31", "2022-12-31", "2023-12-31", "2024-12-31", FY2025_END),
+            (3_613, 3_222, 3_231, 6_621, 6_736)):
+        data, _tag = xbrl.resolve_line_item(honeywell_facts, "Intangibles")
+        got = {dp["end"]: dp for dp in xbrl.deduplicate_period(data)}[end]
+        assert got["value"] == millions * MILLION, end
+        assert got["tag"] == "IntangibleAssetsNetExcludingGoodwill", end
+
+    # The narrower tag still holds the figures the row used to show.
+    narrow = {dp["end"]: dp["value"] for dp in xbrl.deduplicate_period(
+        xbrl._extract_tag_data(honeywell_facts, "FiniteLivedIntangibleAssetsNet"))}
+    assert narrow["2021-12-31"] == 2_599 * MILLION
+    assert narrow[FY2025_END] == 6_342 * MILLION
+
+
 def test_property_survives_the_lease_accounting_change(honeywell_facts):
     """The same successor element Kroger needs, agreeing to the dollar here too."""
     by_end = _annual(honeywell_facts, "PP&E Net")
