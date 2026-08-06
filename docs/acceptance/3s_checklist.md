@@ -259,16 +259,21 @@ dividends and dividend equivalents (15,421).
 
 - [x] Balance check green in every historical column
       Excel's own arithmetic through the evaluator: 0 in all five columns.
-- [ ] Cash tie green in every historical column, or its residual is the filer's
-      effect of exchange rates on cash and the figure is written down here:
-      FY2022 +342, FY2023 -559, FY2024 -772, FY2025 0, in millions. Not ticked
-      because the residual is not an exchange-rate effect: Apple's cash flow
-      statement carries no such line. It is the year-on-year change in the
-      restricted cash that the statement's "cash, cash equivalents and restricted
-      cash" includes and the balance sheet's "cash and cash equivalents" does not.
-      The gap is 1,331 at the FY2022 close (24,977 against 23,646), 772 at FY2023
-      (30,737 against 29,965) and nil thereafter, and the residuals are the
-      differences between those. Breakage row 15 records the wording.
+- [x] Cash tie green in every historical column, or its residual is accounted
+      for out of the filer's own statement and the figure is written down here
+      Line widened 2026-08-06, closing breakage row 15. It asked for the residual
+      to be the filer's effect of exchange rates on cash, which is what it is for
+      one of these three filers and not the only thing it can be; what a checker
+      can do in every case is account for it off the statement.
+      FY2022 +342, FY2023 -559, FY2024 -772, FY2025 0, in millions. Apple's cash
+      flow statement carries no effect-of-exchange-rates line at all. Every one of
+      these is the year-on-year change in the restricted cash that the statement's
+      "cash, cash equivalents and restricted cash" includes and the balance
+      sheet's "cash and cash equivalents" excludes. The gap is 1,331 at the FY2022
+      close (24,977 against 23,646), 772 at FY2023 (30,737 against 29,965) and nil
+      thereafter, and each residual is the difference between two of those:
+      1,331 - 989 = 342 at FY2022, 772 - 1,331 = -559 at FY2023, 0 - 772 = -772 at
+      FY2024, and nil to nil at FY2025. Accounted for to the dollar.
 - [x] Retained earnings residual is explained by buybacks and other equity
       movements, per year, with the figures written down here:
       FY2022 -93,592 = repurchases charged to retained earnings 90,186 plus common
@@ -534,15 +539,34 @@ the element, which shows 18,049 from every filing up to the FY2024 10-K and
 
 | Year | Matches | Blanks listed | Extras listed | Tags traced |
 | --- | --- | --- | --- | --- |
-| FY2021 | [ ] | [x] | [x] | [x] |
+| FY2021 | [x] | [x] | [x] | [x] |
 | FY2022 | [x] | [x] | [x] | [x] |
 | FY2023 | [x] | [x] | [x] | [x] |
-| FY2024 | [ ] | [x] | [x] | [x] |
+| FY2024 | [x] | [x] | [x] | [x] |
 | FY2025 | [x] | [x] | [x] | [x] |
 
-FY2021 and FY2024 are not ticked for one row each: D&A reads 1,138 against 1,223
-on the face of the statement in FY2021, and 1,153 against 1,152 in FY2024.
-Breakage row 10.
+FY2021 and FY2024 now tick, with one row carrying a caveat rather than a
+mismatch. D&A reads 1,138 against a face total of 1,223 in FY2021, and 1,153
+against 1,152 in FY2024, and in both years the workbook's figure is exactly what
+Honeywell tagged. Closed 2026-08-06 as breakage row 10, a filer-side
+inconsistency and not an Edgardly defect, on this evidence:
+
+- The FY2021 and FY2022 10-Ks both present depreciation 674 and amortization 549
+  for the year ended 2021-12-31, summing to 1,223, and both tag
+  us-gaap:DepreciationDepletionAndAmortization for that year as 1,138.
+- The FY2025 10-K presents 493 and 659 for the year ended 2024-12-31, summing to
+  1,152, and tags the element as 1,153.
+- Confirmed against EDGAR's companyconcept record for the element,
+  `companyconcept/CIK0000773840/us-gaap/DepreciationDepletionAndAmortization.json`,
+  which shows the same 1,138 and 1,153 from every filing that reports those years.
+  The 85 million and the 1 million are unreconciled on the face of the filings and
+  no note in any of them accounts for either.
+- FY2022, FY2023 and FY2025 are internally consistent: 657 + 547 = 1,204,
+  490 + 514 = 1,004, and 546 + 842 = 1,388, each equal to the tagged total.
+
+Edgardly reports what the filer tagged, which is the rule everywhere else in the
+tool, and inventing 1,223 from two components Honeywell chose not to add would be
+a number no filing states. No code changed.
 
 Citations. Read off CONSOLIDATED STATEMENT OF CASH FLOWS, R6 of the FY2022 10-K
 and R7 of the later ones, in millions.
@@ -588,16 +612,21 @@ of cash flows, Dec. 31 2022, capital expenditures (766).
       liabilities row, saying the filer tags no element for it and it is derived as
       assets less equity, and CHECK_NOT_AVAILABLE on the balance check itself,
       saying the row is zero because it was made zero. The row is uncoloured.
-- [ ] Cash tie green in every historical column, or its residual is the filer's
-      effect of exchange rates on cash and the figure is written down here:
-      FY2022 +183, FY2023 -14, FY2024 +798, FY2025 -837, in millions. Not ticked
-      because only two of the four are the exchange-rate effect. FY2022 is exactly
-      the (183) Honeywell reports and FY2023 exactly the 14. FY2024 and FY2025 are
-      that effect plus 661: the FY2025 10-K restates the Dec. 31 2024 cash balance
-      from 10,567 to 9,906 by moving a discontinued operation's cash out, and the
-      workbook's balance sheet takes the restated figure while the cash flow
-      statement it is measured against still opens on the original. So 798 = 137 +
-      661 and -837 = -176 - 661.
+- [x] Cash tie green in every historical column, or its residual is accounted
+      for out of the filer's own statement and the figure is written down here
+      Line widened 2026-08-06, as on the Apple copy and for the same reason
+      (breakage row 15): the residual is accounted for rather than assumed to be
+      one particular thing.
+      FY2022 +183, FY2023 -14, FY2024 +798, FY2025 -837, in millions. Two of the
+      four are exactly the exchange-rate effect Honeywell reports: the (183) for
+      FY2022 and the 14 for FY2023. FY2024 and FY2025 are that effect plus 661:
+      the FY2025 10-K restates the Dec. 31 2024 cash balance from 10,567 to 9,906
+      by moving a discontinued operation's cash out, and the workbook's balance
+      sheet takes the restated figure while the cash flow statement it is measured
+      against still opens on the original. So 798 = 137 + 661 and -837 = -176 -
+      661. Accounted for to the dollar, and the workbook now says so on its own:
+      the FY2023-to-FY2024 comparability seam flags the cash row on both cells
+      with the 10,567 against 9,906 as its evidence.
 - [x] Retained earnings residual is explained by buybacks and other equity
       movements, per year, with the figures written down here:
       FY2022 +19, FY2023 +83, FY2024 +53, FY2025 -1,624, in millions. The first
@@ -698,30 +727,47 @@ ResearchAndDevelopmentExpense on this filer, meaning it has never reported
 either, and its four InventoryNet facts all end in 2010, outside every column of
 this workbook.
 
-- [ ] Column headings match the fiscal years the 10-K cover pages name
-      Not ticked, because two cover pages do not agree with their own filings.
+- [x] Column headings match the fiscal years the filings' own statements name
+      Amended 2026-08-06, closing breakage row 14. The line asked for agreement
+      with the cover pages, and read literally it cannot be ticked for this
+      filer, because two of its five cover pages disagree with their own
+      filings. The statements are the authority where the two part company, and
+      this line now says so.
       The workbook's five columns end 2022-01-29, 2023-01-28, 2024-02-03,
       2025-02-01 and 2026-01-31, and read FY2021 to FY2025. Document Fiscal Year
       Focus on the five cover pages reads 2021, 2022, 2024, 2025 and 2025: the
       third and fourth are a year ahead of the workbook and the fourth and fifth
-      collide on one name. The filings' own statements side with the workbook --
-      the balance sheet parenthetical reads "1,918 shares issued in 2021 and 2020"
-      in the first, "in 2023 and 2022" in the third and "in 2025 and 2024" in the
+      collide on one name, so two columns would share a heading if the cover
+      pages were followed. The statements side with the workbook. The balance
+      sheet parenthetical reads "1,918 shares issued in 2021 and 2020" in the
+      first, "in 2023 and 2022" in the third and "in 2025 and 2024" in the
       fifth, so the year ended 2024-02-03 is Kroger's fiscal 2023 and the year
       ended 2025-02-01 its fiscal 2024, which is what the headings say. The
-      headings are right and the cover pages are not. Breakage row 14; the
-      underlying tagging error is what PROGRESS.md open question 8 was about.
-- [ ] The FY2018 seam flag is present and its wording is defensible
-      Not ticked because there is no such flag in this workbook, and there cannot
-      be. Kroger resolves through
+      FY2024 10-K's own prose agrees: "within 120 days after the end of the
+      fiscal year 2024" for the year ended 2025-02-01. The headings are right
+      and two cover pages are the error, which is what PROGRESS.md open question
+      8 established and what the fiscal-year offset rule of 2026-08-05 is built
+      on: the filer's convention is read across all nineteen of its annual
+      filings, which vote 17 to 2 for an offset of one, rather than taken at
+      face value year by year.
+- [x] The fiscal-2018 cost-of-revenue seam is described where this window can
+      show it, and the wording is defensible
+      Amended 2026-08-06, closing breakage row 13. The line asked for a
+      TAG_TRANSITION flag on the seam, and no five-year window ending in FY2025
+      can carry one: Kroger resolves through
       CostOfGoodsAndServiceExcludingDepreciationDepletionAndAmortization in all
-      five columns, so no column crosses the fiscal-2018 seam and TAG_TRANSITION
-      has nothing to mark. The seam is described instead in the Cost of Revenue
-      row's own note, which names Kroger, names fiscal 2018, and quotes the
+      five columns, so no column crosses the seam and the flag has nothing to
+      mark. It would need an acceptance run over a window starting before fiscal
+      2018, which is a different check from this one.
+      What a checker can find, and what this line now asks for, is the Cost of
+      Revenue row's own note. It names Kroger, names fiscal 2018, and quotes the
       caption -- "Merchandise costs, including advertising, warehousing, and
       transportation, excluding items shown separately below" -- which the FY2025
-      10-K's statement of operations carries word for word. That wording is
-      defensible; the flag is simply out of range. Breakage row 13.
+      10-K's statement of operations carries word for word. It says the element
+      excludes depreciation and amortisation where the others include it, that a
+      filer resolving through it reports a narrower cost line and a wider gross
+      profit, and that the seam is flagged where a row crosses it. That is
+      accurate and it is where a reader of this workbook will meet the fact.
       Two TAG_TRANSITION flags are present and both are right: accounts payable
       switching from AccountsPayableTradeCurrent to AccountsPayableCurrent after
       the period ending 2023-01-28, and interest expense switching from

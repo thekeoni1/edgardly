@@ -777,8 +777,22 @@ recalculation forced. All seven sheets, all 48 defined names and all 402 or 403
 cell comments survive in every file. Excel's own arithmetic puts the balance check
 at zero in all five historical columns for all three filers, and its coverage
 figures match the model spec to the digit shown. Kroger's cash tie is zero in
-every column; Apple's and Honeywell's carry the currency residuals their filings
-report.
+every column; Apple's and Honeywell's carry a residual.
+
+**Corrected 2026-08-06, closing breakage log row 15.** The sentence above read
+"Apple's and Honeywell's carry the currency residuals their filings report",
+which is false of Apple: its cash flow statement carries no effect-of-exchange-
+rates line at all. Apple's residuals of +342, -559 and -772 million are the
+year-on-year change in the restricted cash that its cash flow statement includes
+in "cash, cash equivalents and restricted cash" and its balance sheet excludes
+from "cash and cash equivalents". The gap is 1,331 million at the FY2022 close
+(24,977 against 23,646), 772 at FY2023 (30,737 against 29,965) and nil after, and
+each residual is the difference between two of those. Honeywell's are the
+exchange-rate effect in FY2022 and FY2023 -- exactly the (183) and the 14 it
+reports -- and that effect plus a 661 million restatement of opening cash in
+FY2024 and FY2025, so 798 = 137 + 661 and -837 = -176 - 661. The Checks sheet's
+own note said a non-zero residual "usually" is an exchange rate effect and so was
+hedged rather than wrong; this sentence was not hedged.
 
 That is the same automation check Session 5 ran and it has the same limit: alerts
 are suppressed, so what is verified is that no content was lost and everything
