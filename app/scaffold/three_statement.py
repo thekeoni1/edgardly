@@ -284,10 +284,11 @@ def _reported(item, role=ROLE_REPORTED, label=None, terms=None, optional_terms=F
                    forecast_note=forecast_note)
 
 
-def _subtotal(item, components, terms=None, forecast=None, forecast_note="",
-              note=None):
+def _subtotal(item, components, terms=None, optional_terms=False, forecast=None,
+              forecast_note="", note=None):
     """A reported total that the rows above it are measured against."""
-    return _reported(item, role=ROLE_SUBTOTAL, terms=terms, forecast=forecast,
+    return _reported(item, role=ROLE_SUBTOTAL, terms=terms,
+                     optional_terms=optional_terms, forecast=forecast,
                      forecast_note=forecast_note,
                      note=note)._replace(components=tuple(components))
 
@@ -530,15 +531,26 @@ _BALANCE_SHEET = (
     _subtotal("Total Liabilities",
               components=(("Total Current Liabilities", 1), ("Long-Term Debt", 1),
                           (_PLUG_NAME_OTHER_NCL, 1)),
-              terms=(("Total Assets", 1), ("Total Equity", -1)),
+              terms=(("Total Assets", 1), ("Total Equity", -1),
+                     ("Temporary Equity", -1)),
+              optional_terms=("Temporary Equity",),
               forecast=add(ref("Total Current Liabilities"), ref("Long-Term Debt"),
                            ref(_PLUG_NAME_OTHER_NCL)),
               note="Honeywell tags no Liabilities element for any year, so its "
-                   "total is assets less equity: the balance sheet equation solved "
-                   "for the one term the filer left untagged. That is exact rather "
-                   "than approximate, and what it costs is the balance check, "
-                   "which then holds by construction rather than by evidence. The "
-                   "Checks sheet says so instead of showing a green zero."),
+                   "total is assets less equity and less any temporary equity: "
+                   "the balance sheet equation solved for the one term the filer "
+                   "left untagged. Temporary equity is in the identity because it "
+                   "is in neither of the other two, and leaving it out put the "
+                   "whole of it into liabilities: Honeywell's redeemable "
+                   "noncontrolling interest of 7 million made this row 7 too high "
+                   "in FY2021 to FY2024 and the balance check, being the same "
+                   "identity, could not see it. The term is optional because most "
+                   "filers have no mezzanine section; assets and equity are not. "
+                   "What the fallback costs is the balance check, which then holds "
+                   "by construction rather than by evidence. The Checks sheet says "
+                   "so instead of showing a green zero."),
+    _memo("Temporary Equity", forecast=ref("Temporary Equity", -1),
+          forecast_note=_HELD_FLAT),
     _reported("Retained Earnings",
               forecast=sub(add(ref("Retained Earnings", -1), ref("Net Income")),
                            ref("Dividends Paid")),
@@ -678,18 +690,24 @@ _IDENTITY_FALLBACKS = {"Total Liabilities": "Balance check"}
 
 # -- Checks ------------------------------------------------------------------
 
-CheckSpec = namedtuple("CheckSpec", "name terms tie note")
+CheckSpec = namedtuple("CheckSpec", "name terms tie note optional")
+CheckSpec.__new__.__defaults__ = (False,)
 
 CHECKS = (
     CheckSpec(
         "Balance check (assets less liabilities and equity)",
         terms=(("Total Assets", 1, 0), ("Total Liabilities", -1, 0),
-               ("Total Equity", -1, 0)),
+               ("Total Equity", -1, 0), ("Temporary Equity", -1, 0)),
         tie=True,
-        note="Zero when the balance sheet holds. A filer that tags no Liabilities "
-             "element has its total derived from this very identity, and the row "
-             "is then zero because it was made zero; that case is flagged and says "
-             "so rather than showing a green zero that means nothing."),
+        optional=("Temporary Equity",),
+        note="Zero when the balance sheet holds. Temporary equity is a term because "
+             "the equation is assets equals liabilities plus temporary equity plus "
+             "equity for a filer with a mezzanine section, and most filers have "
+             "none, so the term is optional and contributes nothing where it is "
+             "absent. A filer that tags no Liabilities element has its total "
+             "derived from this very identity, and the row is then zero because it "
+             "was made zero; that case is flagged and says so rather than showing "
+             "a green zero that means nothing."),
     CheckSpec(
         "Cash tie (cash flow close less balance sheet cash)",
         terms=((_ROW_CASH_CLOSE, 1, 0), ("Cash and Equivalents", -1, 0)),
@@ -758,6 +776,23 @@ def _cell_value(cells, row_name, key):
     return cell.value if cell is not None else None
 
 
+def _is_optional(optional, row_name):
+    """Whether one term of a row's arithmetic may be absent.
+
+    True means every term is optional, which is the exception the decisions log
+    carries for a total whose components a filer picks from. A collection names
+    the terms that are optional and leaves the rest required, which is a
+    narrower thing and a different one: Total Liabilities needs both assets and
+    equity or it is unknown, and needs temporary equity only if the filer has
+    any.
+    """
+    if optional is True:
+        return True
+    if not optional:
+        return False
+    return row_name in optional
+
+
 def _evaluate(cells, terms, key, period_keys, optional=False):
     """Evaluate (row, sign, offset) terms for one column.
 
@@ -765,9 +800,9 @@ def _evaluate(cells, terms, key, period_keys, optional=False):
     smaller, which is the rule the data layer applies and for the same reason.
     A hole is never read as a zero.
 
-    optional is the one exception the decisions log already carries, for a total
-    whose components a filer picks from. At least one term must be present or
-    the result is still missing, so a total of nothing never becomes zero.
+    optional names the terms that escape that rule, either all of them or a
+    named few; see _is_optional. At least one term must be present or the result
+    is still missing, so a total of nothing never becomes zero.
     """
     index = period_keys.index(key)
     total = 0.0
@@ -777,7 +812,7 @@ def _evaluate(cells, terms, key, period_keys, optional=False):
         value = (None if position < 0 or position >= len(period_keys)
                  else _cell_value(cells, row_name, period_keys[position]))
         if value is None:
-            if not optional:
+            if not _is_optional(optional, row_name):
                 return None, ()
             continue
         total += sign * value
@@ -787,17 +822,41 @@ def _evaluate(cells, terms, key, period_keys, optional=False):
     return total, tuple(used)
 
 
-def _missing_terms(cells, terms, key, period_keys):
-    """Which of a row's inputs had no value, so an absence can be explained."""
+def _missing_terms(cells, terms, key, period_keys, optional=False):
+    """Which of a row's inputs had no value, so an absence can be explained.
+
+    An optional term that is absent is a line the filer does not carry rather
+    than something the row was short of, so naming it would send a reader after
+    a number nobody is missing.
+    """
     index = period_keys.index(key)
     absent = []
     for row_name, _sign, offset in terms:
+        if _is_optional(optional, row_name):
+            continue
         position = index + offset
         if (position < 0 or position >= len(period_keys)
                 or _cell_value(cells, row_name, period_keys[position]) is None):
             absent.append(row_name)
     return absent
 
+
+# What the derived-total flag has to add about the mezzanine, either way round.
+# Assets less equity puts everything that is in neither into liabilities, and a
+# redeemable noncontrolling interest is in neither: Honeywell's 7 million made
+# its liability total 7 too high in four of five years, and a filer with a large
+# one would have taken the whole of it in silence (breakage log row 8).
+_MEZZANINE_TAIL_IN = (
+    "Temporary equity is subtracted because it belongs to neither side of that "
+    "identity: a redeemable noncontrolling interest sits between liabilities and "
+    "equity on the face of the balance sheet, and leaving it in the subtraction "
+    "would land the whole of it in liabilities.")
+
+_MEZZANINE_TAIL_OUT = (
+    "This filer tags no temporary equity for this period. Where one does, it is "
+    "subtracted too, because a redeemable noncontrolling interest sits between "
+    "liabilities and equity and belongs to neither; untagged mezzanine items "
+    "otherwise land in liabilities without anything saying so.")
 
 _PLUG_TOO_LARGE_TAIL = (
     "This filer's XBRL is too sparse for this section of the scaffold to be "
@@ -1007,9 +1066,12 @@ def _fill_terms(spec, cells, period_keys):
                 "This filer tags no element for this row, so it is derived as {}. "
                 "That is the balance sheet equation solved for the one term the "
                 "filer left untagged, which is exact; what it costs is the {}, "
-                "which then holds by construction rather than by "
-                "evidence.".format(_formula_text(used),
-                                   _IDENTITY_FALLBACKS[spec.name].lower()),
+                "which then holds by construction rather than by evidence. "
+                "{}".format(_formula_text(used),
+                            _IDENTITY_FALLBACKS[spec.name].lower(),
+                            _MEZZANINE_TAIL_IN if "Temporary Equity" in
+                            {name for name, _s, _o in used}
+                            else _MEZZANINE_TAIL_OUT),
                 key),)
         built[key] = Cell(value, CELL_DERIVED,
                           xbrl.derived_provenance(
@@ -1066,7 +1128,8 @@ def _missing_reason(spec, cells, key, index, period_keys, tagged_ends, interim,
         return {"flag": (xbrl.FLAG_PERIOD_UNRESOLVED if key in tagged_ends
                          else xbrl.FLAG_NOT_TAGGED)}
 
-    short_of = tuple(_missing_terms(cells, terms, key, period_keys))
+    short_of = tuple(_missing_terms(cells, terms, key, period_keys,
+                                    spec.optional_terms))
     # A row that is a registry derivation carries the registry's own formula, so
     # a reader sees the rule rather than this model's rendering of it. Everything
     # else -- every plug, and the four cash flow links -- is a construct of the
@@ -1344,7 +1407,7 @@ def _build_checks(cells, period_keys, disarmed):
                       if any(row == name for row, _sign, _offset in terms))
         cells_out = {}
         for key in period_keys:
-            value, _used = _evaluate(cells, terms, key, period_keys)
+            value, _used = _evaluate(cells, terms, key, period_keys, check.optional)
             cells_out[key] = Cell(value, CELL_DERIVED if value is not None
                                   else CELL_MISSING, None, (), terms)
         built.append({"name": check.name, "terms": terms, "note": check.note,

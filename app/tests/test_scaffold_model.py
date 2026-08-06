@@ -83,7 +83,7 @@ def _flags_of(cell, flag_type):
 # ---------------------------------------------------------------------------
 
 def test_every_registry_item_is_a_row(apple):
-    """All 43, including the three Short-Term Debt components.
+    """All 44, including the three Short-Term Debt components.
 
     The registry is the vocabulary and the scaffold is the first thing to use
     the whole of it. Phase 1's exit review counted 41 entries: the 38 V2_PLAN
@@ -91,9 +91,10 @@ def test_every_registry_item_is_a_row(apple):
     from, which the plan wrote as a chain and open question 4 showed could not
     be one. Session 6b added the two halves of the finance lease obligation,
     which are part of no sum and exist so a debt row can be tied to the caption
-    beside it (breakage log row 12).
+    beside it (breakage log row 12), and temporary equity, which the derived
+    liability total has to take out of the identity it stands on (row 8).
     """
-    assert len(line_items.REGISTRY) == 43
+    assert len(line_items.REGISTRY) == 44
     assert {row.item for row in apple.rows if row.item} == set(line_items.REGISTRY)
 
 
@@ -547,21 +548,21 @@ def test_a_summarised_plug_reports_the_worst_year_and_says_so(kroger):
     assert line["message"].endswith("(5 of 5 historical periods)")
 
 
-def test_six_rows_with_nothing_to_forecast_stay_six_lines(kroger):
+def test_seven_rows_with_nothing_to_forecast_stay_seven_lines(kroger):
     """The grouping is by row, and a flag with no row groups by its own message.
 
     Kroger tags no SG&A, R&D, inventory, short-term investments, commercial
-    paper or short-term borrowings, and each of those is a different thing for a
-    reader to know. Collapsing them on the flag type alone would report one of
-    the six and silently drop five.
+    paper, short-term borrowings or temporary equity, and each of those is a
+    different thing for a reader to know. Collapsing them on the flag type alone
+    would report one of the seven and silently drop six.
     """
     lines = [f for f in ts.summarised_flags(kroger)
              if f["flag_type"] == ts.FLAG_NO_REPORTED_HISTORY]
 
-    assert len(lines) == 6
+    assert len(lines) == 7
     assert {line["message"].split(" has no forecast")[0] for line in lines} == {
         "SG&A", "R&D", "Inventory", "Short-Term Investments", "Commercial Paper",
-        "Short-Term Borrowings"}
+        "Short-Term Borrowings", "Temporary Equity"}
 
 
 def test_the_summary_keeps_every_flag_type_the_spec_raised(apple, honeywell,
@@ -632,13 +633,74 @@ def test_a_missing_derived_row_names_the_input_it_was_short_of(honeywell):
 # ---------------------------------------------------------------------------
 
 def test_honeywells_liabilities_are_derived_from_the_balance_sheet_equation(honeywell):
-    """It tags no Liabilities element for any year, so the identity supplies it."""
+    """It tags no Liabilities element for any year, so the identity supplies it.
+
+    FY2025 is the year Honeywell's mezzanine section is nil, so the identity is
+    the plain two-term one and the figure is the same either way. The temporary
+    equity term is in the formula because the row read it; what it contributed
+    is zero.
+    """
     cell = _cell(honeywell, "Total Liabilities", "FY2025")
 
     assert cell.state == ts.CELL_DERIVED
     assert cell.value == (73_681 - 15_030) * MILLION
-    assert cell.provenance["formula"] == "Total Assets - Total Equity"
+    assert cell.provenance["formula"] == "Total Assets - Total Equity - Temporary Equity"
     assert len(_flags_of(cell, ts.FLAG_TOTAL_DERIVED)) == 1
+
+
+def test_honeywells_liability_total_matches_the_face_in_every_year(honeywell):
+    """Breakage log row 8. Assets less equity swept the mezzanine into liabilities.
+
+    Honeywell reports no total liabilities line, so the row is derived, and the
+    identity it was derived from also took in the redeemable noncontrolling
+    interest Honeywell reports on its own line between liabilities and equity.
+    The row read 7 million too high in FY2021 to FY2024 and agreed exactly in
+    FY2025, which is the year that balance is nil.
+
+    The four wrong years are the sum of the liability captions on the face of
+    each balance sheet: 45,221 = 19,508 + 14,254 + 2,364 + 208 + 1,800 + 7,087
+    for FY2021, and so on. The balance check could not reveal any of it, being
+    the same identity, and the magnitude is trivial while the shape is not: a
+    filer with a large mezzanine balance would have taken the whole of it into
+    liabilities in silence.
+    """
+    for period, millions in zip(ts.historical_periods(honeywell),
+                                (45_221, 44_949, 45_084, 56_035, 58_651)):
+        cell = ts.row_named(honeywell, "Total Liabilities").cells[period.key]
+        assert cell.value == pytest.approx(millions * MILLION, rel=1e-9), period.label
+
+    for period, millions in zip(ts.historical_periods(honeywell),
+                                (7, 7, 7, 7, 0)):
+        cell = ts.row_named(honeywell, "Temporary Equity").cells[period.key]
+        assert cell.value == pytest.approx(millions * MILLION, abs=1), period.label
+        assert cell.provenance["tag"] == \
+            "RedeemableNoncontrollingInterestEquityCommonCarryingAmount"
+
+
+def test_the_derived_total_says_where_mezzanine_items_would_otherwise_land(honeywell):
+    """A trivial figure standing in for a shape, so the flag has to name the shape."""
+    first = ts.historical_periods(honeywell)[0]
+    cell = ts.row_named(honeywell, "Total Liabilities").cells[first.key]
+    flag = _flags_of(cell, ts.FLAG_TOTAL_DERIVED)[0]
+
+    assert "Total Assets - Total Equity - Temporary Equity" in flag["message"]
+    assert "between liabilities and equity" in flag["message"]
+    assert "land the whole of it in liabilities" in flag["message"]
+
+
+def test_a_filer_with_no_mezzanine_section_is_untouched(apple, kroger):
+    """Both tag Liabilities, so neither row is derived, and neither has any.
+
+    The term being optional is what keeps it that way: a required term nobody
+    reports would have made every liability total in the tool missing.
+    """
+    for spec, totals in ((apple, (287_912, 302_083, 290_437, 308_030, 285_508)),
+                         (kroger, (39_657, 39_609, 38_904, 44_335, 44_017))):
+        for period, millions in zip(ts.historical_periods(spec), totals):
+            cell = ts.row_named(spec, "Total Liabilities").cells[period.key]
+            assert cell.state == ts.CELL_REPORTED
+            assert cell.value == pytest.approx(millions * MILLION, rel=1e-9)
+            assert ts.row_named(spec, "Temporary Equity").cells[period.key].value is None
 
 
 def test_a_derived_liability_total_disarms_the_balance_check(honeywell, apple):

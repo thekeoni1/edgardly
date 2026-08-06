@@ -140,7 +140,7 @@ def test_defaults_are_valid_scales():
 def test_registry_covers_every_item_the_plan_enumerates():
     """V2_PLAN 1.1: 14 income statement, 16 balance sheet, 8 cash flow.
 
-    Five balance-sheet items beyond the plan's list, in two groups.
+    Six balance-sheet items beyond the plan's list, in three groups.
 
     Three are one thing: Short-Term Debt is a total of separately tagged
     current-liability lines, so each of those lines is a registry item of its
@@ -153,6 +153,11 @@ def test_registry_covers_every_item_the_plan_enumerates():
     row to the caption beside it on a balance sheet that presents debt and
     finance leases as one line, which is a caption a filer need not tag and
     Kroger does not (breakage log row 12).
+
+    The sixth is temporary equity, added the same day. A filer tagging no
+    Liabilities element has its total derived as assets less equity, and the
+    mezzanine section is in neither of those, so without a term for it the whole
+    of it lands in liabilities (breakage log row 8).
     """
     by_statement = {}
     for item in line_items.REGISTRY.values():
@@ -166,11 +171,13 @@ def test_registry_covers_every_item_the_plan_enumerates():
               "Finance Lease Liability, Non-current"]
     assert [n for n in by_statement[line_items.STATEMENT_BS] if n in leases] == leases
 
+    assert "Temporary Equity" in by_statement[line_items.STATEMENT_BS]
+
     assert len(by_statement[line_items.STATEMENT_IS]) == 14
     assert len(by_statement[line_items.STATEMENT_BS]) == (
-        16 + len(components) + len(leases))
+        16 + len(components) + len(leases) + 1)
     assert len(by_statement[line_items.STATEMENT_CF]) == 8
-    assert len(line_items.REGISTRY) == 43
+    assert len(line_items.REGISTRY) == 44
 
 
 def test_every_registry_entry_is_well_formed():
@@ -242,6 +249,15 @@ def test_the_registry_says_which_of_its_tags_no_filer_has_ever_exercised():
         # of the five uses it, which is exactly why Short-Term Debt cannot be a
         # chain pick and has to sum its components.
         "DebtCurrent",
+        # The two whole-balance temporary equity elements. Only one of the five
+        # filers has a mezzanine section at all, and Honeywell tags it with the
+        # common-portion element, which is the third tag of that chain and the
+        # one a fixture exercises. These two lead it because a filer that tags
+        # either of them reports the whole balance in one place, which the
+        # partial elements do not.
+        "TemporaryEquityCarryingAmountIncludingPortionAttributableToNoncontrolling"
+        "Interest",
+        "RedeemableNoncontrollingInterestEquityCarryingAmount",
     }
 
 

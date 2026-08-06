@@ -366,6 +366,30 @@ _REGISTRY_ITEMS = [
         "Liabilities",
     ]),
 
+    # Temporary equity: the mezzanine section, between liabilities and equity on
+    # the face of a balance sheet and inside neither. It is a registry item for
+    # one reason, which is that a filer tagging no Liabilities element has its
+    # total derived as assets less equity, and that identity sweeps the whole of
+    # the mezzanine into liabilities unless it is taken out. Honeywell carries 7
+    # million of it at four of its five year ends and nil at the fifth, which is
+    # exactly the error the derived total made, and is small enough to be
+    # harmless and shaped like something that would not be (breakage log row 8).
+    _item("Temporary Equity", STATEMENT_BS, KIND_INSTANT, UNIT_DOLLAR, [
+        "TemporaryEquityCarryingAmountIncludingPortionAttributableToNoncontrolling"
+        "Interest",
+        "RedeemableNoncontrollingInterestEquityCarryingAmount",
+        "RedeemableNoncontrollingInterestEquityCommonCarryingAmount",
+    ], note="Redeemable noncontrolling interests and other redeemable equity, which a "
+            "filer presents on its own line between total liabilities and total equity "
+            "and which belongs to neither. The first two tags are whole-balance "
+            "elements and lead for that reason; the third is the common portion alone, "
+            "and is the only one Honeywell (CIK 773840) tags -- its 7 million at "
+            "2021-12-31 through 2024-12-31 is the whole of its mezzanine section, nil "
+            "at 2025-12-31. A filer splitting the balance across the common, preferred "
+            "and other partial elements while tagging neither whole-balance element "
+            "would be captured only in part, because a chain takes one tag; no fixture "
+            "does that and the limitation is recorded rather than guessed around."),
+
     _item("Total Equity", STATEMENT_BS, KIND_INSTANT, UNIT_DOLLAR, [
         "StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest",
         "StockholdersEquity",
