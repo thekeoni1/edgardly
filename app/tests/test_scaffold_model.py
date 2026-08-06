@@ -376,6 +376,121 @@ def test_coverage_says_what_it_finds_even_when_it_is_not_a_share(honeywell):
 
 
 # ---------------------------------------------------------------------------
+# An annual column takes a value only from an annual report
+# ---------------------------------------------------------------------------
+
+def test_no_historical_cell_is_sourced_to_an_interim_filing(apple, honeywell,
+                                                            kroger):
+    """The decisions-log rule of 2026-08-05, over every reported cell there is.
+
+    A historical column of this model is a fiscal year of a filed annual
+    report. Ranking already hands a period to the 10-K wherever a 10-K reports
+    the item; this is the case ranking cannot reach, where none does and a 10-Q
+    comparative won by default.
+    """
+    for spec in (apple, honeywell, kroger):
+        for row in spec.rows:
+            for period in ts.historical_periods(spec):
+                cell = row.cells[period.key]
+                if cell.state != ts.CELL_REPORTED:
+                    continue
+                form = (cell.provenance or {}).get("form")
+                assert xbrl.is_annual_report_form(form), "{} {} {} {}".format(
+                    spec.entity, row.name, period.label, form)
+
+
+def test_apples_fy2025_intangibles_is_a_blank_that_names_the_10q_figure(apple):
+    """Breakage log row 3.
+
+    No Apple balance sheet has ever carried an intangibles caption. The row
+    read 13,301 million off the re-presented comparative balance sheet of the
+    10-Q filed 2026-07-31, which is a figure a reader cannot find in any Apple
+    annual report. The blank hands the figure over rather than hiding it: a
+    reader who wants that number can take it deliberately.
+    """
+    cell = _cell(apple, "Intangibles", "FY2025")
+
+    assert cell.value is None
+    assert cell.state == ts.CELL_MISSING
+    prov = cell.provenance
+    assert prov["flag"] == xbrl.FLAG_NOT_IN_ANNUAL_REPORT
+    assert "13,301,000,000" in prov["message"]
+    assert "10-Q filed 2026-07-31" in prov["message"]
+    assert "0000320193-26-000020" in prov["message"]
+    # And it still sends the reader to the year's own annual report.
+    assert "balance sheet of the FY2025 10-K" in prov["message"]
+
+
+def test_apples_intangibles_row_is_now_the_same_shape_in_all_five_years(apple):
+    """The consequence beyond the cell, which is breakage log row 3's real point.
+
+    A series that changes shape at the last column is a series nobody can read.
+    Four blanks and a value meant the non-current asset plug subtracted an
+    intangibles row in FY2025 and not in the four years before it, and nothing
+    said so.
+    """
+    row = ts.row_named(apple, "Intangibles")
+
+    assert all(row.cells[p.key].value is None
+               for p in ts.historical_periods(apple))
+    assert [f["flag_type"] for f in row.flags] == [ts.FLAG_NO_REPORTED_HISTORY]
+
+
+def test_apples_non_current_asset_plug_no_longer_double_counts(apple):
+    """Breakage log row 4, and the double count is gone by removal.
+
+    The 13,301 was the whole intangibles balance: the 10-Q's own note splits it
+    into 11,093 non-current and 2,208 current, and the 2,208 was inside total
+    current assets and so inside the current-asset plug already. Subtracting
+    all 13,301 from a non-current total counted it in two sections at once.
+
+    With the row blank the plug carries the whole non-current remainder, which
+    is what it does in FY2021 to FY2024, and the FY2025 figure is total assets
+    less current assets less PP&E: 359,241 - 147,957 - 49,834 = 161,450. That
+    is 11,093 more than the 150,357 breakage log row 4 predicted, because that
+    row was written on the assumption that the cell would keep the non-current
+    half rather than go blank, which the annual-report rule settled otherwise.
+    """
+    plug = _cell(apple, "Other non-current assets (plug to reported total)",
+                 "FY2025")
+
+    assert plug.value == pytest.approx(161_450 * MILLION, rel=1e-9)
+    # No Intangibles term in the formula, in any year, so the shape is constant.
+    for period in ts.historical_periods(apple):
+        terms = ts.row_named(
+            apple, "Other non-current assets (plug to reported total)"
+        ).cells[period.key].terms
+        assert "Intangibles" not in {name for name, _sign, _offset in terms}
+
+
+def test_apples_total_asset_coverage_drops_by_the_intangibles_it_had_taken(apple):
+    """Coverage is one minus the plug's share, so it moves with the plug.
+
+    It read 58.8 percent for FY2025 while the plug was 13,301 million too
+    small. With the row blank it reads 55.1, which is the same 197,791 million
+    of registry-reached assets the four earlier years measure on.
+    """
+    entry = ts.coverage_for(apple, "Total Assets")
+    key = [p.key for p in ts.historical_periods(apple) if p.label == "FY2025"][0]
+
+    assert entry["cells"][key] == pytest.approx(197_791.0 / 359_241.0, abs=1e-4)
+    assert round(100 * entry["cells"][key], 1) == 55.1
+
+
+def test_a_filer_whose_annual_report_does_carry_the_line_is_untouched(kroger):
+    """The rule must cost nothing where an annual report reports the item.
+
+    Kroger's intangibles are on the face of every one of its balance sheets,
+    so every column is a 10-K figure and the rule never fires.
+    """
+    for period, millions in zip(ts.historical_periods(kroger),
+                                (942, 899, 899, 834, 808)):
+        cell = ts.row_named(kroger, "Intangibles").cells[period.key]
+        assert cell.value == pytest.approx(millions * MILLION, rel=1e-9)
+        assert xbrl.is_annual_report_form(cell.provenance["form"])
+
+
+# ---------------------------------------------------------------------------
 # The flag summary
 # ---------------------------------------------------------------------------
 

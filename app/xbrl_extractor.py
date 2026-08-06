@@ -798,9 +798,19 @@ PROVENANCE_MISSING = "missing"
 #                  lived and would send a reader looking for a line no balance
 #                  sheet carries; what is missing is a component, and the
 #                  message names it.
+# NOT_IN_ANNUAL_REPORT the filer tagged the item for the period, but only in an
+#                  interim filing: no annual report presents the line. The
+#                  scaffold's historical columns are fiscal years of filed
+#                  annual reports, so a figure only a 10-Q carries is shown as
+#                  a hole that names the figure and the filing rather than put
+#                  into an annual series (decisions log, 2026-08-05). Neither
+#                  "not tagged" nor "unresolved" is true of it: the number
+#                  exists, is the filer's own, and is sourced -- just not to an
+#                  annual report.
 FLAG_NOT_TAGGED = "NOT_TAGGED"
 FLAG_PERIOD_UNRESOLVED = "PERIOD_UNRESOLVED"
 FLAG_DERIVATION_UNAVAILABLE = "DERIVATION_UNAVAILABLE"
+FLAG_NOT_IN_ANNUAL_REPORT = "NOT_IN_ANNUAL_REPORT"
 
 SEC_ARCHIVES_BASE = "https://www.sec.gov/Archives/edgar/data"
 
@@ -989,17 +999,48 @@ def derived_provenance(formula, inputs):
     }
 
 
+def _interim_sentence(interim, period_label):
+    """What a NOT_IN_ANNUAL_REPORT blank has to say to be worth more than a gap.
+
+    A hole that says only "not here" sends the reader hunting. This one hands
+    over the figure it declined to use, the filing that carries it and the date
+    it was filed, so a reader who wants that number can take it deliberately
+    rather than be handed it silently in an annual column.
+    """
+    value = interim.get("value")
+    amount = ("{:,.0f}".format(value) if isinstance(value, (int, float))
+              else "a figure")
+    form = interim.get("form") or "an interim filing"
+    filed = interim.get("filed")
+    accn = interim.get("accn")
+    where = form if not filed else "{} filed {}".format(form, filed)
+    if accn:
+        where = "{} (accession {})".format(where, accn)
+    return ("Reported only in an interim filing. The one figure Edgardly can "
+            "find for {} is {}, from the {}; no annual report reports this line "
+            "for the period, so the column is left blank rather than taking an "
+            "annual figure from a filing that is not an annual report".format(
+                period_label or "this period", amount, where))
+
+
 def missing_provenance(line_item, period_label, cik=None, pointer=None,
-                       flag=FLAG_NOT_TAGGED, missing_inputs=()):
+                       flag=FLAG_NOT_TAGGED, missing_inputs=(), interim=None,
+                       formula=None, opening=None):
     """Provenance for a value that is not there, with a pointer to go find it.
 
     pointer is one entry from filing_pointers, or None when no filing for the
     period could be identified, in which case the message names the statement
     but has no link to offer.
 
-    flag says which kind of absence this is; all three send the reader to the
+    flag says which kind of absence this is; all of them send the reader to the
     same place, and only one of them claims the filer never tagged the item.
-    missing_inputs names the components a DERIVATION_UNAVAILABLE was short of.
+    missing_inputs names the components a DERIVATION_UNAVAILABLE was short of,
+    and formula overrides the registry's derivation text for a row that is a
+    model construct rather than a registry derivation. interim carries the data
+    point a NOT_IN_ANNUAL_REPORT blank declined to use.
+
+    opening replaces the whole first sentence, for a caller that knows something
+    about the absence this function cannot work out from a line item's name.
     """
     pointer = pointer or {}
     statement = line_items.statement_label_of(line_item)
@@ -1008,12 +1049,17 @@ def missing_provenance(line_item, period_label, cik=None, pointer=None,
 
     where = "the {} of the".format(statement) if statement else "the"
     target = " ".join(part for part in (where, period_label, form) if part)
-    if flag == FLAG_PERIOD_UNRESOLVED:
+    if opening is not None:
+        pass
+    elif flag == FLAG_PERIOD_UNRESOLVED:
         opening = ("Tagged in XBRL, but not for a period Edgardly could confirm "
                    "as {}".format(period_label or "this period"))
+    elif flag == FLAG_NOT_IN_ANNUAL_REPORT:
+        opening = _interim_sentence(interim or {}, period_label)
     elif flag == FLAG_DERIVATION_UNAVAILABLE:
-        rule = line_items.DERIVATIONS.get(line_item)
-        formula = rule.formula if rule is not None else ""
+        if formula is None:
+            rule = line_items.DERIVATIONS.get(line_item)
+            formula = rule.formula if rule is not None else ""
         short_of = ", ".join(missing_inputs) or "an input"
         opening = ("No filer tags this; Edgardly computes it as {}. {} is not "
                    "reported for this period".format(formula, short_of))

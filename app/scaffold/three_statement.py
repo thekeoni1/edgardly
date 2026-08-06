@@ -895,20 +895,41 @@ def _computation_order(spec_rows):
 # -- Cells -------------------------------------------------------------------
 
 def _reported_cells(deduped, item, period_keys, all_flags):
-    """One cell per period for a registry item, from the filer's own numbers."""
+    """One cell per period for a registry item, from the filer's own numbers.
+
+    A historical column of this model is a fiscal year of a filed annual
+    report, so a value only an interim filing carries is not one of the filer's
+    own numbers for this column. Ranking already hands the period to the 10-K
+    wherever a 10-K reports the item; where none does, a 10-Q comparative used
+    to win by default, and the row took a figure no annual report presents.
+    Apple's FY2025 Intangibles was the case: 13,301 million off the re-presented
+    balance sheet of the 10-Q filed 2026-07-31, on a row Apple's 10-K does not
+    carry, and the whole intangibles balance where the row is the non-current
+    half (breakage log rows 3 and 4).
+
+    Such a period is returned separately rather than dropped, so the hole can
+    name the figure it declined and the filing behind it. See the decisions log
+    entry of 2026-08-05.
+
+    Returns (cells, interim), the second keyed by period end.
+    """
     info = deduped.get(item) or {"data": []}
     chosen = periods.points_by_end(info["data"], set(period_keys), periods.ANNUAL)
     item_flags = all_flags.get(item, [])
     cells = {}
+    interim = {}
     for key in period_keys:
         dp = chosen.get(key)
         if dp is None:
+            continue
+        if not xbrl.is_annual_report_form(dp.get("form")):
+            interim[key] = dp
             continue
         flags = tuple(_flag(f["flag_type"], f["message"], key, f.get("details"))
                       for f in item_flags if f.get("period_end") == key)
         cells[key] = Cell(dp["value"], CELL_REPORTED, xbrl.reported_provenance(dp),
                           flags, None)
-    return cells
+    return cells, interim
 
 
 def _fill_plug(spec, cells, period_keys):
@@ -989,8 +1010,10 @@ def _fill_terms(spec, cells, period_keys):
                           flags, used)
 
 
-def _missing_flag(spec, cells, key, period_keys, tagged_ends):
+def _missing_flag(spec, cells, key, period_keys, tagged_ends, interim):
     """Which kind of absence this is, and which inputs it was short of."""
+    if key in interim:
+        return xbrl.FLAG_NOT_IN_ANNUAL_REPORT, ()
     if spec.role == ROLE_PLUG:
         terms = _plug_terms(spec)
     elif spec.terms:
@@ -1008,11 +1031,12 @@ def _missing_flag(spec, cells, key, period_keys, tagged_ends):
 def _build_rows(spec_rows, deduped, cik, period_keys, labels, all_flags, pointers):
     """Every row's historical cells: reported first, then arithmetic, then holes."""
     cells = {spec.name: {} for spec in spec_rows}
+    interim_cells = {spec.name: {} for spec in spec_rows}
 
     for spec in spec_rows:
         if spec.item is not None:
-            cells[spec.name] = _reported_cells(deduped, spec.item, period_keys,
-                                               all_flags)
+            cells[spec.name], interim_cells[spec.name] = _reported_cells(
+                deduped, spec.item, period_keys, all_flags)
 
     for spec in _computation_order(spec_rows):
         if spec.role == ROLE_PLUG:
@@ -1023,6 +1047,7 @@ def _build_rows(spec_rows, deduped, cik, period_keys, labels, all_flags, pointer
     rows = []
     for spec in spec_rows:
         built = cells[spec.name]
+        interim = interim_cells[spec.name]
         tagged = set()
         if spec.item:
             info = deduped.get(spec.item) or {"data": []}
@@ -1031,12 +1056,14 @@ def _build_rows(spec_rows, deduped, cik, period_keys, labels, all_flags, pointer
         for index, key in enumerate(period_keys):
             if built.get(key) is not None:
                 continue
-            flag, short_of = _missing_flag(spec, cells, key, period_keys, tagged)
+            flag, short_of = _missing_flag(spec, cells, key, period_keys, tagged,
+                                           interim)
             built[key] = Cell(None, CELL_MISSING,
                               xbrl.missing_provenance(spec.item or spec.name,
                                                       labels[index], cik,
                                                       pointers.get(key), flag,
-                                                      short_of),
+                                                      short_of,
+                                                      interim=interim.get(key)),
                               (), None)
         entry = line_items.REGISTRY.get(spec.item) if spec.item else None
         unit = entry.unit if entry is not None else line_items.UNIT_DOLLAR

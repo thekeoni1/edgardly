@@ -222,7 +222,16 @@ _REGISTRY_ITEMS = [
         "FiniteLivedIntangibleAssetsNet",
         "IntangibleAssetsNetExcludingGoodwill",
     ], note="Excludes goodwill. The first tag also excludes indefinite-lived intangibles, "
-            "which the second one includes."),
+            "which the second one includes. IntangibleAssetsNetExcludingGoodwill is a "
+            "filer's whole intangibles balance and not the non-current half of it, and "
+            "this row sits among non-current assets. A filer that splits the caption "
+            "reports the current portion inside total current assets as well, so "
+            "subtracting the whole of this row from a non-current total counts that "
+            "portion twice: Apple's 10-Q of 2026-07-31 splits 13,301 million into 11,093 "
+            "non-current and 2,208 current, and the 2,208 is already inside total current "
+            "assets. No committed fixture resolves this row from an annual report of a "
+            "filer that splits it, so the caveat is a warning about the element rather "
+            "than a description of a value on show (breakage log row 4)."),
 
     _item("Total Assets", STATEMENT_BS, KIND_INSTANT, UNIT_DOLLAR, [
         "Assets",
