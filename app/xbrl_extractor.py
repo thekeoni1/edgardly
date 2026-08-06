@@ -737,55 +737,6 @@ def filings_disagree(facts_data, line_item, first_accn, second_accn,
     return worst
 
 
-def represented_periods(facts_data, line_item, tolerance=BASIS_CHANGE_TOLERANCE):
-    """Periods a later annual report restated, by element and by more than a rounding.
-
-    The signature of a re-presentation: one filer, one element, one period, two
-    annual reports, two materially different numbers. Honeywell's revenue for the
-    year ended 2023-12-31 is 36,662 million in its own 10-K and 33,009 in the
-    FY2025 one, which re-presents it for the Solstice spin-off. Both are
-    Honeywell's own figures for that year and only one of them is comparable with
-    a column taken from a filing that predates the spin.
-
-    Restricted to one element on purpose. Two different tags disagreeing is a
-    TAG_TRANSITION and is already flagged as one; what this finds is the same tag
-    being refilled, which no flag could see because resolution keeps one entry per
-    period per tag and the earlier figure is discarded before any check runs.
-
-    Returns {period_end: {"kept", "earlier", "kept_accn", "earlier_accn",
-    "kept_filed", "earlier_filed", "tag", "change"}} for the periods that moved.
-    """
-    resolved, _tag = resolve_line_item(facts_data, line_item)
-    winners = {dp.get("end"): dp for dp in resolved}
-
-    moved = {}
-    for end, winner in winners.items():
-        value, tag = winner.get("value"), winner.get("tag")
-        if value is None or not tag or not end:
-            continue
-        for dp in _extract_tag_data(facts_data, tag):
-            if dp.get("end") != end or dp.get("start") != winner.get("start"):
-                continue
-            if not is_annual_report_form(dp.get("form")):
-                continue
-            other = dp.get("value")
-            if other is None or not value:
-                continue
-            if (dp.get("filed") or "") >= (winner.get("filed") or ""):
-                continue
-            change = abs(other - value) / abs(value)
-            if change <= tolerance:
-                continue
-            incumbent = moved.get(end)
-            if incumbent is None or change > incumbent["change"]:
-                moved[end] = {
-                    "kept": value, "earlier": other, "tag": tag, "change": change,
-                    "kept_accn": winner.get("accn"), "earlier_accn": dp.get("accn"),
-                    "kept_filed": winner.get("filed"), "earlier_filed": dp.get("filed"),
-                }
-    return moved
-
-
 def _check_missing_critical_data(deduped_line_items):
     """
     Flag if annual (FY) periods exist in any line item but both Revenue and
