@@ -1549,13 +1549,21 @@ def build_model(cik, facts, sic=None, start_year=1990, end_year=2100,
                 row = row._replace(forecast=None)
         final_rows.append(row._replace(flags=tuple(row_flags)))
 
+    # Every flag on every cell, not a chosen two of them. The list's heading says
+    # "What this scaffold flags about this filer", and it used to carry the
+    # forecast flags, the derived-total flags and the plug-size flags alone while
+    # every PLUG_ABSORBS_BLANK, every TAG_TRANSITION and every LARGE_YOY_CHANGE
+    # reached a cell comment and the Source Tags sheet and stopped there. A
+    # reader who opened the Checks sheet to find out what was doubtful about a
+    # workbook was being answered two thirds of the way (breakage log row 5).
+    # summarised_flags groups them by the row they name and counts the periods,
+    # which is the collapsing this sheet already did for plug sizes.
     for row in final_rows:
         for key in period_keys:
             for flag in row.cells[key].flags:
-                if flag["flag_type"] in (FLAG_PLUG_TOO_LARGE, FLAG_TOTAL_DERIVED):
-                    model_flags.append(
-                        dict(flag, details=dict(flag.get("details") or {},
-                                                row=row.name)))
+                model_flags.append(
+                    dict(flag, details=dict(flag.get("details") or {},
+                                            row=row.name)))
 
     checks = _build_checks(cells, period_keys, disarmed)
     for check in checks:

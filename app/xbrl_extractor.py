@@ -643,17 +643,29 @@ def _check_tag_transition(line_item_name, data_points):
 
     Informational, like every other flag here: it never removes or alters data.
     """
+    entry = line_items.REGISTRY.get(line_item_name)
+    # What the chain's own sign convention says, where it says anything. A seam
+    # that changes the sign of a row is a different and worse thing than one that
+    # changes what it covers, and the registry already records which chains can:
+    # Kroger's interest row reads 441 for fiscal 2023 and -639 for fiscal 2025
+    # while the interest bill went up. Carrying the caveat into the flag is what
+    # gets it onto the Checks sheet, where the flag now goes (breakage log row 5).
+    sign_caveat = " ".join(part for part in (entry.sign if entry else "",) if part)
+
     flags = []
     for prev_dp, curr_dp in _consecutive_annual_pairs(data_points):
         prev_tag = prev_dp.get("tag")
         curr_tag = curr_dp.get("tag")
         if not prev_tag or not curr_tag or prev_tag == curr_tag:
             continue
+        message = (f"{line_item_name} switches XBRL tag here: the period ending "
+                   f"{prev_dp.get('end')} comes from {prev_tag}, this one from "
+                   f"{curr_tag}. The two tags may not cover exactly the same items")
+        if sign_caveat:
+            message = "{}. This row's sign convention: {}".format(
+                message, sign_caveat)
         flags.append(_make_flag(
-            FLAG_TAG_TRANSITION,
-            (f"{line_item_name} switches XBRL tag here: the period ending "
-             f"{prev_dp.get('end')} comes from {prev_tag}, this one from {curr_tag}. "
-             f"The two tags may not cover exactly the same items"),
+            FLAG_TAG_TRANSITION, message,
             curr_dp.get("end"), curr_dp.get("value"),
             {"previous_tag": prev_tag, "current_tag": curr_tag,
              "previous_period_end": prev_dp.get("end")},

@@ -536,7 +536,8 @@ def test_a_summarised_plug_reports_the_worst_year_and_says_so(kroger):
     summary reports the worst and changes the verb to say it is a range.
     """
     line = [f for f in ts.summarised_flags(kroger)
-            if "Other operating items" in f["message"]][0]
+            if f["flag_type"] == ts.FLAG_PLUG_TOO_LARGE
+            and "Other operating items" in f["message"]][0]
     worst = max(
         flag["details"]["share_of_total"]
         for row in kroger.rows if row.name.startswith("Other operating items")
@@ -563,6 +564,85 @@ def test_seven_rows_with_nothing_to_forecast_stay_seven_lines(kroger):
     assert {line["message"].split(" has no forecast")[0] for line in lines} == {
         "SG&A", "R&D", "Inventory", "Short-Term Investments", "Commercial Paper",
         "Short-Term Borrowings", "Temporary Equity"}
+
+
+def test_the_checks_list_carries_every_flag_the_workbook_raises(apple, honeywell,
+                                                                kroger):
+    """Breakage log row 5, and the decision the user took on it.
+
+    The heading says "What this scaffold flags about this filer" and the list
+    carried the forecast flags, the two derived-total flags and the plug-size
+    flags alone. Every PLUG_ABSORBS_BLANK, every TAG_TRANSITION and every
+    LARGE_YOY_CHANGE reached a cell comment and the Source Tags sheet and
+    stopped there, so a reader who read the Checks sheet did not learn that
+    Kroger's interest expense changes sign mid-series or that two of Apple's
+    plugs absorb an untagged line.
+    """
+    for spec in (apple, honeywell, kroger):
+        summarised = ts.summarised_flags(spec)
+        listed = {(f["flag_type"], (f["details"] or {}).get("row"))
+                  for f in summarised}
+        for row in spec.rows:
+            for period in ts.historical_periods(spec):
+                for flag in row.cells[period.key].flags:
+                    assert (flag["flag_type"], row.name) in listed, \
+                        "{}: {} on {} reaches no line".format(
+                            spec.entity, flag["flag_type"], row.name)
+
+
+def test_the_widened_list_is_still_grouped_by_row_with_counts(kroger):
+    """One line per row per flag type, however many cells raised it.
+
+    Widening the list is only an improvement if it stays readable: the plug that
+    absorbs two blanks in five years is one line saying five, not five lines.
+    """
+    lines = ts.summarised_flags(kroger)
+    # A flag that names a row groups by the row; one that names none, which is
+    # every row-level forecast flag, groups by its own message. Both keys have to
+    # be unique or the sheet is repeating itself.
+    keys = [(f["flag_type"], (f["details"] or {}).get("row") or f["message"])
+            for f in lines]
+    assert len(keys) == len(set(keys)), "a row and flag type reach two lines"
+
+    absorbs = next(f for f in lines
+                   if f["flag_type"] == ts.FLAG_PLUG_ABSORBS_BLANK
+                   and f["details"].get("row", "").startswith("Other current assets"))
+    assert "(5 of 5 historical periods)" in absorbs["message"]
+    assert "Short-Term Investments, Inventory" in absorbs["message"]
+
+
+def test_krogers_interest_sign_note_reaches_the_checks_sheet(kroger):
+    """The thing breakage log row 5 said a Checks reader could not learn.
+
+    The row reads 441 million for fiscal 2023 and -639 for fiscal 2025 while the
+    interest bill went up, because the chain crosses into a net element that
+    carries the filer's own sign. The seam flag marks it and now says so, by
+    carrying the registry's own sign convention for the row it is on.
+    """
+    line = next(f for f in ts.summarised_flags(kroger)
+                if f["flag_type"] == xbrl.FLAG_TAG_TRANSITION
+                and f["details"].get("row") == "Interest Expense")
+
+    assert "InterestIncomeExpenseNonoperatingNet" in line["message"]
+    assert "This row's sign convention:" in line["message"]
+    assert "can change sign without the underlying expense changing direction" in \
+        line["message"]
+
+
+def test_a_row_with_no_sign_convention_gets_no_sign_sentence(honeywell):
+    """The caveat rides on the registry, so a row without one says nothing extra.
+
+    Honeywell's PP&E row crosses the ASC 842 seam at 2022-12-31 and its registry
+    entry records no sign convention, the two tags agreeing to the dollar in the
+    transition year. Its seam flag has to stop where the sentence stops being
+    true of it.
+    """
+    line = next(f for f in ts.summarised_flags(honeywell)
+                if f["flag_type"] == xbrl.FLAG_TAG_TRANSITION
+                and f["details"].get("row") == "PP&E Net")
+
+    assert "switches XBRL tag" in line["message"]
+    assert "sign convention" not in line["message"]
 
 
 def test_the_summary_keeps_every_flag_type_the_spec_raised(apple, honeywell,
