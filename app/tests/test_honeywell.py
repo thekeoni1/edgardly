@@ -436,6 +436,56 @@ def test_the_interest_row_reads_honeywells_own_interest_line(honeywell_facts):
     assert by_end[FY2024_END]["value"] == 1_048 * MILLION
 
 
+def test_the_operating_income_row_says_where_honeywells_figure_comes_from(
+        honeywell_facts):
+    """Breakage log row 7. The value is right and the row's position implies more.
+
+    Honeywell's consolidated statement of operations has no operating income
+    subtotal: it runs from total costs, expenses and other straight to income
+    before taxes. The 8,022, 7,563, 7,667 and 8,127 million of FY2022 to FY2025
+    are its "Segment profit", tagged us-gaap:OperatingIncomeLoss on the segment
+    note's reconciliation to pretax income. Keeping the value and saying what it
+    is was the decision; the caveat rides on the registry entry, so it reaches
+    the row label of every workbook rather than a document nobody opens.
+    """
+    from scaffold import three_statement as ts
+
+    note = line_items.REGISTRY["Operating Income"].note
+    assert "segment note" in note
+    assert "Segment profit" in note
+    assert "R145 of 0000773840-26-000013" in note
+
+    spec = ts.build_model(773840, honeywell_facts, "3724")
+    row = ts.row_named(spec, "Operating Income")
+    assert "segment note" in row.note
+
+    for period, millions in zip(ts.historical_periods(spec)[1:],
+                                (8_022, 7_563, 7_667, 8_127)):
+        cell = row.cells[period.key]
+        assert cell.value == millions * MILLION, period.label
+        assert cell.provenance["tag"] == "OperatingIncomeLoss"
+
+
+def test_the_fy2021_operating_income_pointer_names_the_note_as_well(honeywell_facts):
+    """Breakage log row 11, which is row 7 seen from the other side.
+
+    Where the value exists the row takes it from a note; where it does not, the
+    pointer used to send the reader to the face of a statement that has no such
+    line in any year, so following it could not resolve the blank.
+    """
+    from scaffold import three_statement as ts
+
+    spec = ts.build_model(773840, honeywell_facts, "3724")
+    first = ts.historical_periods(spec)[0]
+    cell = ts.row_named(spec, "Operating Income").cells[first.key]
+
+    assert cell.value is None
+    assert "income statement or the segment note of the FY2021 10-K" in \
+        cell.provenance["message"]
+    # The row still belongs to the income statement; only the pointer widened.
+    assert line_items.statement_of("Operating Income") == line_items.STATEMENT_IS
+
+
 def test_the_intangibles_row_is_the_whole_caption_not_the_finite_lived_half(
         honeywell_facts):
     """Breakage log row 9, on the filer that raised it.

@@ -129,7 +129,17 @@ _REGISTRY_ITEMS = [
 
     _item("Operating Income", STATEMENT_IS, KIND_FLOW, UNIT_DOLLAR, [
         "OperatingIncomeLoss",
-    ]),
+    ], note="Some filers tag this element only in the segment note, not on the face of "
+            "the income statement, and the row's position between gross profit and "
+            "pretax income then implies a subtotal the statement does not carry. "
+            "Honeywell (CIK 773840) is such a filer: its consolidated statement of "
+            "operations runs from total costs, expenses and other straight to income "
+            "before taxes, and the 8,127 million shown for FY2025 is the \"Segment "
+            "profit\" line of the segment note's reconciliation to pretax income, R145 "
+            "of 0000773840-26-000013. The value is the filer's own and is genuinely "
+            "this element; what it is not is a figure from the statement this row sits "
+            "on, and three rows stand on it -- the operating plug, EBITDA and the "
+            "other-income plug -- and inherit the question (breakage log row 7)."),
 
     _item("Interest Expense", STATEMENT_IS, KIND_FLOW, UNIT_DOLLAR, [
         "InterestExpense",
@@ -625,6 +635,24 @@ def statement_of(name):
 def statement_label_of(name):
     """Return the prose name of an item's statement, or an empty string."""
     return STATEMENT_LABELS.get(statement_of(name), "")
+
+
+# Where a missing value's pointer should send a reader, for the items whose
+# statement is not the only place a filer may present them. Naming the statement
+# the registry assigns the row to is right in general and useless for a filer
+# whose statement has no such line: Honeywell tags no OperatingIncomeLoss for
+# FY2021 and its income statement carries no operating income line in that year
+# or any other, so "check the income statement" cannot resolve the blank however
+# carefully it is followed (breakage log row 11). The item's statement is
+# unchanged -- this widens where to look, not where the row belongs.
+MISSING_POINTER_LABELS = {
+    "Operating Income": "income statement or the segment note",
+}
+
+
+def missing_pointer_label(name):
+    """Where to tell a reader to look for an item a filer did not tag."""
+    return MISSING_POINTER_LABELS.get(name) or statement_label_of(name)
 
 
 # ---------------------------------------------------------------------------

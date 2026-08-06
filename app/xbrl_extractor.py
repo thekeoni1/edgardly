@@ -1054,7 +1054,7 @@ def missing_provenance(line_item, period_label, cik=None, pointer=None,
     nothing about where in it to look.
     """
     pointer = pointer or {}
-    statement = (line_items.statement_label_of(line_item)
+    statement = (line_items.missing_pointer_label(line_item)
                  if statement_label is None else statement_label)
     form = pointer.get("form") or "10-K"
     url = filing_index_url(cik, pointer.get("accn"))
