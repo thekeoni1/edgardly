@@ -29,6 +29,7 @@ wrong, change it here with a dated note saying why.
 | 2026-08-05 | The balance sheet reports coverage where the other two statements warn | Amends the 2026-08-03 plug entry above, which raised a flag on any plug over 10 percent of the total it plugs to. The threshold and the flag are unchanged on the income statement and the cash flow statement, where they fire on 19 of 44 and 31 of 45 plug cells across the acceptance filers and therefore still single something out. On the balance sheet they fired on 72 of 75, because a 41-item registry meets a real balance sheet with right-of-use assets, deferred tax, vendor non-trade receivables and a dozen other captions it has no item for. Every instance was true and the warning was still worthless, because a reader who sees the same sentence on every subtotal stops reading it, which is worse than not flagging at all. So each balance-sheet section reports the same measurement as a coverage percentage on the Checks sheet: the share of the reported subtotal the registry's own lines account for, written as live arithmetic over the subtotal and its plug. The number was never the problem; the sentence attached to it was. The registry is not widened, which is the other way out and needs its own session and a time-box (V2_PLAN R3). |
 | 2026-08-05 | The retained earnings line is a residual to be explained, not a tie to be green | V2_PLAN Part 4's checklist template asks for the retained earnings tie to be green in every historical column. It cannot be for any filer, and the reason is structural rather than a bug: filers charge share retirements, treasury stock and other equity movements to retained earnings and none of those is a registry item. Apple's FY2025 residual is 91,699 million against a buyback of 90,711 million, so the figure is not mysterious, only non-zero. The workbook already labels the row a residual, leaves it uncoloured and reports the number. The checklist line now matches: the checker confirms the residual is explained by buybacks and other equity movements rather than confirming a zero that cannot happen. A line item that can never be signed off is not a check, it is a checklist nobody finishes. The alternative, adding the equity-movement items to the registry so the row can tie, is the same trade-off as the coverage entry above and was rejected for the same reason. |
 | 2026-08-04 | A quarter is numbered by position between two fiscal year ends | How far through its fiscal year the period ends, in quarters, rounded to the nearest one, against year ends the engine has already confirmed. Never from fp, which names the filing: Kroger's fourth quarter is carried only by the next year's first-quarter 10-Q, and Honeywell's third quarter of 2020 sits in a 10-Q that is itself mis-stamped Q2. An unclosed year is measured against the filer's median year length; a quarter with no year end before it keeps the label it arrived with, because there is nothing to number from. Numbering decides the name only: which quarters exist still needs a filing to have called the date a quarter, so no value moves into or out of the view. |
+| 2026-08-05 | The checklist's value comparison is done by a Claude session; the user reviews the evidence and signs | The acceptance hand-check has two halves and they need different hands. Reading five years of three statements off three filers' 10-Ks and comparing every cell, sign and scale against a workbook is mechanical, high-volume and exactly what a session with network access and the filings open can do without tiring; V2_PLAN R10 is the risk that it never happens because one person has to do all of it. So a Claude session performs the comparison and writes the evidence into the checklist: for every ticked box, a citations block naming the filing by accession, the statement inside it, and the figure read there, so the claim is checkable rather than asserted. What stays with the user is everything a session cannot do or should not certify: opening the workbook by hand in real Excel and watching for a repair dialog, hovering a row label to see the tooltip render, judging whether a plug or a coverage figure is acceptable for their purpose, and signing. The signature therefore certifies that the user has reviewed the evidence and found it sound, not that they recomputed every cell themselves; that is what makes it a signature a person can honestly give. A discrepancy the session finds is written into the breakage log as an open entry with its diagnosis and is never marked resolved by the session that found it, because the same hand should not both report and close a defect. A copy with an open entry against it is still unsignable, which is the rule the log already carried. |
 
 ## Session log
 
@@ -46,6 +47,7 @@ open questions the next session needs to know about.
 | 2026-08-04 | 4C | Period names, an interstitial before Phase 2. Three commits: session prompt added, fiscal years named by the filer's own convention, quarters numbered by position. No fixture regenerated and no value changed anywhere. | 0 | Open questions 8 and 9 closed. One new one, 10, about the calendar year a quarter label carries. |
 | 2026-08-05 | 5 | The first Phase 2 session: V2_PLAN 2.1, 2.2, 2.2b and 2.5. Four commits: session prompt amended and quarters named for their fiscal year, the model spec in app/scaffold/three_statement.py, the writer kit in app/scaffold/excel.py, the formula-evaluation harness. | 0 | Open question 10 closed. Two new ones, 11 and 12, both raised by measuring the scaffold rather than by building it. |
 | 2026-08-05 | 6 | The last Phase 2 session: V2_PLAN 2.3 and 2.4. Three commits: open questions 11 and 12 settled, the endpoint and the button, the acceptance documents and the generator. Phase 2's exit review is written and its last criterion is the user's hand-check, which has not run. | 0 | Open questions 11 and 12 closed. None new. |
+| 2026-08-05 | 6H | The delegated half of the acceptance hand-check. Five historical years of all three statements for all three filers compared against the filings on EDGAR, cell by cell, for value, sign and scale; the checklist filled in with a citations block under every table; sixteen open entries written into the breakage log. Documents only: no application code was touched and nothing generated was committed. | 0 | None closed. Sixteen breakage entries open, and Phase 2 still cannot be declared done. |
 
 ### Session 1 detail
 
@@ -785,6 +787,103 @@ three are unsigned, and the breakage log is empty because nothing has been check
 rather than because nothing was found. Phase 2's exit review below records that as
 the one open criterion.
 
+### Session 6H detail
+
+The value comparison half of the acceptance hand-check, run against the three
+workbooks dated 2026-08-05 in app/exports/acceptance and against the filings
+themselves on EDGAR over live network. No test was run and no application code
+was read except to diagnose what the comparison found; the only writes are
+docs/acceptance/3s_checklist.md, docs/acceptance/breakage_log.md and this file.
+
+**What was compared.** Every historical cell of the income statement, balance
+sheet and cash flow statement for Apple, Honeywell and Kroger, five years each,
+against the rendered statements of the filings the Source Tags sheet cites --
+thirteen 10-Ks, one 10-Q, and EDGAR's companyconcept API wherever a figure could
+not be found on the face of any statement or note. Value, sign and scale in every case, plus every blank's
+flag message and pointer, the Checks sheet's balance check, cash tie, retained
+earnings residual and all twenty-five coverage percentages per filer, and the
+flag summary. Sixteen source tags were traced end to end rather than the nine the
+checklist asks for, three per statement per company. The checklist now carries a
+citations block under every table naming the accession, the statement inside it
+and the figures read there, so each tick is checkable.
+
+**What came out clean.** Apple's income statement and cash flow statement match
+its filings in all five years, line for line and sign for sign, including the
+interest expense that lives in a note rather than on the face and disappears
+after FY2023. Its balance sheet matches in four of five. Kroger's income
+statement and cash flow statement match in all five years, its cash tie is zero
+in every column because that filer has neither restricted cash nor a currency
+effect, and its three known quirks were confirmed against EDGAR rather than
+assumed: companyconcept returns 404 for both SellingGeneralAndAdministrativeExpense
+and ResearchAndDevelopmentExpense on this filer, and its four InventoryNet facts
+all end in 2010. Honeywell's balance check is zero by construction and both flags
+that say so are present and correct. Every retained-earnings residual on all
+three filers was explained to the dollar off the filings' own equity statements,
+and the three are three different stories: Apple's is a buyback plus share-
+settlement withholding, Honeywell's three small ones are dividend timing and its
+FY2025 one is the 1,651 million Solstice spin-off, Kroger's four are dividend
+timing alone because it charges repurchases to treasury stock. The forecast
+mechanics were driven through the evaluation harness on all three workbooks:
+219, 222 and 207 forecast formula cells, all blank with the Assumptions sheet as
+shipped, all numeric with one unremarkable set typed in, no cell evaluating to an
+error either way, and all three checks zero in all three forecast columns.
+
+**What did not.** Sixteen entries, all open. Four have a named line of code and
+no defensible reading. The largest is that the YoY sanity check selects its
+series on the `fiscal_period` label the 2026-08-04 decisions-log entry says never
+to trust, so a 10-K's comparative fourth quarter is admitted as an annual point:
+Apple's FY2021 gross profit is flagged against Apple's Q4 FY2020, and Kroger's
+FY2021 operating income against a Kroger quarter. `_is_annual_period` is defined
+three functions below and is the span test that would exclude it. Apple's FY2025
+intangibles row carries a figure from a 10-Q that no Apple balance sheet shows,
+and takes the whole balance where the row is non-current, so 2,208 million of
+current-portion intangibles is counted in two sections at once. The blank
+opening-cash message is malformed -- "Edgardly computes it as ." -- and names an
+input that is reported.
+
+Five more are places where a settled rule produces a row that does not match the
+filing's own line, and each needs a decision rather than a patch. Honeywell's
+Operating Income is its segment profit, taken from the segment note because its
+income statement has no such subtotal, and three rows stand on it. Honeywell's
+Intangibles is the finite-lived half of a caption that includes indefinite-lived
+intangibles. Kroger's two debt rows are strict debt against captions that include
+finance leases, so both read below the line they sit beside, by 1,691 million in
+FY2025. And the most-recent-annual-report rule puts Honeywell's FY2022 on the
+pre-spin basis and its FY2023 on the post-spin one, so revenue falls from 35,466
+to 33,009 between adjacent columns and nothing says the fall did not happen.
+TAG_TRANSITION marks a change of element and has nothing to say about a change of
+basis inside one element.
+
+Three are the documents disagreeing with the filings rather than the code. The
+checklist asks for Kroger's FY2018 seam flag, which cannot exist in a workbook
+whose five columns are all on the far side of that seam; the seam is in the row's
+note instead, correctly worded. It asks that Kroger's headings match the fiscal
+years its cover pages name, and two of the five cover pages disagree with their
+own filings' statements, which is open question 8 seen from the checker's side.
+And the Session 6 detail above says Apple's cash-tie residual is a currency
+effect; Apple reports no currency line, and its residual is the year-on-year
+change in restricted cash.
+
+**What the numbers say where they were only ever reported.** The coverage
+percentages read the way Session 6 predicted and every low one has an
+identifiable plug behind it. Apple's lowest cell is equity at minus 33.6 percent
+in FY2024, whose plug is paid-in capital less accumulated other comprehensive
+loss; Honeywell's is current liabilities at 54.0 percent in FY2022, whose plug is
+its accrued liabilities line in one piece; Kroger's is current assets at 25.6
+percent in FY2022, whose plug is store deposits in-transit, FIFO inventory less
+the LIFO reserve, and prepaids, to the dollar. Not one of the twenty-five per
+filer was a surprise with the balance sheet open beside it, which is what that
+line of the checklist asks.
+
+**What remains for the user.** Three things per copy, all left blank and named as
+such above each sitting log: opening the workbook by hand in real Excel and
+watching for a repair dialog, which automation cannot see because it suppresses
+alerts; hovering a row label to confirm the tooltip renders, the text for which
+is verified present in every case; and the signature. Then the sixteen breakage
+entries, none of which this session may close. No copy is signable until they are
+resolved, which is the rule the log already carried and the reason Phase 2 is
+still not done.
+
 ## Phase 2 exit review
 
 Run 2026-08-05 against the exit criteria in V2_PLAN Part 4. Five of six pass on
@@ -800,7 +899,7 @@ empty or fully resolved; nothing else is waiting on it.
 | The endpoint and UI button exist and surface refusals | Pass | POST /api/scaffold/three-statement, tested against five fixtures, returning the scope gate's exact message and no file for a bank, an insurer and an IFRS-only filer. The button is in the XBRL view and was driven in a real browser offline for both an acceptance and a refusal. |
 | Formula-evaluation harness, with the vocabulary constrained to what it evaluates | Pass | 16 tests in test_formula_eval.py. Nothing evaluates to an error, the balance check is zero in every historical column, blank assumptions produce blank forecasts and filled ones produce three statements that tie. The vocabulary is still the eight functions Session 5 recorded; coverage needed none of them, being two references and two operators. |
 | Acceptance harness exists: checklist and breakage log | Pass | docs/acceptance/3s_checklist.md, three resumable copies with a sitting log each, and docs/acceptance/breakage_log.md with the rule that every entry ends fixed or as a flagged blank. Two lines depart from V2_PLAN Part 4's template and say so in the document. |
-| All three checklists signed off, every discrepancy fixed or converted into a flagged blank | **Open** | The three workbooks are generated and the checklists are printed and waiting. No copy is signed and the breakage log has no entries, which means the check has not run rather than that it found nothing. This is the criterion Phase 2 ends on, it is hours of careful work against three 10-Ks, and V2_PLAN R10 is the risk that it is a solo bottleneck. It may take several sittings and this file says so until it is done. |
+| All three checklists signed off, every discrepancy fixed or converted into a flagged blank | **Open** | Amended after Session 6H. The value comparison has now run: five historical years of all three statements for all three filers against the filings on EDGAR, with a citations block under every table. It found sixteen discrepancies, all open in the breakage log, so no copy is signable -- not because nothing has been checked, which was the position when this row was first written, but because plenty has and it found things. What is left before a signature is a decision on each of the sixteen, the three interactive items per copy that only the user can do, and the signature itself. V2_PLAN R10 named this as a solo bottleneck; delegating the comparison is what the 2026-08-05 decisions-log entry does about it, and it leaves the judgement where it belongs. |
 
 Two things the hand-check should expect rather than log as bugs, both established
 before it starts. Honeywell's balance check is zero by construction, because it
