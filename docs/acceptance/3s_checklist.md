@@ -85,8 +85,11 @@ count warnings.
     Company:            Apple Inc.
     Ticker / CIK:       AAPL / 320193
     Scaffold file:      app/exports/acceptance/Apple_Inc/
-                        Apple_Inc_3Statement_2026-08-05_1632.xlsx
-    Generated on:       2026-08-05 16:32, from the committed fixture
+                        Apple_Inc_3Statement_2026-08-06_1319.xlsx
+    Generated on:       2026-08-06 13:19, from the committed fixture, after the
+                        Session 6b fixes. The 2026-08-05 16:32 workbook beside it
+                        is the one the value comparison was run against and is
+                        superseded.
     Years in workbook:  FY2021 to FY2025 historical, FY2026E to FY2028E forecast
     10-K checked:       FY2025 0000320193-25-000079 (filed 2025-10-31)
                         FY2024 0000320193-24-000123 (filed 2024-11-01)
@@ -143,9 +146,26 @@ URL. Apple stopped publishing the other-income breakdown after FY2023, so the
 flag naming the line it absorbed. The operating plug is exactly zero in all five
 years because Apple's total operating expenses are R&D plus SG&A and nothing else.
 
-Extras: none on this statement. Two spurious LARGE_YOY_CHANGE flags sit on FY2021
-gross profit and net income and are logged (breakage log rows 1 and 2); they are
-flags on correct values, not extra values.
+Extras: none on this statement.
+
+Re-verified 2026-08-06, closing breakage row 1. Two spurious LARGE_YOY_CHANGE
+flags sat on FY2021 gross profit and net income and are gone; the workbook now
+raises no LARGE_YOY_CHANGE anywhere in Apple's payload. The flags were against
+Apple's fourth quarter of FY2020 rather than its FY2020, and both readings are
+confirmed against EDGAR's companyconcept records:
+
+- us-gaap:GrossProfit for the year 2019-09-29 to 2020-09-26 is 104,956 million,
+  reported identically by three 10-Ks (0000320193-20-000096, -21-000105 and
+  -22-000108). For the thirteen weeks 2020-06-28 to 2020-09-26 it is 24,689, from
+  0000320193-20-000096. FY2021's 152,836 against 104,956 is a 46 percent year, and
+  against 24,689 was the 519 percent the flag claimed.
+- us-gaap:NetIncomeLoss for the same two spans is 57,411 and 12,673 million from
+  the same filings. FY2021's 94,680 against 57,411 is 65 percent, and against
+  12,673 was the 647 percent the flag claimed.
+
+Both prior values carry the fiscal-period label FY, because EDGAR stamps it on the
+filing and the filing is a 10-K; the quarter's own span of 91 days is what
+excludes it now.
 
 Tags traced: Revenue FY2021, RevenueFromContractWithCustomerExcludingAssessedTax,
 0000320193-23-000106 -> statements of operations, Sep. 25 2021, 365,817. Interest
@@ -161,11 +181,36 @@ Income/(Expense), Net, interest expense (3,933). Net Income FY2025, NetIncomeLos
 | FY2022 | [x] | [x] | [x] | [x] |
 | FY2023 | [x] | [x] | [x] | [x] |
 | FY2024 | [x] | [x] | [x] | [x] |
-| FY2025 | [ ] | [x] | [x] | [x] |
+| FY2025 | [x] | [x] | [x] | [x] |
 
-FY2025 is not ticked for a match: the Intangibles row shows 13,301,000,000, which
-is on no Apple balance sheet, and the figure it does show mixes a current and a
-non-current amount. Breakage log rows 3 and 4.
+FY2025 now ticks. Re-verified 2026-08-06, closing breakage rows 3 and 4. The
+Intangibles row showed 13,301,000,000, which is on no Apple balance sheet and
+which mixes a current and a non-current amount; it is now a flagged blank, as it
+is in the four years before it, and the row is the same shape in all five columns.
+Confirmed against EDGAR's companyconcept records:
+
+- us-gaap:IntangibleAssetsNetExcludingGoodwill at 2025-09-27 is reported by
+  exactly two filings, the 10-Q of 2026-05-01 (0000320193-26-000013) and the 10-Q
+  of 2026-07-31 (0000320193-26-000020), both at 13,301 million. No annual report
+  reports it. us-gaap:FiniteLivedIntangibleAssetsNet is not reported for that date
+  by any filing of any kind.
+- The blank's message names the 13,301,000,000, the 10-Q, its filing date and its
+  accession, says no annual report reports the line for the period, and still
+  points at the balance sheet of the FY2025 10-K. A reader who wants that figure
+  can take it deliberately.
+- The Other non-current assets plug reads 161,450 million for FY2025, being total
+  assets 359,241 less total current assets 147,957 less PP&E 49,834, each from
+  0000320193-25-000079. Its formula has the same terms in all five years now, and
+  no year subtracts an intangibles row. Breakage row 4 predicted 150,357 on the
+  assumption the cell would keep the 11,093 million of non-current intangibles the
+  10-Q's note splits out; no annual report reports that half either, so the row is
+  blank and the 11,093 is the difference between the two figures.
+- Total-asset coverage for FY2025 therefore reads 55.1 percent, not the 58.8 the
+  earlier workbook showed, and 55.1 is measured on the same 197,791 million of
+  registry-reached assets that the four earlier years are measured on. The
+  double-count breakage row 4 found -- 2,208 million of current-portion
+  intangibles inside total current assets and inside the non-current plug at the
+  same time -- is gone by removal.
 
 Citations. Read off CONSOLIDATED BALANCE SHEETS (R5) in each filing.
 
@@ -186,22 +231,35 @@ Citations. Read off CONSOLIDATED BALANCE SHEETS (R5) in each filing.
   308,030; (19,154); 56,950.
 - FY2025, 0000320193-25-000079, Sep. 27 2025 column: 35,934; 18,763; 39,777;
   5,718; 147,957; 49,834; 359,241; 69,860; 12,350; 7,979; 165,631; 78,328;
-  285,508; (14,264); 73,733. Every one of these matches. The Intangibles row is
-  the exception and is not from this statement: 13,301 is the total intangibles
-  in the note to the 10-Q filed 2026-07-31, accession 0000320193-26-000020, whose
-  re-presented Sep. 27 2025 balance sheet shows 11,093 non-current and whose note
-  splits the total into 11,093 non-current and 2,208 current.
+  285,508; (14,264); 73,733. Every one of these matches.
 
 Signs: the accumulated deficit is negative in FY2022 to FY2025 and positive
 retained earnings in FY2021, exactly as the filings present them.
 
-Blanks: Goodwill in all five years and Short-Term Borrowings in all five, each
-with "Not tagged in XBRL" and the right filing index URL. Both are correct --
-Apple's balance sheet carries neither caption. Intangibles is blank FY2021 to
-FY2024 for the same reason and populated in FY2025 only, which is the seam logged
-as breakage row 3.
+Blanks: Goodwill in all five years, Short-Term Borrowings in all five, Temporary
+Equity in all five, and Intangibles in all five, each with a message and the right
+filing index URL. All four are correct -- Apple's balance sheet carries none of
+those captions, and its intangibles appear in no annual report at all. Intangibles
+FY2025 is the one whose message is not "Not tagged in XBRL"; see above.
 
-Extras: Intangibles FY2025, logged. Nothing else.
+Extras: none. Three rows were added to this statement on 2026-08-06 and all three
+are the filer's own numbers, verified against companyconcept for all five years:
+
+- Finance Lease Liability, Current, us-gaap:FinanceLeaseLiabilityCurrent: 79, 129,
+  165, 144 and 538 million.
+- Finance Lease Liability, Non-current, us-gaap:FinanceLeaseLiabilityNoncurrent:
+  769, 812, 859, 752 and 692 million.
+- Temporary Equity: blank in all five years. Apple tags no element of that chain.
+
+The two lease rows exist so a debt row can be tied to the caption beside it on a
+balance sheet that combines them (breakage row 12), and Apple's does not: its
+"Term debt" captions of 12,350 current and 78,328 non-current at Sep. 27 2025
+exclude the 538 and 692 of finance leases, which sit in other liabilities. Both
+debt rows carry the CAPTION_MAY_INCLUDE_LEASES flag naming the lease figure and
+the caption the two would make if a filer combined them; for this filer nothing
+needs adding and the flag says that is one of the two possibilities. Read as a
+statement about Apple it is a hedge rather than a finding, and it is what keeps the
+same rule from taking Apple's row off its own caption to put Kroger's on its.
 
 Tags traced: Long-Term Debt FY2024, LongTermDebtNoncurrent,
 0000320193-25-000079 -> balance sheets, Sep. 28 2024, non-current term debt
@@ -209,9 +267,9 @@ Tags traced: Long-Term Debt FY2024, LongTermDebtNoncurrent,
 CONSOLIDATED STATEMENTS OF SHAREHOLDERS' EQUITY (R7), "Beginning balances at Sep.
 25, 2021", total 63,090; that filing's balance sheet does not carry the date, and
 its three-year equity statement does, which is why the tag resolves there.
-Intangibles FY2025, IntangibleAssetsNetExcludingGoodwill, 0000320193-26-000020 ->
-Condensed Consolidated Financial Statement Details -- Intangible Assets, Net
-(R37), Sep. 27 2025, total intangible assets net 13,301.
+Finance Lease Liability, Non-current FY2025, FinanceLeaseLiabilityNoncurrent,
+0000320193-25-000079 -> Leases note, Sep. 27 2025, finance lease liabilities
+non-current 692.
 
 ### Cash flow statement, per historical year
 
@@ -244,7 +302,20 @@ financing formulas subtract. The subtotals keep the filing's own sign, so invest
 is negative in FY2021 and FY2022 and positive in FY2023 to FY2025, as reported.
 
 Blanks: cash at the beginning and end of FY2021, which no column before it can
-supply. The message shown is malformed and names the wrong input; breakage row 6.
+supply.
+
+Re-verified 2026-08-06, closing breakage row 6. The message read "No filer tags
+this; Edgardly computes it as . Cash and Equivalents is not reported for this
+period", which had an empty formula and a false claim: Apple's FY2021 cash of
+34,940 million is on this workbook's own balance sheet at B4. Both cells now carry
+a NO_PRIOR_COLUMN flag with a message of their own. Opening cash reads "Computed
+as Cash and Equivalents (prior period), which reaches back to the period before
+FY2021. That column is outside the model's window, so there is no opening balance
+for it to read. The filer does report one; what is missing here is a column of this
+model, not a line of the filing", and then points at the cash flow statement of
+the FY2021 10-K. Closing cash says the opening balance is blank for the same
+reason and that the reason is the model rather than the filer. No dangling full
+stop and no claim about the filing in either.
 
 Extras: none.
 
@@ -286,7 +357,7 @@ dividends and dividend equivalents (15,421).
 - [x] Section coverage percentages read for all five balance sheet sections, and
       none of them is a surprise once the 10-K is open beside it. Write the
       lowest one and what sits in its plug:
-      FY2025 reads 67.7, 58.8, 54.5, 85.4 and -19.3 percent for current assets,
+      FY2025 reads 67.7, 55.1, 54.5, 85.4 and -19.3 percent for current assets,
       total assets, current liabilities, total liabilities and equity. The lowest
       of the twenty-five cells is total equity FY2024 at -33.6 percent; its plug
       is 76,104 million, which is common stock and additional paid-in capital
@@ -294,17 +365,25 @@ dividends and dividend equivalents (15,421).
       section's one component, an accumulated deficit of (19,154), is measured
       against a total those two hold up. The current-asset plug of 47,765 in
       FY2025 is vendor non-trade receivables 33,180 plus other current assets
-      14,585, to the dollar; the total-asset plug is non-current marketable
-      securities 77,723 plus other non-current assets 83,727, less the intangibles
-      figure that breakage row 4 says should not have been subtracted whole.
-- [ ] The flag list under the checks says nothing you disagree with
-      The five lines listed are all true: goodwill and short-term borrowings have
-      no reported history, and the three cash-flow plugs reach the shares they
-      claim. Not ticked because the list is not the whole of what the workbook
-      flags: the two false LARGE_YOY_CHANGE flags of breakage rows 1 and 2 sit in
-      cell comments and on the Source Tags sheet and never reach this list, and
-      neither do the PLUG_ABSORBS_BLANK flags on the income statement. A reader
-      who reads only the Checks sheet does not learn either thing. Breakage row 5.
+      14,585, to the dollar; the total-asset plug of 161,450 is non-current
+      marketable securities 77,723 plus other non-current assets 83,727, to the
+      dollar, now that no intangibles row is subtracted from it.
+      Total assets read 58.8 in the superseded workbook and reads 55.1 here; the
+      difference is breakage row 4, and 55.1 is the figure the other four years
+      were always measured on. Nothing else moved.
+- [x] The flag list under the checks says nothing you disagree with
+      Widened 2026-08-06, closing breakage row 5, and now ticks. Eleven lines
+      against the earlier five, and all eleven are true. The list used to carry
+      only the forecast flags, the derived-total flags and the plug-size flags,
+      so a reader of the Checks sheet did not learn that two income-statement
+      plugs absorb an untagged line. It now carries every flag on every cell,
+      grouped by the row it names with a count of the periods it covers:
+      four NO_REPORTED_HISTORY rows (goodwill, intangibles, short-term borrowings,
+      temporary equity), the two PLUG_ABSORBS_BLANK plugs, the two
+      CAPTION_MAY_INCLUDE_LEASES debt rows, and the three cash-flow PLUG_TOO_LARGE
+      plugs, which reach the shares they claim.
+      The two false LARGE_YOY_CHANGE flags the earlier list also failed to carry
+      no longer exist to carry; breakage row 1.
 
 ### Forecast mechanics
 
@@ -320,17 +399,24 @@ it; nothing here depends on it.
 
 - [x] With assumptions filled, all three statements populate and the checks stay
       green
-      All 219 forecast formula cells return numbers; no cell anywhere evaluates to
-      an error; the balance check, the cash tie and the retained earnings
-      roll-forward are all zero in FY2026E, FY2027E and FY2028E.
+      Re-run 2026-08-06. All 234 forecast formula cells return numbers; no cell
+      anywhere evaluates to an error; the balance check, the cash tie and the
+      retained earnings roll-forward are all zero in FY2026E, FY2027E and FY2028E.
+      "Forecast formula cells" here means every cell in a forecast column of any
+      of the seven sheets whose value is a formula, which is 234 for this filer
+      against 231 in the superseded workbook, the three being the new finance
+      lease rows. Session 6H reported 219 by a count whose definition it did not
+      state and which this could not reproduce; the definition is stated here so a
+      later session can.
 - [x] With assumptions blank, all forecast cells are blank: no zeros, no
       leftovers
-      All 219 return empty with the Assumptions sheet as shipped.
+      All 234 return empty with the Assumptions sheet as shipped.
 - [ ] Rows with no forecast say why when you hover the row label
       Reserved for the user: whether a comment renders on hover is a thing only
       Excel can show. The text is present and correct in the file -- EPS basic,
       EPS diluted and both share counts carry NO_FORECAST_DRIVER on their row
-      labels, and goodwill and short-term borrowings carry NO_REPORTED_HISTORY.
+      labels, and goodwill, intangibles, short-term borrowings and temporary
+      equity carry NO_REPORTED_HISTORY.
 
 ### The workbook itself
 
@@ -339,10 +425,11 @@ it; nothing here depends on it.
       see the dialog
 - [x] All seven sheets present, all comments readable, no #REF! or #VALUE!
       anywhere
-      Seven sheets in the order the plan names them, 48 defined names and 402 cell
-      comments. A full evaluation of every formula in the workbook produced no
-      error value of any kind, blank and filled. "Readable" in Excel's own
-      rendering belongs with the interactive open above.
+      Re-checked 2026-08-06 on the regenerated workbook: seven sheets in the order
+      the plan names them, 48 defined names and 421 cell comments, against 402
+      before. A full evaluation of every formula in the workbook produced no error
+      value of any kind, blank and filled. "Readable" in Excel's own rendering
+      belongs with the interactive open above.
 
 ### Sitting log
 
@@ -352,6 +439,7 @@ signature. Everything else on this copy is worked, with its evidence beside it.
 | Date | Where you stopped |
 | --- | --- |
 | 2026-08-05 | Value comparison complete for all five years of all three statements. Six entries open in the breakage log against this copy (rows 1, 3, 4, 5, 6 and 15), so it cannot be signed. |
+| 2026-08-06 | All six closed by Session 6b and re-verified against the filings on live EDGAR, with the citations above. The workbook was regenerated through the endpoint after the fixes and this copy now describes that file. No breakage entry stands against this copy. The three user items above are all that remain before a signature. |
 
     Signed off:                              Date:
 
@@ -362,8 +450,10 @@ signature. Everything else on this copy is worked, with its evidence beside it.
     Company:            Honeywell International Inc.
     Ticker / CIK:       HON / 773840
     Scaffold file:      app/exports/acceptance/Honeywell_International_Inc/
-                        Honeywell_International_Inc_3Statement_2026-08-05_1632.xlsx
-    Generated on:       2026-08-05 16:32, from the committed fixture
+                        Honeywell_International_Inc_3Statement_2026-08-06_1319.xlsx
+    Generated on:       2026-08-06 13:19, from the committed fixture, after the
+                        Session 6b fixes. The 2026-08-05 16:32 workbook beside it
+                        is superseded.
     Years in workbook:  FY2021 to FY2025 historical, FY2026E to FY2028E forecast
     10-K checked:       FY2025 0000773840-26-000013 (filed 2026-02-17)
                         FY2024 0000773840-25-000010 (filed 2025-02-14)
@@ -378,41 +468,65 @@ made zero. The Checks sheet says so and the row is left uncoloured. What to
 confirm here is that the derived total matches the 10-K's own total liabilities,
 which is the check the workbook cannot run for you.
 
-- [ ] Total liabilities, derived, matches the 10-K in every historical year
-      Not ticked, and the line cannot be worked as written: Honeywell's balance
-      sheet carries no total liabilities line at all in any of these five years.
-      It goes from the last liability caption straight to shareowners' equity. The
-      honest substitute is the sum of the liability captions on the face, and
-      against that the derived total is exact in FY2025 and 7,000,000 too high in
-      each of FY2021 to FY2024. Worked year by year, in millions:
-      FY2021 derived 45,228; captions 19,508 + 14,254 + 2,364 + 208 + 1,800 +
-      7,087 = 45,221. FY2022 derived 44,956; 19,938 + 15,123 + 2,093 + 146 + 1,180
-      + 6,469 = 44,949. FY2023 derived 45,091; 18,539 + 16,562 + 2,094 + 134 +
-      1,490 + 6,265 = 45,084. FY2024 derived 56,042; 21,256 + 25,479 + 1,787 + 112
+- [x] Total liabilities, derived, matches the 10-K in every historical year
+      Ticked 2026-08-06, closing breakage row 8, against the honest substitute for
+      the line as written: Honeywell's balance sheet carries no total liabilities
+      line at all in any of these five years, going from the last liability caption
+      straight to shareowners' equity, so what the derived total is compared with
+      is the sum of the liability captions on the face. It is now exact in all
+      five. Worked year by year, in millions:
+      FY2021 derived 45,221; captions 19,508 + 14,254 + 2,364 + 208 + 1,800 +
+      7,087 = 45,221. FY2022 derived 44,949; 19,938 + 15,123 + 2,093 + 146 + 1,180
+      + 6,469 = 44,949. FY2023 derived 45,084; 18,539 + 16,562 + 2,094 + 134 +
+      1,490 + 6,265 = 45,084. FY2024 derived 56,035; 21,256 + 25,479 + 1,787 + 112
       + 1,325 + 6,076 = 56,035, reading the FY2024 10-K, or 21,256 + 25,440 +
       1,581 + 112 + 1,325 + 5,581 + 740 = 56,035 reading the FY2025 10-K's
       re-presented column, which agrees. FY2025 derived 58,651; 23,414 + 27,141 +
-      1,577 + 111 + 0 + 6,408 = 58,651, exact. The recurring 7 is the redeemable
-      noncontrolling interest, which Honeywell reports between liabilities and
-      equity and which assets-less-equity sweeps into liabilities; it is nil at
-      Dec. 31 2025, which is why that year agrees. Breakage row 8.
+      1,577 + 111 + 0 + 6,408 = 58,651.
+      The four years used to read 7,000,000 too high, and the 7 was the redeemable
+      noncontrolling interest Honeywell reports between liabilities and equity,
+      which assets-less-equity swept into liabilities. The identity now subtracts
+      it, and the term is optional so a filer with no mezzanine section is
+      unaffected. Re-verified against companyconcept:
+      us-gaap:RedeemableNoncontrollingInterestEquityCommonCarryingAmount reads 7
+      million at 2021-12-31, 2022-12-31, 2023-12-31 and 2024-12-31 and nil at
+      2025-12-31, each confirmed by two 10-Ks, which is why FY2025 always agreed.
+      Total assets (64,470 / 62,275 / 61,525 / 75,196 / 73,681) and total equity
+      including noncontrolling interests (19,242 / 17,319 / 16,434 / 19,154 /
+      15,030) were both re-read for all five years and both match the balance
+      sheets.
+      The mezzanine balance is now a row of its own on the balance sheet, so the
+      subtraction is visible rather than buried in a formula, and the
+      TOTAL_DERIVED flag names it and says that untagged mezzanine items otherwise
+      land in liabilities. The balance check is still zero in all five columns and
+      is still flagged CHECK_NOT_AVAILABLE, because the row still stands on the
+      identity that produced the total; temporary equity is a term of the check
+      too, the equation for a filer with a mezzanine section being assets equals
+      liabilities plus temporary equity plus equity.
 
 ### Income statement, per historical year
 
 | Year | Matches | Blanks listed | Extras listed | Tags traced |
 | --- | --- | --- | --- | --- |
 | FY2021 | [x] | [x] | [x] | [x] |
-| FY2022 | [ ] | [x] | [x] | [x] |
-| FY2023 | [ ] | [x] | [x] | [x] |
-| FY2024 | [ ] | [x] | [x] | [x] |
-| FY2025 | [ ] | [x] | [x] | [x] |
+| FY2022 | [x] | [x] | [x] | [x] |
+| FY2023 | [x] | [x] | [x] | [x] |
+| FY2024 | [x] | [x] | [x] | [x] |
+| FY2025 | [x] | [x] | [x] | [x] |
 
-FY2022 to FY2025 are not ticked for a match because of one row: Operating Income.
-Honeywell's consolidated statement of operations has no operating income
-subtotal, and 8,022 / 7,563 / 7,667 / 8,127 are its Segment profit, taken from
-the segment note's reconciliation to pretax income and tagged
-us-gaap:OperatingIncomeLoss. Every other line on those columns matches. Breakage
-row 7. FY2021 is ticked because that year has no operating income value at all.
+FY2022 to FY2025 now tick, with the Operating Income row carrying a caveat rather
+than an unexplained figure. Closed 2026-08-06 as breakage row 7. Honeywell's
+consolidated statement of operations has no operating income subtotal, and 8,022 /
+7,563 / 7,667 / 8,127 are its Segment profit, taken from the segment note's
+reconciliation to pretax income and tagged us-gaap:OperatingIncomeLoss. The value
+is the filer's own and is genuinely that element; what it is not is a figure from
+the statement the row sits on. Keeping the value and saying what it is was the
+decision, and the registry entry now carries the caveat, so it reaches this row's
+label as a comment in every workbook: it names the filer, says the statement runs
+from total costs, expenses and other straight to income before taxes, cites R145
+of 0000773840-26-000013 for the 8,127, and names the three rows that stand on it
+-- the operating plug, EBITDA and the other-income plug. Every other line on those
+columns matches. FY2021 has no operating income value at all; see the blanks below.
 
 Citations. Read off CONSOLIDATED STATEMENT OF OPERATIONS (R3), and off SEGMENT
 FINANCIAL DATA Reconciliation of Operating Profit Loss From Segments to
@@ -432,29 +546,74 @@ income row.
 - FY2025, same filing, Dec. 31 2025 column: 37,442; 23,613; 1,812; 5,450; 1,344;
   5,476; 1,008; 4,729; 7.40 and 7.36. Segment profit 8,127, R145.
 
-Ambiguity, recorded rather than resolved. FY2023's figures above are the FY2025
-10-K's re-presented column, not the FY2023 10-K as filed, which reported net
-sales 36,662, cost of sales 22,995, R&D 1,456, SG&A 5,127, interest 765 and
-pretax 7,159 for the same year before the Solstice spin-off moved a business to
-discontinued operations. Both are Honeywell's own numbers for Dec. 31 2023; the
-workbook takes the most recent annual report, which is the documented rule. The
-consequence is a series that changes basis between FY2022 and FY2023: the fall
-from 35,466 to 33,009 in revenue is a change of presentation and not a decline,
-and nothing in the workbook says so. Breakage row 16.
+The basis change, now flagged. Closed 2026-08-06 as breakage row 16. FY2023's
+figures above are the FY2025 10-K's re-presented column, not the FY2023 10-K as
+filed, which reported net sales 36,662, cost of sales 22,995, R&D 1,456, SG&A
+5,127, interest 765 and pretax 7,159 for the same year before the Solstice
+spin-off moved a business to discontinued operations. Both are Honeywell's own
+numbers for Dec. 31 2023; the workbook takes the most recent annual report, which
+is the documented rule. The consequence is a series that changes basis between
+FY2022 and FY2023, and the fall from 35,466 to 33,009 in revenue is a change of
+presentation rather than a decline.
+
+The workbook now says so. Both cells of the boundary carry a COMPARABILITY_SEAM
+flag naming the two filings the two columns came from, the period those two
+filings both report, and what each says about it, and the flag travels up the
+arithmetic so gross profit, the plugs, the subtotals and EBITDA carry it too. The
+Checks sheet reports it once per boundary rather than once per row, naming every
+row that crosses it.
+
+Re-verified against companyconcept, which is where the evidence has to be read
+because the boundary's own columns cannot supply it -- a 10-K carries three years
+and the FY2025 one does not report FY2022 at all:
+
+- us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax for the year ended
+  2023-12-31 is 36,662 million in 0000773840-24-000014 and again in
+  0000773840-25-000010, and 33,009 in 0000773840-26-000013. That 11 percent
+  disagreement between two filings that both report the year is the evidence, and
+  those are the two filings the FY2022 and FY2023 columns come from.
+- us-gaap:Goodwill at 2023-12-31 is 18,049 in 0000773840-24-000014 and
+  0000773840-25-000010 and 17,238 in 0000773840-26-000013, which is the balance
+  sheet half of the same seam and the second case breakage row 16 named.
+- Twenty rows carry the FY2022-to-FY2023 seam and fifteen carry a second one at
+  FY2023 to FY2024, where the FY2025 10-K re-presents the 2024 balance sheet for
+  assets held for sale: cash at 2024-12-31 is 10,567 in 0000773840-25-000010 and
+  9,906 in 0000773840-26-000013.
+- What stays quiet is the tidying: long-term debt at 2024-12-31 moved from 25,479
+  to 25,440, which is 0.15 percent and below the one percent tolerance, so no seam
+  is raised on that row. Honeywell's intangibles at the same date moved from 6,656
+  to 6,621, 0.5 percent, and is likewise quiet.
+
+The limitation, recorded rather than papered over: the evidence has to sit in one
+of the two filings that supplied the two columns. A basis change whose only
+evidence is in a filing that supplied neither goes undetected, and no tolerance
+setting reaches it.
 
 Signs: costs, R&D, SG&A, interest and tax are positive deductions in the filing
 and positive in the workbook. Net income is the figure attributable to Honeywell,
 which is 43 million below the consolidated total in FY2025; the difference lands
 in the discontinued-operations plug, whose row note says so.
 
-Blanks: Operating Income FY2021, and with it the operating plug and EBITDA, each
-carrying "Not tagged in XBRL. Check the income statement of the FY2021 10-K" and
-the index URL. Honeywell tags no OperatingIncomeLoss for 2021 in any filing. The
-other-income plug for that year drops the operating term from its formula rather
-than treating the blank as zero and carries PLUG_ABSORBS_BLANK naming the line it
-absorbed, which is the right behaviour. The pointer sends the reader to a
-statement that has no such line, which is a wording matter and is noted in
-breakage row 11.
+Blanks: Operating Income FY2021, and with it the operating plug and EBITDA.
+Honeywell tags no OperatingIncomeLoss for 2021 in any filing. The other-income
+plug for that year drops the operating term from its formula rather than treating
+the blank as zero and carries PLUG_ABSORBS_BLANK naming the line it absorbed,
+which is the right behaviour.
+
+Two message corrections here, both re-verified 2026-08-06:
+
+- Breakage row 11. The Operating Income blank read "Not tagged in XBRL. Check the
+  income statement of the FY2021 10-K", for a filer whose income statement has no
+  such line in that year or any other, so following the pointer could not resolve
+  it. It now reads "Check the income statement or the segment note of the FY2021
+  10-K". Row 11 is row 7 seen from the other side: where the value exists the row
+  takes it from a note, and where it does not the pointer now says so.
+- Breakage row 6. The operating plug's blank read "Edgardly computes it as ." with
+  an empty formula, because a plug is a construct of the scaffold and the registry
+  has no derivation rule to read one from, and its pointer named no statement at
+  all. It now reads "No filer tags this; Edgardly computes it as Operating Income -
+  Gross Profit + SG&A + R&D. Operating Income is not reported for this period.
+  Check the income statement of the FY2021 10-K".
 
 Extras: Operating Income FY2022 to FY2025, in the sense that the income statement
 does not carry it; the value is in the filing, in the segment note. Logged.
@@ -470,17 +629,31 @@ Operating Income FY2025, OperatingIncomeLoss, same filing -> R145, Segment profi
 
 | Year | Matches | Blanks listed | Extras listed | Tags traced |
 | --- | --- | --- | --- | --- |
-| FY2021 | [ ] | [x] | [x] | [x] |
-| FY2022 | [ ] | [x] | [x] | [x] |
-| FY2023 | [ ] | [x] | [x] | [x] |
-| FY2024 | [ ] | [x] | [x] | [x] |
-| FY2025 | [ ] | [x] | [x] | [x] |
+| FY2021 | [x] | [x] | [x] | [x] |
+| FY2022 | [x] | [x] | [x] | [x] |
+| FY2023 | [x] | [x] | [x] | [x] |
+| FY2024 | [x] | [x] | [x] | [x] |
+| FY2025 | [x] | [x] | [x] | [x] |
 
-No year is ticked for a match, for one row in all five and a second in four. The
-Intangibles row is the finite-lived intangibles only against a balance-sheet
-caption that includes indefinite-lived ones (breakage row 9), and Total
-Liabilities carries the redeemable noncontrolling interest in FY2021 to FY2024
-(breakage row 8). Every other row matches in every year.
+All five now tick. The two rows that failed are fixed and re-verified against
+companyconcept on 2026-08-06.
+
+Breakage row 9, Intangibles. The row read 2,599, 2,269, 2,260, 6,207 and 6,342
+million against an "Other intangible assets -- net" caption of 3,613, 3,222,
+3,231, 6,621 and 6,736, short by 394 to 1,014 every year, because
+FiniteLivedIntangibleAssetsNet led the chain and excludes the indefinite-lived
+intangibles the caption includes. IntangibleAssetsNetExcludingGoodwill now leads
+and the row equals the caption in all five years:
+us-gaap:IntangibleAssetsNetExcludingGoodwill reads 3,613 (two 10-Ks), 3,222 (two),
+3,231 (two), 6,621 and 6,736, and the narrower element still holds the 2,599
+through 6,342 the row used to take. The difference had been falling into the
+Other non-current assets plug, so the balance sheet still tied and no check could
+see it.
+
+Breakage row 8, Total Liabilities: see the line above the income statement.
+
+Kroger already resolved through the broader tag and Apple's row is blank in every
+year, so neither moved.
 
 Citations. Read off CONSOLIDATED BALANCE SHEET (R5), in millions.
 
@@ -522,8 +695,27 @@ right index URL. Correct: Honeywell reports commercial paper inside "Commercial
 paper and other short-term borrowings", which the short-term borrowings row reads,
 so the two terms of the short-term debt sum cannot overlap. Nothing else is blank.
 
-Extras: none. The two mismatched rows show figures that are in the filings, just
-not on the line the row sits beside.
+Extras: none. Three rows were added to this statement on 2026-08-06 and all three
+are the filer's own numbers, re-verified against companyconcept for all five years:
+
+- Temporary Equity: 7, 7, 7, 7 and 0 million, from
+  RedeemableNoncontrollingInterestEquityCommonCarryingAmount, which is Honeywell's
+  "Redeemable noncontrolling interest" line between liabilities and equity. This
+  is the row that makes the liability total right.
+- Finance Lease Liability, Current, FinanceLeaseLiabilityCurrent: 57, 77, 86, 47
+  and 37 million.
+- Finance Lease Liability, Non-current, FinanceLeaseLiabilityNoncurrent: 99, 145,
+  99, 46 and 27 million.
+
+Neither lease row is added to a debt row for this filer, and the workbook does not
+suggest adding them: Honeywell's debt rows resolve through
+LongTermDebtAndCapitalLeaseObligations and its Current counterpart, which are the
+captions on the face of the balance sheet and already include obligations under
+finance leases, so the CAPTION_MAY_INCLUDE_LEASES flag stays silent here. It is
+raised only where a row came from a debt-only element, which for these three
+filers is Apple's and Kroger's rows and not Honeywell's. Both of Honeywell's lease
+rows carry the FY2023-to-FY2024 comparability seam, the FY2025 10-K having
+re-presented them from 69 and 85 to 47 and 46.
 
 Tags traced: Long-Term Debt FY2021, LongTermDebtAndCapitalLeaseObligations,
 0000773840-23-000013 -> balance sheet, Dec. 31 2021, long-term debt 14,254.
@@ -648,14 +840,31 @@ of cash flows, Dec. 31 2022, capital expenditures (766).
       100 is the same shape as Apple's below zero: retained earnings of 50,964
       against a total of 15,030 that 43,029 of treasury stock and 5,146 of
       accumulated other comprehensive loss pull down.
+      Re-read 2026-08-06 on the regenerated workbook. The FY2025 column now reads
+      87.9, 85.3, 58.7, 86.2 and 339.1 percent, so one of the five moved: total
+      assets from 84.7 to 85.3, which is the intangibles the row now reaches and
+      the plug no longer absorbs. The other four are unchanged at FY2025, the
+      mezzanine balance being nil that year. Across all five years total assets now
+      reads 81.1, 82.2, 80.7, 79.8 and 85.3 and total liabilities 74.7, 78.0, 77.9,
+      83.3 and 86.2; the lowest cell is still total current liabilities FY2022 at
+      54.0, and nothing about that section changed.
 - [x] The flag list under the checks says nothing you disagree with
-      Eight lines, all true. The commercial paper NO_REPORTED_HISTORY is right,
-      the TOTAL_DERIVED line is the one this copy turns on, and the six
-      PLUG_TOO_LARGE lines reach the shares they claim. The same scoping caveat as
-      Apple's copy applies -- cell-level flags do not reach this list, breakage row
-      5 -- and on this filer it hides something: nothing here says that FY2021 has
-      no operating income, nor that FY2023 onward is a different basis from the two
-      years before it.
+      Widened 2026-08-06, closing breakage row 5. Fourteen lines against the
+      earlier eight, and all fourteen are true. The commercial paper
+      NO_REPORTED_HISTORY is right, the TOTAL_DERIVED line is the one this copy
+      turns on and now names temporary equity in its formula, and the
+      PLUG_TOO_LARGE lines reach the shares they claim.
+      The two things the earlier list hid are both on it now. FY2021 having no
+      operating income appears as the PLUG_ABSORBS_BLANK line on the other-income
+      plug, which names the absorbed row. And the change of basis appears as two
+      COMPARABILITY_SEAM lines, one per boundary, each naming the boundary, the
+      largest disagreement behind it -- 40 percent on the year ended 2023-12-31 and
+      85 percent on 2024-12-31 -- and every row that crosses it: twenty rows at
+      FY2022 to FY2023 and fifteen at FY2023 to FY2024. That is breakage rows 5 and
+      16 meeting on one sheet, and it is the line of this copy that changed most.
+      The PP&E TAG_TRANSITION and its inherited copy on the non-current asset plug
+      are also listed now and are both right: the ASC 842 seam at 2022-12-31, where
+      the two elements agree to the dollar.
 
 ### Forecast mechanics
 
@@ -666,12 +875,14 @@ real Excel is the user's to run if they want it.
 
 - [x] With assumptions filled, all three statements populate and the checks stay
       green
-      All 222 forecast formula cells return numbers, no cell evaluates to an
-      error, and the balance check, cash tie and retained earnings roll-forward
-      are zero in all three forecast columns.
+      Re-run 2026-08-06. All 243 forecast formula cells return numbers, no cell
+      evaluates to an error, and the balance check, cash tie and retained earnings
+      roll-forward are zero in all three forecast columns. The count is on the
+      definition stated on the Apple copy: 243 here against 234 in the superseded
+      workbook, the nine being the three new rows held flat.
 - [x] With assumptions blank, all forecast cells are blank: no zeros, no
       leftovers
-      All 222 return empty as shipped.
+      All 243 return empty as shipped.
 - [ ] Rows with no forecast say why when you hover the row label
       Reserved for the user. The text is present: the four per-share and share
       count rows carry NO_FORECAST_DRIVER and commercial paper carries
@@ -682,8 +893,9 @@ real Excel is the user's to run if they want it.
 - [ ] Opens in real Excel with no repair prompt, opened by hand
 - [x] All seven sheets present, all comments readable, no #REF! or #VALUE!
       anywhere
-      Seven sheets, 48 defined names, 402 comments, and no error value anywhere in
-      a full evaluation, blank or filled. "Readable" belongs with the open above.
+      Re-checked 2026-08-06: seven sheets, 48 defined names, 421 comments against
+      402 before, and no error value anywhere in a full evaluation, blank or
+      filled. "Readable" belongs with the open above.
 
 ### Sitting log
 
@@ -693,6 +905,7 @@ signature. Everything else on this copy is worked, with its evidence beside it.
 | Date | Where you stopped |
 | --- | --- |
 | 2026-08-05 | Value comparison complete for all five years of all three statements. Eight entries open in the breakage log against this copy (rows 5, 6, 7, 8, 9, 10, 11 and 16), so it cannot be signed. |
+| 2026-08-06 | All eight closed by Session 6b and re-verified against the filings on live EDGAR, with the citations above. Six were code fixes, one is a documented filer-side inconsistency (row 10) and one closes with a named limitation (row 16). The workbook was regenerated through the endpoint after the fixes and this copy now describes that file. No breakage entry stands against this copy. The three user items above are all that remain before a signature. |
 
     Signed off:                              Date:
 
@@ -703,8 +916,10 @@ signature. Everything else on this copy is worked, with its evidence beside it.
     Company:            The Kroger Co.
     Ticker / CIK:       KR / 56873
     Scaffold file:      app/exports/acceptance/KROGER_CO/
-                        KROGER_CO_3Statement_2026-08-05_1632.xlsx
-    Generated on:       2026-08-05 16:32, from the committed fixture
+                        KROGER_CO_3Statement_2026-08-06_1319.xlsx
+    Generated on:       2026-08-06 13:19, from the committed fixture, after the
+                        Session 6b fixes. The 2026-08-05 16:32 workbook beside it
+                        is superseded.
     Years in workbook:  FY2021 to FY2025 historical, FY2026E to FY2028E forecast
     10-K checked:       FY2025 0001104659-26-037723 (filed 2026-03-31, year ended 2026-01-31)
                         FY2024 0001558370-25-004267 (filed 2025-04-01, year ended 2025-02-01)
@@ -808,6 +1023,24 @@ marks. It is correct in the sense that each cell carries what its tag holds, and
 it means the row cannot be summed across the seam. The other-income plug below it
 absorbs the difference and inherits the flag.
 
+Re-checked 2026-08-06: the sign caveat now travels with the flag. The
+TAG_TRANSITION message on this row carries the registry's own sign convention
+after the tag names, so a reader who sees the flag on the Checks sheet learns that
+the row "can change sign without the underlying expense changing direction" rather
+than only that the element changed. That is the part of breakage row 5 that named
+this filer, and it needed the flag to reach the Checks sheet and to say enough
+when it got there. A row whose registry entry records no sign convention adds
+nothing, which is the accounts payable seam two lines below.
+
+Also verified re-checked 2026-08-06, closing breakage row 2: no LARGE_YOY_CHANGE
+flag sits on FY2021 operating income or net earnings, and the only such flag
+anywhere in Kroger's payload is on net earnings for the year ended 2011-01-29,
+which is a real move between two full years and outside this window. The two
+flags removed had compared fiscal 2021 against a Kroger quarter; against Kroger's
+own fiscal 2020, confirmed on companyconcept as operating income 2,780 million by
+three 10-Ks, fiscal 2021's 3,477 is a 25 percent year and not the 2,301 percent
+the flag claimed.
+
 Blanks: SG&A and R&D in all five years, each with "Not tagged in XBRL" and the
 right index URL, and each confirmed above against EDGAR. Kroger's operating,
 general and administrative expense of 28,308 in FY2025, its rent of 872 and its
@@ -830,17 +1063,55 @@ profit 3,477.
 
 | Year | Matches | Blanks listed | Extras listed | Tags traced |
 | --- | --- | --- | --- | --- |
-| FY2021 | [ ] | [x] | [x] | [x] |
-| FY2022 | [ ] | [x] | [x] | [x] |
-| FY2023 | [ ] | [x] | [x] | [x] |
-| FY2024 | [ ] | [x] | [x] | [x] |
-| FY2025 | [ ] | [x] | [x] | [x] |
+| FY2021 | [x] | [x] | [x] | [x] |
+| FY2022 | [x] | [x] | [x] | [x] |
+| FY2023 | [x] | [x] | [x] | [x] |
+| FY2024 | [x] | [x] | [x] | [x] |
+| FY2025 | [x] | [x] | [x] | [x] |
 
-No year is ticked for a match, for the two debt rows. Kroger presents debt and
-finance leases in one caption on each side of the balance sheet and also tags the
-debt-only amounts separately; the chains take the debt-only tags, so both rows
-read below the caption above them in every year. Breakage row 12. Every other row
-matches in every year.
+All five now tick, and the two debt rows tick as two rows rather than one. Closed
+2026-08-06, breakage row 12, and the diagnosis in that row is wrong about these
+five years, which is worth recording because it changed what the fix could be.
+
+Kroger presents debt and finance leases in one caption on each side of the balance
+sheet, and the row said the combined-caption tags "are never reached" because the
+debt-only tags win first. They are not reached because they are not there: Kroger
+stopped tagging LongTermDebtAndCapitalLeaseObligations and its Current counterpart
+after fiscal 2018, and the caption totals are tagged nowhere at all. Searching
+every taxonomy of Kroger's companyfacts payload -- us-gaap, dei, srt, ffd and ecd
+-- for 15,764,000,000 at 2026-01-31 and for the other nine caption figures at their
+own dates returns nothing. The caption is a presentation subtotal a filer need not
+tag, and no chain can reach one.
+
+So both halves are on the page and the reader adds them. The combined tags did move
+to the front of their chains, which is right and which puts Kroger's fiscal 2009 to
+2018 columns on the caption; it reaches nothing here. Every one of the ten captions
+is now the sum of two rows of this workbook, each re-verified against
+companyconcept on 2026-08-06:
+
+| Caption on the face | FY2021 | FY2022 | FY2023 | FY2024 | FY2025 |
+| --- | --- | --- | --- | --- | --- |
+| Current maturities row, LongTermDebtCurrent | 451 | 1,153 | 25 | 104 | 1,366 |
+| Finance Lease Liability, Current | 104 | 157 | 173 | 168 | 436 |
+| **= "Current portion of long-term debt including obligations under finance leases"** | **555** | **1,310** | **198** | **272** | **1,802** |
+| Long-Term Debt row, LongTermDebtNoncurrent | 11,294 | 10,139 | 10,162 | 15,805 | 14,509 |
+| Finance Lease Liability, Non-current | 1,515 | 1,929 | 1,866 | 1,828 | 1,255 |
+| **= "Long-term debt including obligations under finance leases"** | **12,809** | **12,068** | **12,028** | **17,633** | **15,764** |
+
+All ten totals are the captions breakage row 12 asked for, and 1,802 + 15,764 is
+the 17,566 of total debt it named. The Total Debt row still reads 15,875, which is
+debt alone and is exactly what Kroger's own LongTermDebt tag holds for that
+instant, a cross-check from a tag the row does not read.
+
+Both debt cells carry a CAPTION_MAY_INCLUDE_LEASES flag naming the lease figure and
+the caption the two make. Edgardly will not compose the sum itself, because that
+would mean deciding with nothing in the data to decide it from that this filer's
+caption combines them, and Apple is the counter-case: it tags a finance lease
+liability too and its "Term debt" caption excludes it, so the same rule applied
+unconditionally would take Apple's row off its own caption to put Kroger's on its.
+Every figure a reader adds here is a tag with a filing behind it.
+
+Every other row matches in every year.
 
 Citations. Read off CONSOLIDATED BALANCE SHEETS (R2), in millions.
 
@@ -861,21 +1132,35 @@ Citations. Read off CONSOLIDATED BALANCE SHEETS (R2), in millions.
   25,703; 834; 2,674; 52,616; 10,124; 272 against 104; 15,940; 17,633 against
   15,805; 44,335; 28,724; 8,281.
 - FY2025, same filing, Jan. 31 2026 column: 3,334; 2,192; 14,505; 24,260; 808;
-  2,595; 49,953; 10,488; 1,802 against 1,366; 18,108; 15,764 against 14,509;
+  2,595; 49,953; 10,488; 1,802 = 1,366 + 436; 18,108; 15,764 = 14,509 + 1,255;
   44,017; 28,850; 5,936.
 
 Total equity is the figure including noncontrolling interests, which is what the
 balance check needs and what the row note says; Kroger's total shareowners'
 equity attributable to the parent is 5,927 in FY2025 against the 5,936 shown.
 
-Blanks: Inventory, Short-Term Investments, Commercial Paper and Short-Term
-Borrowings, all five years each, every one with a flag message and the right
-index URL. All four are correct. Kroger presents no single inventory line -- FIFO
-inventory 9,445 less a LIFO reserve of 2,553 at Jan. 31 2026 -- and carries none
-of the other three captions at all. The 6,892 of net inventory sits inside the
-current-asset plug, which is what the plug's note says.
+Blanks: Inventory, Short-Term Investments, Commercial Paper, Short-Term
+Borrowings and Temporary Equity, all five years each, every one with a flag
+message and the right index URL. All five are correct. Kroger presents no single
+inventory line -- FIFO inventory 9,445 less a LIFO reserve of 2,553 at Jan. 31
+2026 -- and carries none of the other four captions at all. The 6,892 of net
+inventory sits inside the current-asset plug, which is what the plug's note says.
+Temporary Equity is a row added 2026-08-06 for the filer that needs it, which is
+Honeywell; Kroger tags no element of its chain, its noncontrolling interests
+sitting inside equity, where the total equity row already reads them.
 
-Extras: none.
+Extras: none. The two finance lease rows added 2026-08-06 are the filer's own
+numbers and are cited in the table above.
+
+A new flag on this statement, and it is not a defect. Accounts Payable and the
+current-liability plug below it carry a COMPARABILITY_SEAM at the FY2021 to FY2022
+boundary. Kroger's trade payables at 2023-01-28 are 7,119 million in its FY2022
+10-K (0001558370-23-004767) and 10,179 in its FY2023 one (0001558370-24-004603),
+both confirmed on companyconcept, and the FY2021 and FY2022 columns are the columns
+those two filings supplied. So the row's move from 7,117 to 10,179 between adjacent
+columns is partly a reclassification rather than a change in payables. That is what
+the mechanism of breakage row 16 is for, found on a filer the row did not name, and
+it is the only seam in this workbook.
 
 Tags traced: Total Liabilities FY2024, Liabilities, 0001104659-26-037723 ->
 balance sheets, Feb. 01 2025, Total Liabilities 44,335. Accounts Payable FY2022,
@@ -954,8 +1239,12 @@ flows, Feb. 01 2025, treasury stock purchases (4,156).
 - [x] Section coverage percentages read for all five balance sheet sections, and
       none of them is a surprise once the 10-K is open beside it. Write the
       lowest one and what sits in its plug:
-      FY2025 reads 38.1, 84.4, 65.5, 74.1 and 486.0 percent. The lowest of the
-      twenty-five cells is total current assets FY2022 at 25.6 percent, whose plug
+      FY2025 reads 38.1, 84.4, 65.5, 74.1 and 486.0 percent, re-read 2026-08-06 on
+      the regenerated workbook and unchanged in every one of the twenty-five cells:
+      nothing this session touched moves a Kroger balance-sheet subtotal or its
+      plug, the two lease rows and the temporary equity row being memos that are
+      part of no sum. The lowest of the twenty-five cells is total current assets
+      FY2022 at 25.6 percent, whose plug
       of 9,421 is store deposits in-transit 1,127, FIFO inventory 9,756 less a LIFO
       reserve of 2,196, and prepaid and other current assets 734, which is 9,421 to
       the dollar. Low because the registry's inventory row is blank for this filer
@@ -964,15 +1253,21 @@ flows, Feb. 01 2025, treasury stock purchases (4,156).
       which is Kroger's own. Equity at 486 percent is retained earnings of 28,850
       against a total of 5,936 that 28,113 of treasury stock holds down.
 - [x] The flag list under the checks says nothing you disagree with
-      Eleven lines. The six NO_REPORTED_HISTORY rows -- SG&A, R&D, short-term
-      investments, inventory, commercial paper, short-term borrowings -- are each
-      listed separately, which is the Session 6 fix working: keyed on the row alone
-      they would have collapsed to one. The five PLUG_TOO_LARGE lines reach the
-      shares they claim, including the operating plug's 1,720 percent, which is the
-      worst of its five years and is written as "reaches", not as a fact about one
-      column. The same scoping caveat as the other two copies applies, breakage row
-      5: the two false LARGE_YOY_CHANGE flags of breakage row 2 do not appear here,
-      and neither do the two TAG_TRANSITION flags this copy turns on.
+      Widened 2026-08-06, closing breakage row 5. Twenty-one lines against the
+      earlier eleven, and all twenty-one are true. The seven NO_REPORTED_HISTORY
+      rows -- SG&A, R&D, short-term investments, inventory, commercial paper,
+      short-term borrowings and temporary equity -- are each listed separately,
+      which is the Session 6 fix still working: keyed on the row alone they would
+      have collapsed to one. The five PLUG_TOO_LARGE lines reach the shares they
+      claim, including the operating plug's 1,720 percent, which is the worst of its
+      five years and is written as "reaches", not as a fact about one column.
+      What the earlier list did not carry and this one does: the two
+      PLUG_ABSORBS_BLANK plugs, the three TAG_TRANSITION lines this copy turns on
+      (accounts payable, interest expense and the plug that inherits the interest
+      seam) with the interest one now carrying the sign caveat, the two
+      CAPTION_MAY_INCLUDE_LEASES debt rows, and the one COMPARABILITY_SEAM line for
+      the FY2021 to FY2022 payables boundary. The two false LARGE_YOY_CHANGE flags
+      of breakage row 2 no longer exist to carry.
 
 ### Forecast mechanics
 
@@ -983,14 +1278,17 @@ pass in real Excel is the user's to run if they want it.
 
 - [x] With assumptions filled, all three statements populate and the checks stay
       green
-      All 207 forecast formula cells return numbers, no cell evaluates to an
-      error, and all three checks are zero in all three forecast columns.
+      Re-run 2026-08-06. All 225 forecast formula cells return numbers, no cell
+      evaluates to an error, and all three checks are zero in all three forecast
+      columns. The count is on the definition stated on the Apple copy: 225 here
+      against 219 in the superseded workbook, the six being the two finance lease
+      rows held flat.
 - [x] With assumptions blank, all forecast cells are blank: no zeros, no
       leftovers
-      All 207 return empty as shipped.
+      All 225 return empty as shipped.
 - [ ] Rows with no forecast say why when you hover the row label
       Reserved for the user. The text is present: the four per-share and share
-      count rows carry NO_FORECAST_DRIVER, and the six untagged rows above carry
+      count rows carry NO_FORECAST_DRIVER, and the seven untagged rows above carry
       NO_REPORTED_HISTORY.
 
 ### The workbook itself
@@ -998,8 +1296,9 @@ pass in real Excel is the user's to run if they want it.
 - [ ] Opens in real Excel with no repair prompt, opened by hand
 - [x] All seven sheets present, all comments readable, no #REF! or #VALUE!
       anywhere
-      Seven sheets, 48 defined names, 403 comments, and no error value anywhere in
-      a full evaluation, blank or filled. "Readable" belongs with the open above.
+      Re-checked 2026-08-06: seven sheets, 48 defined names, 422 comments against
+      403 before, and no error value anywhere in a full evaluation, blank or
+      filled. "Readable" belongs with the open above.
 
 ### Sitting log
 
@@ -1009,5 +1308,6 @@ signature. Everything else on this copy is worked, with its evidence beside it.
 | Date | Where you stopped |
 | --- | --- |
 | 2026-08-05 | Value comparison complete for all five years of all three statements. Six entries open in the breakage log against this copy (rows 2, 5, 6, 12, 13 and 14), so it cannot be signed. |
+| 2026-08-06 | All six closed by Session 6b and re-verified against the filings on live EDGAR, with the citations above. Three were code fixes, two are checklist lines that could not be ticked as written and now can (rows 13 and 14), and row 12 closes with both halves of every debt caption on the page and the arithmetic named on each cell. The workbook was regenerated through the endpoint after the fixes and this copy now describes that file. No breakage entry stands against this copy. The three user items above are all that remain before a signature. |
 
     Signed off:                              Date:

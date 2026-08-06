@@ -51,6 +51,7 @@ open questions the next session needs to know about.
 | 2026-08-05 | 5 | The first Phase 2 session: V2_PLAN 2.1, 2.2, 2.2b and 2.5. Four commits: session prompt amended and quarters named for their fiscal year, the model spec in app/scaffold/three_statement.py, the writer kit in app/scaffold/excel.py, the formula-evaluation harness. | 0 | Open question 10 closed. Two new ones, 11 and 12, both raised by measuring the scaffold rather than by building it. |
 | 2026-08-05 | 6 | The last Phase 2 session: V2_PLAN 2.3 and 2.4. Three commits: open questions 11 and 12 settled, the endpoint and the button, the acceptance documents and the generator. Phase 2's exit review is written and its last criterion is the user's hand-check, which has not run. | 0 | Open questions 11 and 12 closed. None new. |
 | 2026-08-05 | 6H | The delegated half of the acceptance hand-check. Five historical years of all three statements for all three filers compared against the filings on EDGAR, cell by cell, for value, sign and scale; the checklist filled in with a citations block under every table; sixteen open entries written into the breakage log. Documents only: no application code was touched and nothing generated was committed. | 0 | None closed. Sixteen breakage entries open, and Phase 2 still cannot be declared done. |
+| 2026-08-06 | 6b | All sixteen breakage entries closed. Eleven commits: the three user decisions and the YoY span fix, annual-only columns, the debt chains and the finance lease rows, the intangibles chain, the opening-cash message, the operating income caveat, temporary equity, the widened Checks list, comparability seams, the four document dispositions, and this record. Twelve of the sixteen end in code with a test that fails on the old behaviour; three are document corrections and one is a documented filer-side inconsistency. Workbooks regenerated and every touched cell re-verified against live EDGAR. | 0 | None. Sixteen closed, none open. Phase 2 waits only on the user's interactive pass and three signatures. |
 
 ### Session 1 detail
 
@@ -901,13 +902,122 @@ entries, none of which this session may close. No copy is signable until they ar
 resolved, which is the rule the log already carried and the reason Phase 2 is
 still not done.
 
+### Session 6b detail
+
+Suite state: 718 tests, all passing, zero xfails. 672 mocked tests run offline in
+about 90 seconds; 46 integration tests hit live EDGAR or start a browser. Session 6
+left 683 and Session 6H added none, being documents only. The 35 new tests are 23
+in the scaffold model module, 5 in the Kroger module, 3 in the Honeywell module, 2
+in the validation module and 2 in the Apple module, one for every fix and one more
+for each thing a fix had to leave alone. Nine existing tests were rewritten rather
+than added to, because they pinned behaviour this session deliberately changed: the
+two debt chain orders, the two registry counts, the derived liability formula, the
+list of Kroger rows with nothing to forecast, one selector that picked a row's
+first flag where the widened list now gives that row two, and two assertions about
+what the Checks list carries.
+
+Every one of the sixteen breakage entries is closed. The dispositions are in
+docs/acceptance/breakage_log.md with a commit hash each, the evidence is in the
+checklist copies, and what follows is what the session learned rather than what it
+did.
+
+**Two of the sixteen diagnoses were wrong, and both mattered.** The log's rule is
+that a finding is written down before anybody decides what it is, and the corollary
+is that a diagnosis written at speed is a hypothesis. Two failed.
+
+Row 12 said Kroger's debt rows read below their captions because the combined
+debt-and-lease tags "are never reached", the debt-only tags winning first. They are
+not reached because they are not there: Kroger stopped tagging
+LongTermDebtAndCapitalLeaseObligations and its Current counterpart after fiscal
+2018. The captions -- 1,802 million current and 15,764 non-current at 2026-01-31 --
+are tagged in no taxonomy of its companyfacts payload at all, us-gaap, dei, srt,
+ffd or ecd, because a caption is a presentation subtotal a filer need not tag. So
+the reorder the row implied could not produce the figures the row asked for, and
+the question became what to do instead. The user chose to put both halves on the
+page and name the arithmetic on each debt cell rather than compose the sum, and the
+reason is Apple: it tags a finance lease liability too and its "Term debt" caption
+excludes it, so a rule that composed the sum unconditionally would take Apple's row
+off its own caption to put Kroger's on its, and nothing in XBRL distinguishes the
+two presentations. All ten of Kroger's captions are now the sum of two rows of the
+workbook, and every figure a reader adds is a tag with a filing behind it.
+
+Row 16 proposed detecting a basis change by asking whether the newer filing reports
+the older column's period differently. It cannot: a 10-K carries three years and
+Honeywell's FY2025 one does not report FY2022 at all, which is the very boundary
+the row is about. What works is asking whether the two filings that supplied the
+two columns disagree about any annual period they both report -- FY2023, at 36,662
+against 33,009 -- which is the same signature read off the filings rather than off
+the columns. Measured across the three filers at a one percent tolerance: Apple
+raises nothing, Honeywell raises two boundaries covering 20 and 15 rows, and Kroger
+raises one. The earlier formulation, "exactly one of the two columns was itself
+restated", was tried first and produced a false positive on Kroger that this one
+does not.
+
+**Row 4's expected figures did not survive row 3's fix, and that is the right
+outcome.** Row 4 asked for a non-current asset plug of 150,357 million and 58.2
+percent coverage, computed on the assumption that Apple's FY2025 Intangibles cell
+would keep the 11,093 million of non-current intangibles the 10-Q's note splits
+out. The decision the user took on row 3 is that an annual column takes a value
+only from an annual report, and no Apple annual report reports either the 13,301 or
+the 11,093. So the cell is blank, the plug is 161,450 and coverage is 55.1 percent,
+which is the figure the four earlier years were always measured on. The 11,093 is
+the whole of the difference between the two answers. Recorded because a session
+that had chased 150,357 would have had to invent a value to reach it.
+
+**What the flag list cost and what it bought.** Widening the Checks sheet to carry
+every flag was the user's decision and is plainly right; the danger was the one the
+coverage decision of 2026-08-05 was taken over, a warning shown so often nobody
+reads it. Propagating comparability seams up the arithmetic reached 34 rows on
+Honeywell, which would have been 34 lines on a sheet whose whole purpose is to be
+finished. A seam is a fact about a boundary rather than about a row, so it is
+collapsed by boundary and its line names every row it reaches: two lines for
+Honeywell, one for Kroger, none for Apple. The lists end at 11, 14 and 21 lines
+against 5, 8 and 11 before.
+
+**Two registry additions, three counting the pair.** Temporary equity, because a
+filer that tags no Liabilities element has its total derived as assets less equity
+and the mezzanine section is in neither: Honeywell's 7 million made its liability
+total 7 too high in four of five years and the balance check, being the same
+identity, could not see it. And the two halves of the finance lease obligation, for
+row 12. The registry goes from 41 entries to 44, and the balance check gains
+temporary equity as a term, because the equation for a filer with a mezzanine
+section is assets equals liabilities plus temporary equity plus equity. That needed
+a narrower kind of optional term than the decisions log already carried: assets and
+equity are required and temporary equity is not, where the existing rule made every
+term of a row optional together.
+
+**Fixtures.** Apple's, Honeywell's, Kroger's and JPMorgan's were regenerated for
+the finance lease elements and Honeywell's again for the temporary equity one. Each
+diff is the new tags and nothing else: no value moved anywhere, checked tag by tag
+and fact by fact against the committed versions. JPMorgan tags none of them and its
+fixture changed only in its retrieval date.
+
+**Re-verification.** Every value the fixes touched was read again off EDGAR's
+companyconcept records, element by element and period by period, annual filings
+only: 61 checks across the three filers, all agreeing, plus the four seam evidence
+sets and Apple's restricted-cash series. The citations are in the checklist copies.
+The one figure worth naming here is Apple's cash-tie arithmetic, because breakage
+row 15 turned on it: cash and equivalents against cash including restricted cash is
+38,016 against 39,789 at the FY2020 close, 34,940 against 35,929 at FY2021, 23,646
+against 24,977 at FY2022, 29,965 against 30,737 at FY2023, and equal thereafter, so
+the gaps are 1,773, 989, 1,331, 772 and nil and the residuals of +342, -559 and
+-772 are differences between consecutive gaps. Apple's cash flow statement carries
+no exchange-rate line at all, which is what made the Session 6 sentence false.
+
+**What is not done.** The three interactive items per copy and the signatures,
+which are the user's and which no session can do: opening each workbook by hand in
+real Excel and watching for a repair dialog, hovering a row label to see the
+tooltip render, and signing. Nothing else stands between here and Phase 2.
+
 ## Phase 2 exit review
 
-Run 2026-08-05 against the exit criteria in V2_PLAN Part 4. Five of six pass on
-evidence in the repo. The sixth is the acceptance hand-check, which is the user's
-and has not run, so **Phase 2 is not yet declared done.** This section is filled
-in and dated at the moment the three signed copies exist and the breakage log is
-empty or fully resolved; nothing else is waiting on it.
+Run 2026-08-05 against the exit criteria in V2_PLAN Part 4, and the sixth row
+amended on 2026-08-06. Five of six pass on evidence in the repo. The sixth is the
+acceptance hand-check: its value comparison has run, all sixteen discrepancies it
+found are resolved, and what remains is the three interactive items per copy and
+the three signatures, which are the user's. So **Phase 2 is not yet declared
+done**, and it now waits on nothing else. This section is dated at the moment the
+three signed copies exist.
 
 | Criterion | Verdict | Evidence |
 | --- | --- | --- |
@@ -916,7 +1026,7 @@ empty or fully resolved; nothing else is waiting on it.
 | The endpoint and UI button exist and surface refusals | Pass | POST /api/scaffold/three-statement, tested against five fixtures, returning the scope gate's exact message and no file for a bank, an insurer and an IFRS-only filer. The button is in the XBRL view and was driven in a real browser offline for both an acceptance and a refusal. |
 | Formula-evaluation harness, with the vocabulary constrained to what it evaluates | Pass | 16 tests in test_formula_eval.py. Nothing evaluates to an error, the balance check is zero in every historical column, blank assumptions produce blank forecasts and filled ones produce three statements that tie. The vocabulary is still the eight functions Session 5 recorded; coverage needed none of them, being two references and two operators. |
 | Acceptance harness exists: checklist and breakage log | Pass | docs/acceptance/3s_checklist.md, three resumable copies with a sitting log each, and docs/acceptance/breakage_log.md with the rule that every entry ends fixed or as a flagged blank. Two lines depart from V2_PLAN Part 4's template and say so in the document. |
-| All three checklists signed off, every discrepancy fixed or converted into a flagged blank | **Open** | Amended after Session 6H. The value comparison has now run: five historical years of all three statements for all three filers against the filings on EDGAR, with a citations block under every table. It found sixteen discrepancies, all open in the breakage log, so no copy is signable -- not because nothing has been checked, which was the position when this row was first written, but because plenty has and it found things. What is left before a signature is a decision on each of the sixteen, the three interactive items per copy that only the user can do, and the signature itself. V2_PLAN R10 named this as a solo bottleneck; delegating the comparison is what the 2026-08-05 decisions-log entry does about it, and it leaves the judgement where it belongs. |
+| All three checklists signed off, every discrepancy fixed or converted into a flagged blank | **Open** | Amended again after Session 6b. The value comparison ran on 2026-08-05 and found sixteen discrepancies; all sixteen are now closed, with a commit hash each, and the breakage log has no open rows. Twelve end in code with a test that fails on the old behaviour, three are document corrections and one is a documented filer-side inconsistency; two of the twelve ship with a limitation named. Every disposition was re-verified against the filings on live EDGAR and the citations are in the checklist copies, which now describe the workbooks regenerated on 2026-08-06. So the second half of this criterion is met. What is left is the first half: the three interactive items per copy that only the user can do -- the by-hand open in real Excel, the hover tooltip, and the signature. V2_PLAN R10 named this as a solo bottleneck; delegating the comparison and the fixes is what the 2026-08-05 decisions-log entry does about it, and it leaves the judgement and the certification where they belong. |
 
 Two things the hand-check should expect rather than log as bugs, both established
 before it starts. Honeywell's balance check is zero by construction, because it
@@ -932,7 +1042,7 @@ Run 2026-08-04 against the exit criteria in V2_PLAN Part 3. All four pass, so
 
 | Criterion | Verdict | Evidence |
 | --- | --- | --- |
-| Registry covers all 38 items with tests against real fixtures | Pass | 41 entries: the 38 the plan enumerates plus the three current-liability lines Short-Term Debt sums, which the plan wrote as a chain and which open question 4 showed could not be one. Every chain resolves against all five fixtures; the only entry that resolves for none is Short-Term Debt itself, whose one tag no fixture uses, and which is derived for all five. Three chain tags are exercised by no fixture and a test names them, so a proposal cannot pass for a verified chain. |
+| Registry covers all 38 items with tests against real fixtures | Pass | 41 entries: the 38 the plan enumerates plus the three current-liability lines Short-Term Debt sums, which the plan wrote as a chain and which open question 4 showed could not be one. Every chain resolves against all five fixtures; the only entry that resolves for none is Short-Term Debt itself, whose one tag no fixture uses, and which is derived for all five. Three chain tags are exercised by no fixture and a test names them, so a proposal cannot pass for a verified chain. Session 6b took the registry to 44 entries, adding the two halves of the finance lease obligation and temporary equity, and the unexercised list to five; the criterion is unaffected, each addition resolving against a fixture, temporary equity through the third tag of its chain and the two lease rows through their only tag. |
 | Every value in the API payload and exports carries reported, derived or missing provenance | Pass | 1,185 values across the five fixtures in the single-company table, every one in exactly one of the three states: 913 reported, 81 derived, 191 missing. The peer table returns the same counts for the same companies, and test_periods.py asserts value and state agree cell for cell on every fixture. The Excel Source Tags sheet writes one line per value, checked at rows times columns for each fixture, and the CSV names every tag a row used. |
 | Banks, insurers and IFRS filers get explicit messages | Pass | JPMorgan Chase is refused on the SIC range with the message V2_PLAN fixes, SAP SE on having no us-gaap facts at all, and the statement-shape heuristic is exercised synthetically because a correctly classified bank cannot test a misclassification. Neither refusal touches the puller: JPMorgan's table still loads and its balance sheet still ties. test_scope_gate.py. |
 | Existing single-company and peer features unchanged from the user's point of view except for honest labels | Pass, with one deliberate addition | Every v1 feature is still covered by the restored suite, all green. The changes a user sees are the ones the plan asked for: honest labels, three-state provenance, per-value source tags, refusal messages, and years that used to be dropped. The addition is the Total Debt row, which V2_PLAN 1.1 lists as a derived item and Session 3 deliberately withheld until its derivation was right. |
