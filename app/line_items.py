@@ -263,12 +263,19 @@ _REGISTRY_ITEMS = [
     # value's provenance, rather than the sum being arithmetic on raw tags a
     # reader cannot trace.
     _item("Current Maturities of Long-Term Debt", STATEMENT_BS, KIND_INSTANT, UNIT_DOLLAR, [
-        "LongTermDebtCurrent",
         "LongTermDebtAndCapitalLeaseObligationsCurrent",
+        "LongTermDebtCurrent",
     ], note="The current half of the long-term debt balance, and the mirror of the "
             "Long-Term Debt chain: a filer presenting debt and finance leases as one "
-            "caption splits it across the second tag of each. Honeywell and Kroger both "
-            "do."),
+            "caption splits it across the first tag of each. Honeywell and Kroger both "
+            "do, and the combined tag leads for that reason. Where a filer tags both, "
+            "the row equals the caption on the face of the balance sheet and so "
+            "includes obligations under finance leases: Kroger's is 1,802 million at "
+            "2026-01-31, against 1,366 of debt alone, and the 436 of finance leases is "
+            "the difference. Before the 2026-08-05 decisions-log entry the debt-only "
+            "tag led and the row sat 436 below the line it appears beside, matching no "
+            "figure on the statement. A filer tagging only LongTermDebtCurrent is "
+            "unaffected, which is Apple (breakage log row 12)."),
 
     _item("Commercial Paper", STATEMENT_BS, KIND_INSTANT, UNIT_DOLLAR, [
         "CommercialPaper",
@@ -286,15 +293,23 @@ _REGISTRY_ITEMS = [
             "CommercialPaper instant, so the two terms cannot overlap for that filer."),
 
     _item("Long-Term Debt", STATEMENT_BS, KIND_INSTANT, UNIT_DOLLAR, [
-        "LongTermDebtNoncurrent",
         "LongTermDebtAndCapitalLeaseObligations",
+        "LongTermDebtNoncurrent",
         "LongTermDebt",
     ], note="Strictly the non-current balance, through either of the first two tags. "
             "LongTermDebtAndCapitalLeaseObligations is the non-current line of a filer "
             "that presents debt and finance leases as one caption; its current half is "
             "LongTermDebtAndCapitalLeaseObligationsCurrent, a different tag, which is why "
             "it belongs here and its name does not mean it includes current maturities. "
-            "The last fallback does: LongTermDebt covers the whole long-term balance "
+            "It leads because where a filer tags both it is the caption on the face of "
+            "the balance sheet, so the row equals the line it sits beside: Kroger's "
+            "long-term debt including obligations under finance leases is 15,764 million "
+            "at 2026-01-31 against 14,509 of debt alone, and the 1,255 of finance leases "
+            "is the difference the debt-only tag left out of a row nobody could tie to "
+            "the statement (decisions log, 2026-08-05; breakage log row 12). A filer "
+            "tagging only LongTermDebtNoncurrent is unaffected, which is Apple. "
+            "The last fallback is broader still: LongTermDebt covers the whole long-term "
+            "balance "
             "including current maturities, so a filer resolving through it reports a row "
             "broader than its label, and Total Debt double-counts for exactly those "
             "periods. It is last because it is the one tag here whose meaning does not "
@@ -306,6 +321,30 @@ _REGISTRY_ITEMS = [
             "non-current line nor its balance-sheet total, reading 27,265 million at "
             "2024-12-31 where the balance sheet shows 25,479 of non-current debt and "
             "1,347 of current maturities. PROGRESS.md open question 1."),
+
+    # The two halves of the finance lease obligation. Part of no sum in the
+    # model: they are here so a reader can tie a debt row to the caption beside
+    # it on a balance sheet that presents debt and finance leases as one line.
+    # The combined caption is a presentation subtotal a filer need not tag, and
+    # Kroger does not: its "long-term debt including obligations under finance
+    # leases" of 15,764 million at 2026-01-31 appears in no taxonomy of its
+    # companyfacts payload, and is LongTermDebtNoncurrent 14,509 plus
+    # FinanceLeaseLiabilityNoncurrent 1,255. Composing that sum for the reader
+    # would mean deciding, with nothing in the data to decide it from, that this
+    # filer's balance sheet combines them, so the two terms are shown instead
+    # and the debt row's flag says what to do with them (breakage log row 12).
+    _item("Finance Lease Liability, Current", STATEMENT_BS, KIND_INSTANT, UNIT_DOLLAR, [
+        "FinanceLeaseLiabilityCurrent",
+    ], note="The current portion of the finance lease obligation, which some filers "
+            "present inside the current debt caption and some on a line of their own. "
+            "Apple, Honeywell and Kroger all tag it; only Kroger's balance sheet folds "
+            "it into the debt caption."),
+
+    _item("Finance Lease Liability, Non-current", STATEMENT_BS, KIND_INSTANT, UNIT_DOLLAR, [
+        "FinanceLeaseLiabilityNoncurrent",
+    ], note="The non-current portion, and the mirror of the current one above. Where a "
+            "filer presents it inside the long-term debt caption, that caption is this "
+            "row plus the Long-Term Debt row and neither one alone."),
 
     _item("Total Liabilities", STATEMENT_BS, KIND_INSTANT, UNIT_DOLLAR, [
         "Liabilities",
@@ -434,6 +473,16 @@ DERIVATIONS = {
 
 # Raw tags behind the D&A component fallback, in the order the formula sums them.
 DA_COMPONENT_TAGS = ("Depreciation", "AmortizationOfIntangibleAssets")
+
+# The debt elements that already include obligations under finance leases. A row
+# resolving through one of these is the caption on the face of the balance sheet
+# and needs no lease added to it; a row resolving through anything else may not
+# be, and cannot be told apart from one that is. See the Finance Lease Liability
+# entries above and PROGRESS.md's decisions log entry of 2026-08-05.
+COMBINED_DEBT_AND_LEASE_TAGS = frozenset({
+    "LongTermDebtAndCapitalLeaseObligations",
+    "LongTermDebtAndCapitalLeaseObligationsCurrent",
+})
 
 
 def inputs_used(name, values):

@@ -140,11 +140,19 @@ def test_defaults_are_valid_scales():
 def test_registry_covers_every_item_the_plan_enumerates():
     """V2_PLAN 1.1: 14 income statement, 16 balance sheet, 8 cash flow.
 
-    Three balance-sheet items beyond the plan's list, and they are all one
-    thing: Short-Term Debt is a total of separately tagged current-liability
-    lines, so each of those lines is a registry item of its own. The plan wrote
-    Short-Term Debt as a chain of three tags and expected one of them to be the
-    answer, which is the very thing PROGRESS.md open question 4 was about.
+    Five balance-sheet items beyond the plan's list, in two groups.
+
+    Three are one thing: Short-Term Debt is a total of separately tagged
+    current-liability lines, so each of those lines is a registry item of its
+    own. The plan wrote Short-Term Debt as a chain of three tags and expected
+    one of them to be the answer, which is the very thing PROGRESS.md open
+    question 4 was about.
+
+    Two more are the halves of the finance lease obligation, added on
+    2026-08-05. They are part of no sum: they exist so a reader can tie a debt
+    row to the caption beside it on a balance sheet that presents debt and
+    finance leases as one line, which is a caption a filer need not tag and
+    Kroger does not (breakage log row 12).
     """
     by_statement = {}
     for item in line_items.REGISTRY.values():
@@ -154,10 +162,15 @@ def test_registry_covers_every_item_the_plan_enumerates():
                   "Short-Term Borrowings"]
     assert [n for n in by_statement[line_items.STATEMENT_BS] if n in components] == components
 
+    leases = ["Finance Lease Liability, Current",
+              "Finance Lease Liability, Non-current"]
+    assert [n for n in by_statement[line_items.STATEMENT_BS] if n in leases] == leases
+
     assert len(by_statement[line_items.STATEMENT_IS]) == 14
-    assert len(by_statement[line_items.STATEMENT_BS]) == 16 + len(components)
+    assert len(by_statement[line_items.STATEMENT_BS]) == (
+        16 + len(components) + len(leases))
     assert len(by_statement[line_items.STATEMENT_CF]) == 8
-    assert len(line_items.REGISTRY) == 41
+    assert len(line_items.REGISTRY) == 43
 
 
 def test_every_registry_entry_is_well_formed():

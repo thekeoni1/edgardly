@@ -83,15 +83,17 @@ def _flags_of(cell, flag_type):
 # ---------------------------------------------------------------------------
 
 def test_every_registry_item_is_a_row(apple):
-    """All 41, including the three Short-Term Debt components.
+    """All 43, including the three Short-Term Debt components.
 
     The registry is the vocabulary and the scaffold is the first thing to use
     the whole of it. Phase 1's exit review counted 41 entries: the 38 V2_PLAN
     enumerates plus the three current-liability lines short-term debt is summed
     from, which the plan wrote as a chain and open question 4 showed could not
-    be one.
+    be one. Session 6b added the two halves of the finance lease obligation,
+    which are part of no sum and exist so a debt row can be tied to the caption
+    beside it (breakage log row 12).
     """
-    assert len(line_items.REGISTRY) == 41
+    assert len(line_items.REGISTRY) == 43
     assert {row.item for row in apple.rows if row.item} == set(line_items.REGISTRY)
 
 

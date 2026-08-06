@@ -110,10 +110,12 @@ FLAG_CHECK_NOT_AVAILABLE = "CHECK_NOT_AVAILABLE"
 FLAG_NO_FORECAST_DRIVER = "NO_FORECAST_DRIVER"
 FLAG_FORECAST_UNANCHORED = "FORECAST_UNANCHORED"
 FLAG_NO_REPORTED_HISTORY = "NO_REPORTED_HISTORY"
+FLAG_CAPTION_MAY_INCLUDE_LEASES = "CAPTION_MAY_INCLUDE_LEASES"
 
 MODEL_FLAGS = (FLAG_PLUG_TOO_LARGE, FLAG_PLUG_ABSORBS_BLANK, FLAG_TOTAL_DERIVED,
                FLAG_CHECK_NOT_AVAILABLE, FLAG_NO_FORECAST_DRIVER,
                FLAG_FORECAST_UNANCHORED, FLAG_NO_REPORTED_HISTORY,
+               FLAG_CAPTION_MAY_INCLUDE_LEASES,
                xbrl.FLAG_TAG_TRANSITION)
 
 
@@ -490,6 +492,9 @@ _BALANCE_SHEET = (
           forecast_note=_HELD_FLAT),
     _memo("Short-Term Borrowings", forecast=ref("Short-Term Borrowings", -1),
           forecast_note=_HELD_FLAT),
+    _memo("Finance Lease Liability, Current",
+          forecast=ref("Finance Lease Liability, Current", -1),
+          forecast_note=_HELD_FLAT),
     _reported("Short-Term Debt",
               terms=(("Current Maturities of Long-Term Debt", 1),
                      ("Commercial Paper", 1), ("Short-Term Borrowings", 1)),
@@ -512,6 +517,9 @@ _BALANCE_SHEET = (
               forecast_note="The debt roll-forward: opening balance plus net "
                             "issuance, which is the same cell the financing "
                             "section uses, so the two cannot disagree."),
+    _memo("Finance Lease Liability, Non-current",
+          forecast=ref("Finance Lease Liability, Non-current", -1),
+          forecast_note=_HELD_FLAT),
     _plug(_PLUG_NAME_OTHER_NCL, total="Total Liabilities",
           components=(("Total Current Liabilities", 1), ("Long-Term Debt", 1)),
           statement=line_items.STATEMENT_BS,
@@ -1074,6 +1082,65 @@ def _build_rows(spec_rows, deduped, cik, period_keys, labels, all_flags, pointer
     return rows, cells
 
 
+# A debt row, the finance lease row that may or may not sit inside the caption
+# beside it, and the word for which half of the balance sheet they are on.
+_LEASE_BESIDE_DEBT = (
+    ("Current Maturities of Long-Term Debt", "Finance Lease Liability, Current",
+     "current"),
+    ("Long-Term Debt", "Finance Lease Liability, Non-current", "non-current"),
+)
+
+
+def _flag_lease_captions(cells, period_keys):
+    """Say what a debt row does not include, where the filer reports it.
+
+    A balance sheet that presents debt and finance leases as one caption shows
+    the two added, and the combined total is a presentation subtotal a filer
+    need not tag. Kroger does not tag it: its "long-term debt including
+    obligations under finance leases" of 15,764 million at 2026-01-31 is in no
+    taxonomy of its companyfacts payload, so no chain can reach it and the row
+    reads 14,509, which is the line above nothing on the statement.
+
+    Composing the sum would mean deciding that this filer's caption combines
+    them with nothing in the data to decide it from, and Apple is the
+    counter-example: it tags a finance lease liability too and its "Term debt"
+    caption excludes it, so an unconditional sum would take Apple's row off its
+    own caption to put Kroger's on its. So the arithmetic goes in front of the
+    reader instead, on the row that is short of it, with both terms on the page
+    (decisions log and breakage log row 12).
+
+    Raised only where the row resolved through a debt-only element. A row that
+    resolved through the combined element already is the caption, and telling
+    its reader to add the leases again would be worse than silence.
+    """
+    for debt_row, lease_row, half in _LEASE_BESIDE_DEBT:
+        for key in period_keys:
+            debt = (cells.get(debt_row) or {}).get(key)
+            lease = _cell_value(cells, lease_row, key)
+            if debt is None or debt.value is None or not lease:
+                continue
+            tag = (debt.provenance or {}).get("tag")
+            if tag in line_items.COMBINED_DEBT_AND_LEASE_TAGS:
+                continue
+            cells[debt_row][key] = debt._replace(flags=debt.flags + (_flag(
+                FLAG_CAPTION_MAY_INCLUDE_LEASES,
+                "This row is debt alone: it comes from {}, which excludes finance "
+                "leases. The filer also reports a {} finance lease obligation of "
+                "{:,.0f} at this date, on its own row beside this one. Some balance "
+                "sheets present the two as one caption and show them added, in "
+                "which case the caption is {:,.0f} and this row sits below the line "
+                "it appears beside by exactly the lease amount; others present them "
+                "separately, in which case this row is the caption and nothing "
+                "needs adding. The combined caption is a presentation subtotal a "
+                "filer need not tag, and where it is untagged Edgardly cannot tell "
+                "the two presentations apart, so it puts both terms in front of "
+                "you rather than guessing which shape this filer used.".format(
+                    tag, half, lease, debt.value + lease),
+                key, {"debt_row": debt_row, "lease_row": lease_row,
+                      "lease": lease, "debt": debt.value,
+                      "caption_if_combined": debt.value + lease}),))
+
+
 def _propagate_flags(rows, cells, period_keys, kinds=(xbrl.FLAG_TAG_TRANSITION,)):
     """A row standing on a flagged cell carries the flag too.
 
@@ -1311,6 +1378,7 @@ def build_model(cik, facts, sic=None, start_year=1990, end_year=2100,
 
     rows, cells = _build_rows(ALL_ROW_SPECS, deduped, cik, period_keys, labels,
                               all_flags, pointers)
+    _flag_lease_captions(cells, period_keys)
     rows = _propagate_flags(rows, cells, period_keys)
 
     disarmed = {name for name in _IDENTITY_FALLBACKS

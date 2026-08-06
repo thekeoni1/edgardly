@@ -300,10 +300,16 @@ def test_long_term_debt_is_the_balance_sheet_non_current_line(honeywell_facts,
     29,046 is what LongTermDebt holds for the same instant, 1,905 above it and
     359 above even the balance sheet's debt including current maturities, which
     is why no chain position could have made that tag the right answer.
+
+    The combined tag moved to the front of the chain on 2026-08-05, so that a
+    filer tagging both it and the debt-only element gets the caption on the face
+    of its balance sheet rather than a figure below it. Honeywell tags no
+    LongTermDebtNoncurrent at all, so its row is unaffected by the reorder and
+    this test asserts both facts at once.
     """
     assert list(line_items.tags_for("Long-Term Debt")) == [
-        "LongTermDebtNoncurrent",
         "LongTermDebtAndCapitalLeaseObligations",
+        "LongTermDebtNoncurrent",
         "LongTermDebt",
     ]
     assert "LongTermDebtNoncurrent" not in honeywell_facts["facts"]["us-gaap"]

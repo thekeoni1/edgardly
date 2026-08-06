@@ -490,22 +490,111 @@ def test_total_debt_is_a_sum_of_one_term_where_that_is_all_kroger_has(kroger_tab
     assert {dp["value"] for dp in combined} == {15_875 * MILLION}
 
 
-def test_the_debt_rows_exclude_finance_leases_as_their_labels_promise(kroger_table):
-    """Kroger's captions bundle leases in; the rows do not, and should not.
+def test_the_debt_rows_are_debt_alone_and_the_leases_are_beside_them(kroger_table):
+    """Breakage log row 12. Kroger's captions bundle leases in; these rows do not.
 
     The balance sheet reads "Long-term debt including obligations under finance
-    leases 15,764" against the row's 14,509, the difference being 1,255 of
-    lease liabilities that Kroger tags separately. A row called Long-Term Debt
-    that quietly included finance leases would be the wrong answer to its own
-    label. The gap is the filer's presentation, not a missing number.
+    leases 15,764" against the row's 14,509, and the 1,255 of difference is a
+    lease liability Kroger tags on its own. The caption itself is tagged
+    nowhere: it is a presentation subtotal, and searching every taxonomy of
+    Kroger's companyfacts payload for 15,764,000,000 at this instant finds
+    nothing, so no chain can reach it.
+
+    So both terms are registry rows and the reader adds them. Composing the sum
+    instead would mean deciding that this filer's balance sheet combines them
+    with nothing in the data to decide it from, and Apple is the counter-case:
+    it tags a finance lease liability too and its "Term debt" caption excludes
+    it.
     """
     _entity, _columns, rows, _scope = kroger_table
     assert rows["Long-Term Debt"]["cells"][FISCAL_2025_END]["value"] == 14_509 * MILLION
 
     facts = json.load(open(FIXTURE_PATH, encoding="utf-8"))
     leases = [dp for dp in xbrl._extract_tag_data(facts, "FinanceLeaseLiabilityNoncurrent")
-              if dp["end"] == FISCAL_2025_END]
-    assert leases == [], "the fixture keeps only registry tags; leases are not one"
+              if dp["end"] == FISCAL_2025_END and dp["form"] == "10-K"]
+    assert {dp["value"] for dp in leases} == {1_255 * MILLION}
+    # 14,509 + 1,255 is the caption, and the caption is tagged nowhere.
+    assert 14_509 + 1_255 == 15_764
+    for taxonomy, block in facts["facts"].items():
+        for tag, tag_data in block.items():
+            for entries in (tag_data.get("units", {}) or {}).values():
+                assert not [e for e in entries
+                            if e.get("val") == 15_764 * MILLION
+                            and e.get("end") == FISCAL_2025_END], \
+                    "{}:{} tags the combined caption after all".format(taxonomy, tag)
+
+
+def test_krogers_five_debt_captions_are_two_registry_rows_added(kroger_facts):
+    """Every figure breakage log row 12 asked for, reachable from the workbook.
+
+    Current portion of long-term debt including obligations under finance
+    leases: 555, 1,310, 198, 272 and 1,802 million. Long-term debt including
+    obligations under finance leases: 12,809, 12,068, 12,028, 17,633 and
+    15,764. Neither row equals a caption on its own and every caption is the
+    two rows on the page added, which is what the flag on each debt cell says.
+    """
+    from scaffold import three_statement as ts
+
+    spec = ts.build_model(56873, kroger_facts, "5411")
+    ends = [p.key for p in ts.historical_periods(spec)]
+
+    def row(name):
+        return [ts.row_named(spec, name).cells[key].value for key in ends]
+
+    current = [a + b for a, b in zip(row("Current Maturities of Long-Term Debt"),
+                                     row("Finance Lease Liability, Current"))]
+    noncurrent = [a + b for a, b in zip(row("Long-Term Debt"),
+                                        row("Finance Lease Liability, Non-current"))]
+
+    assert current == [v * MILLION for v in (555, 1_310, 198, 272, 1_802)]
+    assert noncurrent == [v * MILLION for v in (12_809, 12_068, 12_028, 17_633, 15_764)]
+    # And the debt total a reader taking both captions would get.
+    assert current[-1] + noncurrent[-1] == 17_566 * MILLION
+
+
+def test_each_kroger_debt_cell_says_what_it_does_not_include(kroger_facts):
+    """The flag has to name the number, or the reader is back in the filing."""
+    from scaffold import three_statement as ts
+
+    spec = ts.build_model(56873, kroger_facts, "5411")
+    key = [p.key for p in ts.historical_periods(spec)][-1]
+
+    for name, lease, caption in (
+            ("Current Maturities of Long-Term Debt", "436,000,000", "1,802,000,000"),
+            ("Long-Term Debt", "1,255,000,000", "15,764,000,000")):
+        flags = [f for f in ts.row_named(spec, name).cells[key].flags
+                 if f["flag_type"] == ts.FLAG_CAPTION_MAY_INCLUDE_LEASES]
+        assert len(flags) == 1, name
+        assert lease in flags[0]["message"], name
+        assert caption in flags[0]["message"], name
+
+
+def test_a_row_that_is_already_the_caption_is_not_told_to_add_leases(honeywell_only):
+    """Honeywell resolves through the combined element, so the flag stays quiet.
+
+    Its "Long-term debt" of 27,141 million already includes obligations under
+    finance leases, and telling a reader to add the 27 it tags separately would
+    be worse than silence.
+    """
+    from scaffold import three_statement as ts
+
+    spec = honeywell_only
+    for period in ts.historical_periods(spec):
+        for name in ("Long-Term Debt", "Current Maturities of Long-Term Debt"):
+            cell = ts.row_named(spec, name).cells[period.key]
+            assert not [f for f in cell.flags
+                        if f["flag_type"] == ts.FLAG_CAPTION_MAY_INCLUDE_LEASES], \
+                "{} {}".format(name, period.label)
+
+
+@pytest.fixture(scope="module")
+def honeywell_only():
+    """Honeywell's spec, read here for the one contrast Kroger cannot show."""
+    from scaffold import three_statement as ts
+
+    path = os.path.join(os.path.dirname(__file__), "fixtures", "cik773840.json")
+    with open(path, encoding="utf-8") as handle:
+        return ts.build_model(773840, json.load(handle), "3724")
 
 
 def test_what_kroger_leaves_blank_stays_blank(kroger_table, kroger_facts):
