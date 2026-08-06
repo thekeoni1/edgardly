@@ -111,11 +111,12 @@ FLAG_NO_FORECAST_DRIVER = "NO_FORECAST_DRIVER"
 FLAG_FORECAST_UNANCHORED = "FORECAST_UNANCHORED"
 FLAG_NO_REPORTED_HISTORY = "NO_REPORTED_HISTORY"
 FLAG_CAPTION_MAY_INCLUDE_LEASES = "CAPTION_MAY_INCLUDE_LEASES"
+FLAG_COMPARABILITY_SEAM = "COMPARABILITY_SEAM"
 
 MODEL_FLAGS = (FLAG_PLUG_TOO_LARGE, FLAG_PLUG_ABSORBS_BLANK, FLAG_TOTAL_DERIVED,
                FLAG_CHECK_NOT_AVAILABLE, FLAG_NO_FORECAST_DRIVER,
                FLAG_FORECAST_UNANCHORED, FLAG_NO_REPORTED_HISTORY,
-               FLAG_CAPTION_MAY_INCLUDE_LEASES,
+               FLAG_CAPTION_MAY_INCLUDE_LEASES, FLAG_COMPARABILITY_SEAM,
                xbrl.FLAG_TAG_TRANSITION)
 
 
@@ -1268,7 +1269,66 @@ def _flag_lease_captions(cells, period_keys):
                       "caption_if_combined": debt.value + lease}),))
 
 
-def _propagate_flags(rows, cells, period_keys, kinds=(xbrl.FLAG_TAG_TRANSITION,)):
+def _flag_comparability_seams(spec_rows, cells, facts, period_keys, labels):
+    """Mark a boundary where two adjacent columns are not the same basis.
+
+    TAG_TRANSITION marks a change of element and has nothing to say about a
+    change of basis inside one element, and the most-recent-annual-report rule
+    produces exactly that: Honeywell's FY2022 revenue comes from the FY2023 10-K,
+    which is the last annual report to carry it and predates the Solstice
+    spin-off, and its FY2023 comes from the FY2025 10-K, which re-presents that
+    year for discontinued operations. Revenue falls from 35,466 to 33,009 million
+    between two adjacent columns and neither move happened. Both figures are
+    correct for their filing (breakage log row 16).
+
+    The evidence is a period the two filings share, and it need not be either
+    column: the FY2025 10-K does not report FY2022 at all, so what the two
+    filings can be compared on is FY2023, where one says 36,662 and the other
+    33,009. See xbrl.filings_disagree.
+
+    Flagged on both cells, because a seam belongs to a boundary rather than to a
+    year, and a reader looking at either column needs to know.
+    """
+    for spec in spec_rows:
+        if spec.item is None:
+            continue
+        built = cells[spec.name]
+        for index in range(1, len(period_keys)):
+            earlier_key, later_key = period_keys[index - 1], period_keys[index]
+            earlier, later = built.get(earlier_key), built.get(later_key)
+            if earlier is None or later is None:
+                continue
+            if earlier.state != CELL_REPORTED or later.state != CELL_REPORTED:
+                continue
+            evidence = xbrl.filings_disagree(
+                facts, spec.item, (earlier.provenance or {}).get("accession"),
+                (later.provenance or {}).get("accession"))
+            if evidence is None:
+                continue
+            message = (
+                "{} is not comparable across the {} to {} boundary. The two "
+                "columns come from different annual reports -- {} and {} -- and "
+                "those two filings disagree about the year ended {}, which they "
+                "both report: {:,.0f} in the earlier and {:,.0f} in the later, a "
+                "difference of {:.0f} percent. Each column is right for its own "
+                "filing, and the change between them is partly a change of "
+                "presentation rather than a change in the business. A "
+                "year-on-year move read straight off this row across this "
+                "boundary is not one.".format(
+                    spec.name, labels[index - 1], labels[index],
+                    evidence["earlier_accn"], evidence["later_accn"],
+                    evidence["period_end"], evidence["earlier"], evidence["later"],
+                    100.0 * evidence["change"]))
+            details = dict(evidence, boundary=[labels[index - 1], labels[index]])
+            for key in (earlier_key, later_key):
+                cell = built[key]
+                built[key] = cell._replace(
+                    flags=cell.flags + (_flag(FLAG_COMPARABILITY_SEAM, message,
+                                              key, details),))
+
+
+def _propagate_flags(rows, cells, period_keys,
+                     kinds=(xbrl.FLAG_TAG_TRANSITION, FLAG_COMPARABILITY_SEAM)):
     """A row standing on a flagged cell carries the flag too.
 
     Cost of Revenue is the reason. Its chain ends in an element that excludes
@@ -1506,6 +1566,7 @@ def build_model(cik, facts, sic=None, start_year=1990, end_year=2100,
     rows, cells = _build_rows(ALL_ROW_SPECS, deduped, cik, period_keys, labels,
                               all_flags, pointers)
     _flag_lease_captions(cells, period_keys)
+    _flag_comparability_seams(ALL_ROW_SPECS, cells, facts, period_keys, labels)
     rows = _propagate_flags(rows, cells, period_keys)
 
     disarmed = {name for name in _IDENTITY_FALLBACKS
@@ -1606,6 +1667,38 @@ def plug_flags(spec):
     return tuple(f for f in spec.flags if f["flag_type"] == FLAG_PLUG_TOO_LARGE)
 
 
+def _seam_summary_message(entry):
+    """One line for a comparability seam, however many rows cross it.
+
+    A basis change is a fact about a boundary, not about a row: Honeywell's
+    FY2022 to FY2023 seam reaches thirteen rows and the plugs and subtotals above
+    them, and thirty-four copies of one sentence is the failure the coverage
+    decision of 2026-08-05 was taken to avoid. So the line names the boundary
+    once, the evidence once, and every row it reaches, and each row still carries
+    the whole sentence in its own cells.
+    """
+    details = entry["details"]
+    boundary = details.get("boundary") or ("", "")
+    rows = sorted(entry["rows"])
+    change, period_end = entry["worst"]
+    return (
+        "{} to {} is a comparability seam: {} row{} change basis across it. Each "
+        "takes its two columns from two different annual reports, and those two "
+        "filings disagree about a period they both report; the largest such "
+        "disagreement here is {:.0f} percent, on the year ended {}. Each column "
+        "is right for its own filing, and a year-on-year move read straight "
+        "across this boundary is partly a change of presentation rather than a "
+        "change in the business. The rows are: {}. Each names its own two filings "
+        "and its own evidence in its own cells.".format(
+            boundary[0], boundary[1], len(rows), "" if len(rows) == 1 else "s",
+            100.0 * change, period_end, ", ".join(rows)))
+
+
+# Flag types collapsed by the boundary they mark rather than by the row they are
+# on, because the thing they describe belongs to the boundary.
+_BOUNDARY_GROUPED = (FLAG_COMPARABILITY_SEAM,)
+
+
 def summarised_flags(spec):
     """One line per flagged row, not one per flagged cell.
 
@@ -1615,20 +1708,33 @@ def summarised_flags(spec):
     and counting the periods it covered; anything else is collapsed by its own
     message, which is what keeps six rows that each say "this filer tags no
     value for it" from collapsing into one row's worth of news.
+
+    A comparability seam is collapsed by its boundary instead, and its line names
+    every row that crosses it; see _seam_summary_message.
     """
     summary = {}
     order = []
     for flag in spec.flags:
         details = flag.get("details") or {}
-        key = (flag["flag_type"], details.get("row") or flag["message"])
+        if flag["flag_type"] in _BOUNDARY_GROUPED:
+            key = (flag["flag_type"], tuple(details.get("boundary") or ()))
+        else:
+            key = (flag["flag_type"], details.get("row") or flag["message"])
         if key not in summary:
             summary[key] = {"flag_type": flag["flag_type"],
                             "message": flag["message"],
-                            "details": dict(details), "periods": []}
+                            "details": dict(details), "periods": [], "rows": set(),
+                            "worst": (0.0, None)}
             order.append(key)
         entry = summary[key]
         if flag.get("period_end"):
             entry["periods"].append(flag["period_end"])
+        if details.get("row"):
+            entry["rows"].add(details["row"])
+        if details.get("change") is not None:
+            entry["worst"] = max(entry["worst"],
+                                 (details["change"], details.get("period_end")),
+                                 key=lambda pair: pair[0])
         share = details.get("share_of_total")
         if share is not None:
             entry["details"]["share_of_total"] = max(
@@ -1644,6 +1750,12 @@ def summarised_flags(spec):
             message = _plug_too_large_message(entry["details"]["share_of_total"],
                                               entry["details"]["total_row"],
                                               reaches=periods_seen > 1)
+        if entry["flag_type"] in _BOUNDARY_GROUPED:
+            out.append({"flag_type": entry["flag_type"],
+                        "message": _seam_summary_message(entry),
+                        "details": dict(entry["details"],
+                                        rows=sorted(entry["rows"]))})
+            continue
         if row:
             message = "{}: {}".format(row, message)
         if entry["periods"]:

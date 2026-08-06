@@ -514,6 +514,118 @@ def test_a_filer_whose_annual_report_does_carry_the_line_is_untouched(kroger):
 
 
 # ---------------------------------------------------------------------------
+# Comparability seams
+# ---------------------------------------------------------------------------
+
+def test_honeywells_revenue_seam_is_flagged_on_both_cells(honeywell):
+    """Breakage log row 16, the live case.
+
+    Revenue falls from 35,466 to 33,009 million between FY2022 and FY2023 and
+    neither move happened. The most-recent-annual-report rule takes FY2023 from
+    the FY2025 10-K, which re-presents it for the Solstice spin-off, and FY2022
+    from an earlier annual report that predates it. Both figures are correct for
+    their filing.
+
+    The evidence is a period the two filings share, and it is neither column: the
+    FY2025 10-K reports three years and FY2022 is not one of them, so nothing
+    about the FY2022 column can be compared with it. What the two filings both
+    report is FY2023, at 36,662 and 33,009.
+    """
+    fy2022 = _cell(honeywell, "Revenue", "FY2022")
+    fy2023 = _cell(honeywell, "Revenue", "FY2023")
+
+    assert fy2022.value == pytest.approx(35_466 * MILLION, rel=1e-9)
+    assert fy2023.value == pytest.approx(33_009 * MILLION, rel=1e-9)
+
+    for cell in (fy2022, fy2023):
+        seams = _flags_of(cell, ts.FLAG_COMPARABILITY_SEAM)
+        assert len(seams) == 1
+        assert seams[0]["details"]["boundary"] == ["FY2022", "FY2023"]
+        assert seams[0]["details"]["period_end"] == "2023-12-31"
+        assert seams[0]["details"]["earlier"] == 36_662 * MILLION
+        assert seams[0]["details"]["later"] == 33_009 * MILLION
+        assert "not comparable across the FY2022 to FY2023 boundary" in \
+            seams[0]["message"]
+
+
+def test_the_goodwill_seam_the_breakage_row_also_names(honeywell):
+    """17,238 at Dec. 31 2023 against the 18,049 that year's own 10-K reported."""
+    seams = _flags_of(_cell(honeywell, "Goodwill", "FY2023"),
+                      ts.FLAG_COMPARABILITY_SEAM)
+
+    assert len(seams) == 1
+    assert seams[0]["details"]["earlier"] == 18_049 * MILLION
+    assert seams[0]["details"]["later"] == 17_238 * MILLION
+
+
+def test_a_seam_reaches_the_rows_computed_from_a_seamed_one(honeywell):
+    """Gross profit is revenue less cost of revenue, and both cross the seam."""
+    seams = _flags_of(_cell(honeywell, "Gross Profit", "FY2023"),
+                      ts.FLAG_COMPARABILITY_SEAM)
+
+    assert seams, "a derived row standing on two seamed rows carries the seam"
+    assert all("stands on" in f["message"] for f in seams)
+    assert {f["details"]["inherited_from"] for f in seams} == {"Revenue",
+                                                              "Cost of Revenue"}
+
+
+def test_the_checks_sheet_reports_a_seam_once_per_boundary(honeywell):
+    """Thirty-four copies of one sentence is the failure this avoids.
+
+    The seam reaches twenty rows across FY2022 to FY2023 and fifteen across
+    FY2023 to FY2024, counting the plugs and subtotals above them. A flag about a
+    boundary is collapsed to the boundary and names every row it reaches, which
+    is one line a reader finishes rather than a page they skip.
+    """
+    lines = [f for f in ts.summarised_flags(honeywell)
+             if f["flag_type"] == ts.FLAG_COMPARABILITY_SEAM]
+
+    assert len(lines) == 2
+    boundaries = [tuple(f["details"]["boundary"]) for f in lines]
+    assert boundaries == [("FY2022", "FY2023"), ("FY2023", "FY2024")]
+
+    first = lines[0]
+    assert "20 rows change basis across it" in first["message"]
+    assert "Revenue" in first["details"]["rows"]
+    assert "Gross Profit" in first["details"]["rows"]
+    assert "EBITDA" in first["details"]["rows"]
+
+
+def test_apple_has_no_seam_and_kroger_has_one(apple, kroger):
+    """A flag that fires on a filer with one basis would be worth nothing.
+
+    Apple restates nothing across these five years. Kroger has exactly one seam,
+    and it is a real one: its trade payables at 2023-01-28 are 7,119 million in
+    its FY2022 10-K and 10,179 in the FY2023 one, so the row's jump from 7,117 to
+    10,179 between FY2021 and FY2022 is partly a reclassification.
+    """
+    assert not [f for f in ts.summarised_flags(apple)
+                if f["flag_type"] == ts.FLAG_COMPARABILITY_SEAM]
+
+    lines = [f for f in ts.summarised_flags(kroger)
+             if f["flag_type"] == ts.FLAG_COMPARABILITY_SEAM]
+    assert len(lines) == 1
+    assert tuple(lines[0]["details"]["boundary"]) == ("FY2021", "FY2022")
+    assert lines[0]["details"]["earlier"] == 7_119 * MILLION
+    assert lines[0]["details"]["later"] == 10_179 * MILLION
+
+
+def test_a_tidying_below_the_tolerance_raises_nothing(honeywell):
+    """The 39 million of debt the FY2025 10-K moved is 0.15 percent, and is noise.
+
+    Honeywell's long-term debt at 2024-12-31 reads 25,440 where the FY2024 10-K
+    said 25,479, the difference being debt moved into liabilities held for sale.
+    That is a real re-presentation and it is not a change of basis anyone can act
+    on, so the tolerance keeps it quiet while the 7 percent move in the cash line
+    beside it is flagged.
+    """
+    assert not _flags_of(_cell(honeywell, "Long-Term Debt", "FY2024"),
+                         ts.FLAG_COMPARABILITY_SEAM)
+    assert _flags_of(_cell(honeywell, "Cash and Equivalents", "FY2024"),
+                     ts.FLAG_COMPARABILITY_SEAM)
+
+
+# ---------------------------------------------------------------------------
 # The flag summary
 # ---------------------------------------------------------------------------
 
@@ -580,8 +692,12 @@ def test_the_checks_list_carries_every_flag_the_workbook_raises(apple, honeywell
     """
     for spec in (apple, honeywell, kroger):
         summarised = ts.summarised_flags(spec)
+        # A seam is collapsed by its boundary and names its rows in a list; every
+        # other flag is collapsed by the row it is on.
         listed = {(f["flag_type"], (f["details"] or {}).get("row"))
                   for f in summarised}
+        listed |= {(f["flag_type"], name) for f in summarised
+                   for name in ((f["details"] or {}).get("rows") or ())}
         for row in spec.rows:
             for period in ts.historical_periods(spec):
                 for flag in row.cells[period.key].flags:

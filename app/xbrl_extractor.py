@@ -673,6 +673,119 @@ def _check_tag_transition(line_item_name, data_points):
     return flags
 
 
+# How far two annual reports may disagree about the same period and the same
+# element before it is a re-presentation rather than a rounding. Honeywell's
+# FY2023 revenue moves 10 percent between its own 10-K and the FY2025 one, its
+# FY2023 goodwill 4.5 percent and its FY2024 cash 6.3 percent; the 39 million of
+# debt the FY2025 10-K moved into liabilities held for sale is 0.15 percent and is
+# the kind of tidying a comparability flag would be wrong to shout about.
+BASIS_CHANGE_TOLERANCE = 0.01
+
+
+def filings_disagree(facts_data, line_item, first_accn, second_accn,
+                     tolerance=BASIS_CHANGE_TOLERANCE):
+    """Whether two annual reports report the same period of one item differently.
+
+    This is what makes two columns of a model incomparable. A column is on the
+    basis of the filing that reported it, and two filings are on different bases
+    when they disagree about a period they both carry: Honeywell's FY2023 10-K
+    and its FY2025 10-K both report the year ended 2023-12-31, at 36,662 and
+    33,009 million, because the later one re-presents it for the Solstice
+    spin-off. A column taken from the first and a column taken from the second
+    are then two different things standing next to each other.
+
+    The evidence has to be a period the two filings share, not the columns
+    themselves. The FY2025 10-K does not report FY2022 at all -- a 10-K carries
+    three years -- so nothing about the FY2022 column can be compared with it
+    directly, and asking whether the newer filing restates the older column's own
+    period finds nothing. What the two filings do share is FY2023, and that is
+    where the change of basis is visible.
+
+    Returns the evidence dict, or None when the two agree everywhere they meet or
+    never meet at all.
+    """
+    if not first_accn or not second_accn or first_accn == second_accn:
+        return None
+    by_accn = {}
+    for tag in line_items.tags_for(line_item):
+        for dp in _extract_tag_data(facts_data, tag):
+            if dp.get("accn") not in (first_accn, second_accn):
+                continue
+            if not is_annual_report_form(dp.get("form")):
+                continue
+            if dp.get("start") is not None and not _is_annual_period(dp):
+                continue
+            if dp.get("value") is None:
+                continue
+            by_accn.setdefault(dp["accn"], {})[
+                (tag, dp.get("start"), dp.get("end"))] = dp["value"]
+
+    first, second = by_accn.get(first_accn, {}), by_accn.get(second_accn, {})
+    worst = None
+    for key in set(first) & set(second):
+        earlier, later = first[key], second[key]
+        if not earlier and not later:
+            continue
+        base = abs(later) or abs(earlier)
+        change = abs(later - earlier) / base
+        if change <= tolerance:
+            continue
+        if worst is None or change > worst["change"]:
+            worst = {"period_end": key[2], "tag": key[0], "change": change,
+                     "earlier": earlier, "later": later,
+                     "earlier_accn": first_accn, "later_accn": second_accn}
+    return worst
+
+
+def represented_periods(facts_data, line_item, tolerance=BASIS_CHANGE_TOLERANCE):
+    """Periods a later annual report restated, by element and by more than a rounding.
+
+    The signature of a re-presentation: one filer, one element, one period, two
+    annual reports, two materially different numbers. Honeywell's revenue for the
+    year ended 2023-12-31 is 36,662 million in its own 10-K and 33,009 in the
+    FY2025 one, which re-presents it for the Solstice spin-off. Both are
+    Honeywell's own figures for that year and only one of them is comparable with
+    a column taken from a filing that predates the spin.
+
+    Restricted to one element on purpose. Two different tags disagreeing is a
+    TAG_TRANSITION and is already flagged as one; what this finds is the same tag
+    being refilled, which no flag could see because resolution keeps one entry per
+    period per tag and the earlier figure is discarded before any check runs.
+
+    Returns {period_end: {"kept", "earlier", "kept_accn", "earlier_accn",
+    "kept_filed", "earlier_filed", "tag", "change"}} for the periods that moved.
+    """
+    resolved, _tag = resolve_line_item(facts_data, line_item)
+    winners = {dp.get("end"): dp for dp in resolved}
+
+    moved = {}
+    for end, winner in winners.items():
+        value, tag = winner.get("value"), winner.get("tag")
+        if value is None or not tag or not end:
+            continue
+        for dp in _extract_tag_data(facts_data, tag):
+            if dp.get("end") != end or dp.get("start") != winner.get("start"):
+                continue
+            if not is_annual_report_form(dp.get("form")):
+                continue
+            other = dp.get("value")
+            if other is None or not value:
+                continue
+            if (dp.get("filed") or "") >= (winner.get("filed") or ""):
+                continue
+            change = abs(other - value) / abs(value)
+            if change <= tolerance:
+                continue
+            incumbent = moved.get(end)
+            if incumbent is None or change > incumbent["change"]:
+                moved[end] = {
+                    "kept": value, "earlier": other, "tag": tag, "change": change,
+                    "kept_accn": winner.get("accn"), "earlier_accn": dp.get("accn"),
+                    "kept_filed": winner.get("filed"), "earlier_filed": dp.get("filed"),
+                }
+    return moved
+
+
 def _check_missing_critical_data(deduped_line_items):
     """
     Flag if annual (FY) periods exist in any line item but both Revenue and
