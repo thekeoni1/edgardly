@@ -807,10 +807,17 @@ PROVENANCE_MISSING = "missing"
 #                  "not tagged" nor "unresolved" is true of it: the number
 #                  exists, is the filer's own, and is sourced -- just not to an
 #                  annual report.
+# NO_PRIOR_COLUMN the row is arithmetic that reaches back a period, and the
+#                  period it reaches back to is before the first column of the
+#                  model. Nothing is missing from the filing: what is missing is
+#                  a column, and the only three flags above would all say
+#                  otherwise. Opening cash in the first historical year is the
+#                  case (breakage log row 6).
 FLAG_NOT_TAGGED = "NOT_TAGGED"
 FLAG_PERIOD_UNRESOLVED = "PERIOD_UNRESOLVED"
 FLAG_DERIVATION_UNAVAILABLE = "DERIVATION_UNAVAILABLE"
 FLAG_NOT_IN_ANNUAL_REPORT = "NOT_IN_ANNUAL_REPORT"
+FLAG_NO_PRIOR_COLUMN = "NO_PRIOR_COLUMN"
 
 SEC_ARCHIVES_BASE = "https://www.sec.gov/Archives/edgar/data"
 
@@ -1025,7 +1032,7 @@ def _interim_sentence(interim, period_label):
 
 def missing_provenance(line_item, period_label, cik=None, pointer=None,
                        flag=FLAG_NOT_TAGGED, missing_inputs=(), interim=None,
-                       formula=None, opening=None):
+                       formula=None, opening=None, statement_label=None):
     """Provenance for a value that is not there, with a pointer to go find it.
 
     pointer is one entry from filing_pointers, or None when no filing for the
@@ -1041,9 +1048,14 @@ def missing_provenance(line_item, period_label, cik=None, pointer=None,
 
     opening replaces the whole first sentence, for a caller that knows something
     about the absence this function cannot work out from a line item's name.
+    statement_label names the statement the pointer sends the reader to, for a
+    row that is not a registry item and so has no statement of its own to look
+    up; without it such a row's message reads "Check the FY2021 10-K" and says
+    nothing about where in it to look.
     """
     pointer = pointer or {}
-    statement = line_items.statement_label_of(line_item)
+    statement = (line_items.statement_label_of(line_item)
+                 if statement_label is None else statement_label)
     form = pointer.get("form") or "10-K"
     url = filing_index_url(cik, pointer.get("accn"))
 

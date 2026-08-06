@@ -709,6 +709,81 @@ def test_the_first_year_has_no_opening_cash_and_says_so(apple):
     assert tie["cells"]["2021-09-25"].value is None
 
 
+def test_the_opening_cash_blank_blames_the_model_and_not_the_filer(apple, honeywell,
+                                                                  kroger):
+    """Breakage log row 6, and every claim the old message made was wrong.
+
+    It read "No filer tags this; Edgardly computes it as ." -- an empty formula
+    leaving a dangling full stop, because these rows are scaffold constructs and
+    line_items.DERIVATIONS has no entry to read a formula out of -- and then
+    "Cash and Equivalents is not reported for this period", which is false:
+    Apple's FY2021 cash of 34,940 million is on the same workbook's balance
+    sheet.
+
+    The blank has a flag of its own now, because what is absent is a column of
+    the model rather than a line of the filing, and none of the other three
+    missing flags can say that.
+    """
+    for spec in (apple, honeywell, kroger):
+        first = ts.historical_periods(spec)[0].label
+        opening = _cell(spec, "Cash, beginning of period", first)
+        closing = _cell(spec, "Cash, end of period", first)
+
+        for cell in (opening, closing):
+            prov = cell.provenance
+            assert cell.value is None
+            assert prov["flag"] == xbrl.FLAG_NO_PRIOR_COLUMN
+            assert "no column before" in prov["message"] or \
+                   "outside the model's window" in prov["message"]
+            assert "is not reported for this period" not in prov["message"]
+            assert "computes it as ." not in prov["message"]
+            # And it still says where in the filing the figure is.
+            assert "cash flow statement of the {} 10-K".format(first) in prov["message"]
+
+        assert "reaches back to the period before {}".format(first) in \
+            opening.provenance["message"]
+        assert "Cash, beginning of period is blank for the same reason" in \
+            closing.provenance["message"]
+
+
+def test_no_blank_anywhere_carries_an_empty_formula(apple, honeywell, kroger):
+    """The dangling full stop was one symptom of a general hole.
+
+    Every plug is a construct of the scaffold too, and Honeywell's operating
+    plug had the same empty formula in FY2021. A missing derived cell now takes
+    the arithmetic from the row itself where the registry has no rule for it.
+    """
+    checked = 0
+    for spec in (apple, honeywell, kroger):
+        for row in spec.rows:
+            for period in ts.historical_periods(spec):
+                cell = row.cells[period.key]
+                if cell.state != ts.CELL_MISSING:
+                    continue
+                message = cell.provenance["message"]
+                assert "computes it as ." not in message, \
+                    "{} {} {}".format(spec.entity, row.name, period.label)
+                assert "Computed as ." not in message
+                assert "as . " not in message
+                checked += 1
+    assert checked >= 40
+
+
+def test_honeywells_operating_plug_names_its_own_arithmetic(honeywell):
+    """The plug had no registry rule to read a formula from, and now needs none.
+
+    Its pointer also named no statement, because a plug is not a registry item
+    and had no statement to look up, so it read "Check the FY2021 10-K" where
+    every reported row beside it named the statement.
+    """
+    cell = _cell(honeywell, "Other operating items, net (plug to reported total)",
+                 "FY2021")
+
+    assert cell.provenance["flag"] == xbrl.FLAG_DERIVATION_UNAVAILABLE
+    assert "Operating Income - Gross Profit + SG&A + R&D" in cell.provenance["message"]
+    assert "income statement of the FY2021 10-K" in cell.provenance["message"]
+
+
 # ---------------------------------------------------------------------------
 # Flags that travel
 # ---------------------------------------------------------------------------

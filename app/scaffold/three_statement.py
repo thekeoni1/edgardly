@@ -1018,22 +1018,76 @@ def _fill_terms(spec, cells, period_keys):
                           flags, used)
 
 
-def _missing_flag(spec, cells, key, period_keys, tagged_ends, interim):
-    """Which kind of absence this is, and which inputs it was short of."""
-    if key in interim:
-        return xbrl.FLAG_NOT_IN_ANNUAL_REPORT, ()
+def _row_terms(spec):
+    """The arithmetic a row is filled by, or None if it has none at all."""
     if spec.role == ROLE_PLUG:
-        terms = _plug_terms(spec)
-    elif spec.terms:
-        terms = _triples(spec.terms)
-    else:
-        terms = None
+        return _plug_terms(spec)
+    if spec.terms:
+        return _triples(spec.terms)
+    return None
+
+
+def _no_prior_column_sentence(formula, first_label, inherited_from=None):
+    """The sentence for a blank the model's own window caused.
+
+    Neither of the two things the other flags say is true here. The filer did
+    tag the input: Apple's FY2021 cash of 34,940 million is on the same
+    workbook's balance sheet. And there is nothing to go and look up, because
+    what is absent is a column of this model rather than a line of the filing.
+    The old message said both at once -- "Edgardly computes it as ." with an
+    empty formula, then "Cash and Equivalents is not reported for this period"
+    about a figure two sheets away (breakage log row 6).
+    """
+    if inherited_from is None:
+        return ("Computed as {}, which reaches back to the period before {}. "
+                "That column is outside the model's window, so there is no "
+                "opening balance for it to read. The filer does report one; what "
+                "is missing here is a column of this model, not a line of the "
+                "filing".format(formula, first_label))
+    return ("Computed as {}. {} is blank for the same reason, and the reason is "
+            "the model rather than the filer: there is no column before {} to "
+            "read an opening balance from".format(formula, inherited_from,
+                                                  first_label))
+
+
+def _missing_reason(spec, cells, key, index, period_keys, tagged_ends, interim,
+                    first_label, no_prior):
+    """Which kind of absence this is, and the sentence it needs.
+
+    Returns the keyword arguments missing_provenance takes, so the decision
+    about what an absence means is made once, here, rather than split between
+    this module and the message.
+    """
+    if key in interim:
+        return {"flag": xbrl.FLAG_NOT_IN_ANNUAL_REPORT, "interim": interim[key]}
+
+    terms = _row_terms(spec)
     if terms is None:
-        flag = (xbrl.FLAG_PERIOD_UNRESOLVED if key in tagged_ends
-                else xbrl.FLAG_NOT_TAGGED)
-        return flag, ()
-    return (xbrl.FLAG_DERIVATION_UNAVAILABLE,
-            tuple(_missing_terms(cells, terms, key, period_keys)))
+        return {"flag": (xbrl.FLAG_PERIOD_UNRESOLVED if key in tagged_ends
+                         else xbrl.FLAG_NOT_TAGGED)}
+
+    short_of = tuple(_missing_terms(cells, terms, key, period_keys))
+    # A row that is a registry derivation carries the registry's own formula, so
+    # a reader sees the rule rather than this model's rendering of it. Everything
+    # else -- every plug, and the four cash flow links -- is a construct of the
+    # scaffold with no registry entry to look up, which is where the empty
+    # formula came from.
+    formula = (None if (spec.name in line_items.DERIVATIONS
+                        or spec.item in line_items.DERIVATIONS)
+               else _formula_text(terms))
+
+    off_edge = any(index + offset < 0 for _name, _sign, offset in terms)
+    inherited = next((name for name, _sign, offset in terms
+                      if (name, period_keys[index + offset]) in no_prior
+                      and 0 <= index + offset < len(period_keys)), None)
+    if off_edge or inherited is not None:
+        return {"flag": xbrl.FLAG_NO_PRIOR_COLUMN,
+                "opening": _no_prior_column_sentence(
+                    formula or _formula_text(terms), first_label,
+                    None if off_edge else inherited)}
+
+    return {"flag": xbrl.FLAG_DERIVATION_UNAVAILABLE, "missing_inputs": short_of,
+            "formula": formula}
 
 
 def _build_rows(spec_rows, deduped, cik, period_keys, labels, all_flags, pointers):
@@ -1052,8 +1106,11 @@ def _build_rows(spec_rows, deduped, cik, period_keys, labels, all_flags, pointer
         elif spec.terms:
             _fill_terms(spec, cells, period_keys)
 
-    rows = []
-    for spec in spec_rows:
+    # The holes, in the order the arithmetic ran rather than the order the page
+    # prints, so a row whose input is blank for the model's own reason can say
+    # so instead of repeating the reason as if it were its own.
+    no_prior = set()
+    for spec in _computation_order(spec_rows):
         built = cells[spec.name]
         interim = interim_cells[spec.name]
         tagged = set()
@@ -1064,21 +1121,28 @@ def _build_rows(spec_rows, deduped, cik, period_keys, labels, all_flags, pointer
         for index, key in enumerate(period_keys):
             if built.get(key) is not None:
                 continue
-            flag, short_of = _missing_flag(spec, cells, key, period_keys, tagged,
-                                           interim)
-            built[key] = Cell(None, CELL_MISSING,
-                              xbrl.missing_provenance(spec.item or spec.name,
-                                                      labels[index], cik,
-                                                      pointers.get(key), flag,
-                                                      short_of,
-                                                      interim=interim.get(key)),
-                              (), None)
+            reason = _missing_reason(spec, cells, key, index, period_keys, tagged,
+                                     interim, labels[0], no_prior)
+            if reason["flag"] == xbrl.FLAG_NO_PRIOR_COLUMN:
+                no_prior.add((spec.name, key))
+            built[key] = Cell(
+                None, CELL_MISSING,
+                xbrl.missing_provenance(
+                    spec.item or spec.name, labels[index], cik,
+                    pointers.get(key),
+                    statement_label=(None if spec.item else
+                                     line_items.STATEMENT_LABELS.get(spec.statement, "")),
+                    **reason),
+                (), None)
+
+    rows = []
+    for spec in spec_rows:
         entry = line_items.REGISTRY.get(spec.item) if spec.item else None
         unit = entry.unit if entry is not None else line_items.UNIT_DOLLAR
         rows.append(Row(spec.name, spec.item, spec.role, spec.statement, spec.label,
                         spec.note, spec.components, spec.total, spec.terms,
                         spec.optional_terms, spec.forecast, spec.forecast_note,
-                        built, unit, ()))
+                        cells[spec.name], unit, ()))
     return rows, cells
 
 
