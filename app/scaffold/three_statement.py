@@ -236,9 +236,11 @@ ASSUMPTIONS = (
     Assumption("buyback_pct_ni", "Buybacks percent of net income", "percent",
                "A payment, so it is subtracted in financing and out of equity."),
     Assumption("net_debt_issuance", "Net long-term debt issuance", "currency",
-               "In the same units as the statements, negative for a net "
-               "repayment. Drives the financing line and the debt balance from "
-               "one cell, so the two cannot disagree."),
+               "In millions, like the statements display: type 500 to issue 500 "
+               "million, and negative for a net repayment. The formulas that "
+               "read it put it back on the workbook's own scale. Drives the "
+               "financing line and the debt balance from one cell, so the two "
+               "cannot disagree."),
 )
 
 ASSUMPTION_KEYS = tuple(a.key for a in ASSUMPTIONS)

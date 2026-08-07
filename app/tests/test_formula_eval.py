@@ -54,6 +54,11 @@ KROGER = (56873, "5411")
 # of anything; they exist to make every assumption non-blank so the guards open
 # and the wiring can be read. A model that only balances for one set of inputs
 # is not balanced, so two of these are negative or unusual on purpose.
+#
+# Each is typed in the units its own input cell asks for, which is what an
+# analyst types: percents as fractions, days as days, and a dollar assumption in
+# millions. net_debt_issuance is -2,000 and means a net repayment of two billion
+# dollars, which is the same repayment this set has always carried.
 FILLED = {
     "rev_growth": 0.05,
     "gross_margin": 0.42,
@@ -69,7 +74,7 @@ FILLED = {
     "tax_rate": 0.21,
     "dividend_payout": 0.20,
     "buyback_pct_ni": 0.55,
-    "net_debt_issuance": -2_000 * MILLION,
+    "net_debt_issuance": -2_000,
 }
 
 # Balances are in whole dollars and the arithmetic behind them is exact, so a
@@ -453,6 +458,38 @@ def test_the_cash_tie_and_retained_earnings_are_exact_in_the_forecast(apple_fill
         for period in ts.forecast_periods(book.spec):
             assert abs(book.check("Cash tie", period.label)) < TOLERANCE
             assert abs(book.check("Retained earnings", period.label)) < TOLERANCE
+
+
+@pytest.mark.timeout(180)
+def test_a_currency_assumption_typed_in_millions_reaches_the_forecast_in_dollars(
+        tmp_path):
+    """The one place a display scale reaches a formula, evaluated end to end.
+
+    Every dollar row in the workbook stores whole dollars and shows millions, so
+    the input cell an analyst types into shows millions too, and the formulas
+    that consume it multiply it back. 500 typed here has to arrive as
+    500,000,000 in a statement whose other cells are hundreds of billions; if it
+    arrived as 500 the model would be out by six orders of magnitude and every
+    check would still tie, because a scale error is consistent with itself.
+    """
+    spec = _spec(APPLE)
+    path = str(tmp_path / "scaffold.xlsx")
+    excel.write_workbook(spec, path)
+    values = dict(FILLED, net_debt_issuance=500)
+    filled = _fill_assumptions(path, str(tmp_path / "filled.xlsx"), values)
+    book = Evaluated(spec, filled, _evaluate(filled))
+
+    prior = book.at("Balance Sheet", "Long-Term Debt", "FY2025")
+    assert book.at("Balance Sheet", "Long-Term Debt", "FY2026E") == pytest.approx(
+        prior + 500 * MILLION, abs=TOLERANCE)
+    assert book.at("Cash Flow",
+                   "Other financing activities (plug to reported total)",
+                   "FY2026E") == pytest.approx(500 * MILLION, abs=TOLERANCE)
+    # And the workbook still ties with a currency assumption in it, which is
+    # what says the multiplication reached both cells that read the assumption
+    # rather than only the one this test looked at first.
+    for period in ts.forecast_periods(spec):
+        assert abs(book.check("Balance check", period.label)) < TOLERANCE
 
 
 @pytest.mark.timeout(180)

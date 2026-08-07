@@ -473,6 +473,241 @@ def test_the_checks_sheet_reports_coverage_for_every_balance_sheet_section(
 
 
 # ---------------------------------------------------------------------------
+# Presentation
+#
+# Everything here is about how a cell is displayed and nothing here is about
+# what it holds. The rule the session that wrote them worked to is that the
+# workbook could be regenerated and evaluate to the same numbers cell for cell,
+# so a test in this block that could only pass by moving a value would be a test
+# of the wrong thing.
+# ---------------------------------------------------------------------------
+
+def test_every_dollar_and_per_share_format_reserves_the_bracket_width(apple_book):
+    """The alignment underscore, without which digits jump a character on sign.
+
+    A negative prints inside brackets and a positive does not, so a positive
+    needs the width of the closing bracket reserved after it or a column of
+    numbers has its units column in two places.
+    """
+    for number_format in (excel.FORMAT_DOLLAR, excel.FORMAT_DOLLAR_MILLIONS,
+                          excel.FORMAT_EPS, excel.FORMAT_SHARES_MILLIONS):
+        positive, negative = number_format.split(";")
+        assert positive.endswith("_)"), number_format
+        assert negative.startswith("(") and negative.endswith(")"), number_format
+
+    seen = set()
+    for title in ("Income Statement", "Balance Sheet", "Cash Flow", "Schedules"):
+        sheet = apple_book[title]
+        for row in range(excel.DEFAULT_LAYOUT.first_data_row, sheet.max_row + 1):
+            for column in range(excel.DEFAULT_LAYOUT.first_data_column,
+                                sheet.max_column + 1):
+                seen.add(sheet.cell(row=row, column=column).number_format)
+    assert seen <= {"General", excel.FORMAT_DOLLAR_MILLIONS, excel.FORMAT_EPS,
+                    excel.FORMAT_SHARES_MILLIONS}
+
+
+def test_dollars_and_shares_display_in_millions_and_per_share_amounts_do_not(
+        apple_book):
+    """Scaled in the format, so the cell still holds what the filer tagged."""
+    income = apple_book["Income Statement"]
+    revenue = _cell(income, "Revenue", "FY2023")
+
+    assert revenue.number_format == excel.FORMAT_DOLLAR_MILLIONS
+    assert revenue.number_format.count(",,") == 2      # once per sign section
+    assert revenue.value == 383_285 * MILLION          # and the value did not move
+
+    assert _cell(income, "Shares Outstanding (Diluted)",
+                 "FY2023").number_format == excel.FORMAT_SHARES_MILLIONS
+    assert _cell(income, "EPS Diluted", "FY2023").number_format == excel.FORMAT_EPS
+    assert ",," not in excel.FORMAT_EPS
+
+
+def test_a_check_row_keeps_whole_dollars_so_a_small_residual_stays_visible(
+        apple_book):
+    """The exception the millions decision names, and the reason for it.
+
+    A residual of a few thousand dollars displayed in millions rounds to a
+    displayed zero, which would make a broken check look like a passing one.
+    """
+    sheet = apple_book["Checks"]
+    row = _find_row(sheet, "Balance check (assets less liabilities and equity)")
+    cell = sheet.cell(row=row, column=_column_for(sheet, "FY2025"))
+
+    assert cell.number_format == excel.FORMAT_DOLLAR
+    assert ",," not in cell.number_format
+
+
+def test_each_sheet_says_what_scale_it_is_in(apple_book):
+    """In the header region, where a reader of any model looks for it."""
+    row = excel.DEFAULT_LAYOUT.title_row + 1
+    column = excel.DEFAULT_LAYOUT.label_column
+
+    for title in ("Income Statement", "Balance Sheet", "Cash Flow"):
+        note = apple_book[title].cell(row=row, column=column).value
+        assert "$ in millions" in note
+        assert "Share counts in millions" in note
+    assert "$ in millions" in apple_book["Schedules"].cell(row=row,
+                                                           column=column).value
+    assert "whole dollars" in apple_book["Checks"].cell(row=row, column=column).value
+    assert "500 means 500 million" in apple_book["Assumptions"].cell(
+        row=row, column=column).value
+
+
+def test_a_formula_that_reads_another_sheet_is_green(apple_book):
+    """The convention's one colour about where a number comes from.
+
+    Blue still means the filer reported it and black still means this sheet
+    computed it; green means the cell went to another sheet for it, which is
+    the thing a reader most needs to see before they trust a number.
+    """
+    cash_flow = apple_book["Cash Flow"]
+    linked = _cell(cash_flow, "Net income (from the income statement)", "FY2023")
+    same_sheet = _cell(cash_flow, "Cash, end of period", "FY2023")
+    reported = _cell(apple_book["Income Statement"], "Revenue", "FY2023")
+    missing = _cell(apple_book["Balance Sheet"], "Goodwill", "FY2023")
+
+    assert "!" in linked.value
+    assert linked.font.color.rgb.endswith(excel.COLOR_LINK)
+    assert "!" not in same_sheet.value
+    assert same_sheet.font.color.rgb.endswith(excel.COLOR_DERIVED)
+    assert reported.font.color.rgb.endswith(excel.COLOR_REPORTED)
+    assert missing.font.color.rgb.endswith(excel.COLOR_MISSING)
+    assert missing.font.italic
+
+
+def test_the_colour_is_decided_by_the_formula_and_not_by_a_list_of_rows(apple_book):
+    """Every cell that reaches off its sheet, not the six the plan happened to name.
+
+    A list would go stale the first time a row was added and the colour would
+    then be wrong about the one cell a reader most needs it to be right about.
+    """
+    for title in ("Income Statement", "Balance Sheet", "Cash Flow", "Schedules",
+                  "Checks"):
+        sheet = apple_book[title]
+        for row in sheet.iter_rows(min_row=excel.DEFAULT_LAYOUT.first_data_row):
+            for cell in row:
+                if not isinstance(cell.value, str) or not cell.value.startswith("="):
+                    continue
+                expected = (excel.COLOR_LINK if "!" in cell.value
+                            else excel.COLOR_DERIVED)
+                assert cell.font.color.rgb.endswith(expected), (
+                    title, cell.coordinate, cell.value)
+
+
+def test_a_detail_row_is_indented_and_its_label_is_not_changed(apple_spec, apple_book):
+    """Indented by openpyxl, not by spaces, so a downstream read is unchanged."""
+    sheet = apple_book["Balance Sheet"]
+    subtotal = sheet.cell(row=_find_row(sheet, "Total Current Assets"), column=1)
+    detail = sheet.cell(row=_find_row(sheet, "Accounts Receivable"), column=1)
+
+    assert subtotal.alignment.indent == 0
+    assert detail.alignment.indent == 1
+
+    for code, sheet_name, _block in ts.STATEMENT_BLOCKS:
+        written = apple_book[sheet_name]
+        for row in ts.rows_for(apple_spec, code):
+            label = written.cell(row=_find_row(written, row.label), column=1).value
+            assert label == row.label
+            assert label == label.strip()
+
+
+def test_a_subtotal_is_ruled_off_and_each_statement_is_closed_with_a_double(
+        apple_book):
+    """Single top on a subtotal, double bottom on the row the statement ends on."""
+    expected_bottom = {"Income Statement": "Net Income",
+                       "Balance Sheet": "Total Equity",
+                       "Cash Flow": "Cash, end of period"}
+    for title, bottom_label in expected_bottom.items():
+        sheet = apple_book[title]
+        row = _find_row(sheet, bottom_label)
+        for column in (1, _column_for(sheet, "FY2025")):
+            border = sheet.cell(row=row, column=column).border
+            assert border.top.style == "thin", (title, column)
+            assert border.bottom.style == "double", (title, column)
+
+    sheet = apple_book["Balance Sheet"]
+    ruled = sheet.cell(row=_find_row(sheet, "Total Assets"), column=1).border
+    assert ruled.top.style == "thin"
+    assert ruled.bottom is None or ruled.bottom.style is None
+
+
+def test_the_memo_rows_after_a_bottom_line_are_not_ruled_off(apple_book):
+    """Earnings per share sits below net income and is not part of the total.
+
+    The double rule marks where a statement ends, so it has to fall on the
+    bottom line rather than on the last row that happens to be written.
+    """
+    income = apple_book["Income Statement"]
+    for label in ("EBITDA", "EPS Diluted", "Shares Outstanding (Diluted)"):
+        border = income.cell(row=_find_row(income, label), column=1).border
+        assert border.top is None or border.top.style is None, label
+        assert border.bottom is None or border.bottom.style is None, label
+
+    balance = apple_book["Balance Sheet"]
+    debt = balance.cell(row=_find_row(balance, "Total Debt"), column=1).border
+    assert debt.bottom is None or debt.bottom.style is None
+
+
+# ---------------------------------------------------------------------------
+# The currency assumption, typed in millions
+# ---------------------------------------------------------------------------
+
+def test_a_currency_assumption_says_it_is_in_millions_and_is_not_scaled_again(
+        apple_book):
+    """The input holds millions, so its own format must not divide by a million."""
+    sheet = apple_book["Assumptions"]
+    row = _find_row(sheet, "Net long-term debt issuance ($ in millions)")
+    cell = sheet.cell(row=row, column=excel.DEFAULT_LAYOUT.first_data_column)
+
+    assert cell.value is None
+    assert cell.number_format == excel.FORMAT_DOLLAR
+    assert ",," not in cell.number_format
+
+
+def test_a_percent_or_days_assumption_is_labelled_and_formatted_as_it_was(apple_book):
+    """Only currency has a scale to get wrong, so only currency changed."""
+    sheet = apple_book["Assumptions"]
+    for label, number_format in (("Revenue growth", excel.FORMAT_PERCENT),
+                                 ("Days sales outstanding", excel.FORMAT_DAYS)):
+        row = _find_row(sheet, label)
+        assert sheet.cell(row=row, column=excel.DEFAULT_LAYOUT.first_data_column
+                          ).number_format == number_format
+
+
+def test_every_formula_that_consumes_a_currency_assumption_multiplies_it_back(
+        apple_book, apple_spec):
+    """The arithmetic downstream stays in raw dollars, like the rest of the file."""
+    currency = [a for a in apple_spec.assumptions
+                if a.unit in excel.ASSUMPTION_SCALE]
+    assert currency, "no currency assumption to check"
+
+    found = 0
+    for title in ("Income Statement", "Balance Sheet", "Cash Flow", "Schedules"):
+        sheet = apple_book[title]
+        for row in sheet.iter_rows(min_row=excel.DEFAULT_LAYOUT.first_data_row):
+            for cell in row:
+                if not isinstance(cell.value, str):
+                    continue
+                for assumption in currency:
+                    for index in range(len(ts.forecast_periods(apple_spec))):
+                        name = excel.assumption_name(assumption.key, index)
+                        if name not in cell.value:
+                            continue
+                        assert "({}*1000000)".format(name) in cell.value, cell.value
+                        found += 1
+    assert found >= 2      # the debt balance and the financing line, at least
+
+
+def test_a_percent_assumption_is_never_multiplied(apple_book):
+    """A scale applied where there is none is the same bug in the other direction."""
+    sheet = apple_book["Income Statement"]
+    cell = _cell(sheet, "Revenue", "FY2026E")
+
+    assert "asm_rev_growth_y1" in cell.value
+    assert "asm_rev_growth_y1*" not in cell.value
+
+
+# ---------------------------------------------------------------------------
 # Source tags
 # ---------------------------------------------------------------------------
 

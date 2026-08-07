@@ -33,6 +33,17 @@ Assumptions sheet computes to empty forecasts rather than to zeros or errors.
 first data column and the header rows all come from a Layout, and the number of
 columns comes from the spec. A caller that wants a different arrangement passes
 a different Layout rather than editing this file.
+
+**Presentation never changes a number.** The workbook is formatted to the
+conventions a model is read by -- millions in the number format, indented
+detail under ruled-off subtotals, and a colour per kind of cell -- and every one
+of those is a property of how a cell is displayed rather than of what it holds.
+A dollar cell stores the whole dollars the filer tagged and shows millions,
+which is what keeps a provenance comment true, a check exact to the dollar and a
+cell a reader copies out worth what the filing says it is. The one place a scale
+reaches a formula is the currency assumption, which is typed in millions and
+multiplied back where it is consumed, and it is written down here because it is
+the exception.
 """
 
 from collections import namedtuple
@@ -80,11 +91,15 @@ _STATEMENT_SHEET = {
 
 BASE_FONT = "Aptos Narrow"
 
-# Blue for a value the filer reported, black for one this workbook computes.
-# The convention is older than v2 and the rest of the app already uses it; what
-# changed in Phase 1 is that it now means what it says.
+# Blue for a value the filer reported, black for one this workbook computes,
+# green for one it reads off another sheet. The first two are older than v2 and
+# the rest of the app already uses them; what changed in Phase 1 is that they
+# now mean what they say, and what changed in 6c is the third, which is the
+# standard convention's one colour about where a number comes from rather than
+# what kind of number it is.
 COLOR_REPORTED = "0066CC"
 COLOR_DERIVED = "000000"
+COLOR_LINK = "008000"
 COLOR_MISSING = "AAAAAA"
 COLOR_HEADER = "003366"
 COLOR_NOTE = "666666"
@@ -96,20 +111,50 @@ FILL_FLAG = "FFF3CD"
 FILL_GREEN = "D4EDDA"
 FILL_RED = "F8D7DA"
 
-FORMAT_DOLLAR = "#,##0;(#,##0)"
-FORMAT_EPS = "0.00;(0.00)"
-FORMAT_SHARES = "#,##0"
+# Every format ends the positive section with an underscore and a bracket, which
+# reserves the width of the closing bracket a negative spends, so a column of
+# numbers has its digits in one place whatever their signs. The trailing pair of
+# commas in the scaled formats divides the display by a million and leaves the
+# stored value alone: the cell still holds the dollars the filer tagged, which
+# is what keeps a provenance comment true and a check exact.
+FORMAT_DOLLAR = "#,##0_);(#,##0)"
+FORMAT_DOLLAR_MILLIONS = "#,##0,,_);(#,##0,,)"
+FORMAT_EPS = "0.00_);(0.00)"
+FORMAT_SHARES_MILLIONS = "#,##0,,_);(#,##0,,)"
 FORMAT_PERCENT = "0.0%"
 FORMAT_DAYS = "0.0"
 
 _UNIT_FORMAT = {
-    line_items.UNIT_DOLLAR: FORMAT_DOLLAR,
+    line_items.UNIT_DOLLAR: FORMAT_DOLLAR_MILLIONS,
     line_items.UNIT_EPS: FORMAT_EPS,
-    line_items.UNIT_SHARES: FORMAT_SHARES,
+    line_items.UNIT_SHARES: FORMAT_SHARES_MILLIONS,
 }
 
+# What one unit of a currency assumption is worth in the units the statements
+# are stored in. The input cell is labelled and formatted in millions so the
+# analyst types 500 and means 500 million, and every formula that consumes the
+# assumption multiplies it back, so the arithmetic downstream is in raw dollars
+# like the rest of the workbook. Percent and days have no scale to get wrong.
+ASSUMPTION_SCALE = {"currency": 1_000_000}
+
+# The currency input holds millions already, so its format must not scale again.
 _ASSUMPTION_FORMAT = {"percent": FORMAT_PERCENT, "days": FORMAT_DAYS,
                       "currency": FORMAT_DOLLAR}
+
+# What each sheet says about its own scale, in the header region under the
+# title. The Checks sheet is the exception the millions decision names: a check
+# exists to show a residual, and a residual of a few thousand dollars shown in
+# millions is a displayed zero.
+UNITS_NOTE_STATEMENT = ("$ in millions, except per share amounts. Share counts in "
+                        "millions. Every cell stores the whole units the filer "
+                        "reported; the scale is in the number format only.")
+UNITS_NOTE_SCHEDULES = ("$ in millions. Every cell stores the whole units the filer "
+                        "reported; the scale is in the number format only.")
+UNITS_NOTE_CHECKS = ("$ in whole dollars, deliberately: a check is a residual, and a "
+                     "residual of a few thousand dollars shown in millions is a "
+                     "displayed zero. Coverage is a percentage.")
+UNITS_NOTE_ASSUMPTIONS = ("Percents as percents and days as days. A dollar assumption "
+                          "is typed in millions: 500 means 500 million.")
 
 # A check is green when it is this close to zero. The scale is dollars, and the
 # model's arithmetic on reported dollars is exact, so anything above a dollar is
@@ -122,13 +167,63 @@ def _openpyxl():
         import openpyxl
         from openpyxl.comments import Comment
         from openpyxl.formatting.rule import FormulaRule
-        from openpyxl.styles import Alignment, Font, PatternFill
+        from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
         from openpyxl.utils import get_column_letter
         from openpyxl.workbook.defined_name import DefinedName
     except ImportError:  # pragma: no cover - the app cannot export without it
         raise RuntimeError("openpyxl is required: pip install openpyxl")
-    return (openpyxl, Comment, FormulaRule, Alignment, Font, PatternFill,
-            get_column_letter, DefinedName)
+    return (openpyxl, Comment, FormulaRule, Alignment, Border, Font, PatternFill,
+            Side, get_column_letter, DefinedName)
+
+
+def _font(color=COLOR_DERIVED, size=11, bold=False, italic=False):
+    """Every font in the workbook, so the family and size are decided once."""
+    from openpyxl.styles import Font
+    return Font(name=BASE_FONT, size=size, bold=bold, italic=italic, color=color)
+
+
+def _indent(level):
+    from openpyxl.styles import Alignment
+    return Alignment(indent=level)
+
+
+def reads_another_sheet(formula):
+    """Whether a rendered formula reaches off the sheet it is written on.
+
+    A sheet qualifier is the only thing that puts an exclamation mark in a
+    formula this module writes, so this is the whole test. It decides the green
+    font rather than a list of the six rows that link, because a list goes stale
+    the moment a row is added and the colour would then be lying about the one
+    cell a reader most needs it to be right about.
+    """
+    return "!" in (formula or "")
+
+
+def _value_font(state, formula=None, italic=False):
+    """The colour convention, in one place: green beats blue beats black."""
+    if state == ts.CELL_MISSING:
+        return _font(color=COLOR_MISSING, italic=True)
+    if reads_another_sheet(formula):
+        return _font(color=COLOR_LINK, italic=italic)
+    if state == ts.CELL_REPORTED:
+        return _font(color=COLOR_REPORTED, italic=italic)
+    return _font(color=COLOR_DERIVED, italic=italic)
+
+
+def _rule_off(worksheet, layout, row_number, columns, double=False):
+    """A single top border on a subtotal, and a double bottom to close a statement.
+
+    Applied to the label column and every data column, so the rule runs the
+    width of the row a reader is reading rather than stopping under the numbers.
+    """
+    from openpyxl.styles import Border, Side
+
+    border = Border(top=Side(style="thin"),
+                    bottom=Side(style="double") if double else None)
+    for offset in range(-1, columns):
+        column = (layout.label_column if offset < 0
+                  else layout.first_data_column + offset)
+        worksheet.cell(row=row_number, column=column).border = border
 
 
 # ---------------------------------------------------------------------------
@@ -207,7 +302,11 @@ def render(expr, context):
     if kind == "asm":
         if context.year_index is None:
             return None
-        return assumption_name(expr[1], context.year_index)
+        name = assumption_name(expr[1], context.year_index)
+        # The input cell holds the units the analyst types; the formula puts it
+        # back on the workbook's own scale before anything else uses it.
+        scale = ASSUMPTION_SCALE.get(ts.ASSUMPTIONS_BY_KEY[expr[1]].unit)
+        return name if scale is None else "({}*{})".format(name, _number(scale))
 
     if kind == "ref":
         _tag, row_name, offset = expr
@@ -339,12 +438,12 @@ def define_named_input(workbook, worksheet, name, coordinate, note=""):
     defined name is one of the few things that makes Excel offer to repair a
     file, and repairing strips content.
     """
-    from openpyxl.styles import Font, PatternFill
+    from openpyxl.styles import PatternFill
     from openpyxl.workbook.defined_name import DefinedName
 
     cell = worksheet[coordinate]
     cell.value = None
-    cell.font = Font(name=BASE_FONT, size=11, color=COLOR_REPORTED)
+    cell.font = _font(color=COLOR_REPORTED)
     cell.fill = PatternFill("solid", fgColor=FILL_INPUT)
     attr = "{}!${}${}".format(_quote(worksheet.title),
                               cell.column_letter, cell.row)
@@ -362,19 +461,24 @@ def write_statement_block(worksheet, layout, spec, rows, placements, columns,
     Returns the next free row. Called once per statement, and by Phase 3 or 4
     for whatever block they need, which is why it takes its rows rather than
     reading them off the spec itself.
-    """
-    from openpyxl.styles import Font, PatternFill
 
+    A detail row is indented under the subtotal it belongs to with openpyxl's
+    own indent rather than with spaces in front of the label, so the label a
+    reader sees is indented and the label a tooltip, a test or a downstream read
+    gets is the string the model holds.
+    """
     historical = ts.historical_periods(spec)
     forecast = ts.forecast_periods(spec)
     row_number = start_row
+    width = len(historical) + len(forecast)
+    bottom_line = final_total_row(rows)
 
     for row in rows:
         label_cell = worksheet.cell(row=row_number, column=layout.label_column)
         label_cell.value = row.label
-        label_cell.font = Font(name=BASE_FONT, size=11,
-                               bold=row.role == ts.ROLE_SUBTOTAL,
-                               italic=row.role in (ts.ROLE_PLUG, ts.ROLE_MEMO))
+        label_cell.font = _font(bold=row.role == ts.ROLE_SUBTOTAL,
+                                italic=row.role in (ts.ROLE_PLUG, ts.ROLE_MEMO))
+        label_cell.alignment = _indent(0 if row.role == ts.ROLE_SUBTOTAL else 1)
         _attach_row_note(label_cell, row)
 
         placement = placements[row.name]
@@ -387,8 +491,26 @@ def write_statement_block(worksheet, layout, spec, rows, placements, columns,
             column = layout.first_data_column + index
             _write_forecast_cell(worksheet, row, row_number, column, index, offset,
                                  placements, columns, layout)
+        if row.role == ts.ROLE_SUBTOTAL or row.name == bottom_line:
+            _rule_off(worksheet, layout, row_number, width,
+                      double=row.name == bottom_line)
         row_number += 1
     return row_number
+
+
+def final_total_row(rows):
+    """The row a statement ends on, which is the one that gets the double rule.
+
+    The last row that is a subtotal or a derivation, so the memo lines a
+    statement carries after its bottom line -- earnings per share, share counts,
+    EBITDA, total debt -- do not take the rule off it. Read off the rows rather
+    than named per statement, so a block Phase 3 or 4 passes in is closed by the
+    same rule this one is.
+    """
+    for row in reversed(list(rows)):
+        if row.role in (ts.ROLE_SUBTOTAL, ts.ROLE_DERIVED):
+            return row.name
+    return None
 
 
 def _attach_row_note(cell, row):
@@ -413,15 +535,15 @@ def _attach_row_note(cell, row):
 def _write_historical_cell(worksheet, row, period, row_number, column, placements,
                            columns, layout):
     """One historical cell: the filer's number, this workbook's arithmetic, or a hole."""
-    from openpyxl.styles import Font, PatternFill
+    from openpyxl.styles import PatternFill
 
     cell = worksheet.cell(row=row_number, column=column)
     model_cell = row.cells[period.key]
-    number_format = _UNIT_FORMAT.get(row.unit, FORMAT_DOLLAR)
+    number_format = _UNIT_FORMAT.get(row.unit, FORMAT_DOLLAR_MILLIONS)
 
     if model_cell.state == ts.CELL_REPORTED:
         cell.value = model_cell.value
-        cell.font = Font(name=BASE_FONT, size=11, color=COLOR_REPORTED)
+        cell.font = _value_font(ts.CELL_REPORTED)
     elif model_cell.state == ts.CELL_DERIVED:
         context = FormulaContext(placements, columns, worksheet.title,
                                  column - layout.first_data_column)
@@ -431,11 +553,11 @@ def _write_historical_cell(worksheet, row, period, row_number, column, placement
         # be rendered means a reference off the edge of the history rather than
         # a disagreement about the number.
         cell.value = "={}".format(body) if body else model_cell.value
-        cell.font = Font(name=BASE_FONT, size=11, color=COLOR_DERIVED,
-                         italic=row.role == ts.ROLE_PLUG)
+        cell.font = _value_font(ts.CELL_DERIVED, body,
+                                italic=row.role == ts.ROLE_PLUG)
     else:
         cell.value = None
-        cell.font = Font(name=BASE_FONT, size=11, color=COLOR_MISSING, italic=True)
+        cell.font = _value_font(ts.CELL_MISSING)
 
     cell.number_format = number_format
     if model_cell.flags:
@@ -446,7 +568,7 @@ def _write_historical_cell(worksheet, row, period, row_number, column, placement
 
 def write_forecast_formula(worksheet, expr, row_number, column, column_index,
                            year_index, placements, columns, sheet_title,
-                           number_format=FORMAT_DOLLAR):
+                           number_format=FORMAT_DOLLAR_MILLIONS):
     """One forecast cell: guarded arithmetic, or nothing at all.
 
     Nothing at all is a real answer here. A row with no assumption behind it and
@@ -454,18 +576,16 @@ def write_forecast_formula(worksheet, expr, row_number, column, column_index,
     zero to the sums above it, which is right for a line the filer's statements
     do not carry and honest for one this tool cannot model.
     """
-    from openpyxl.styles import Font
-
     cell = worksheet.cell(row=row_number, column=column)
     context = FormulaContext(placements, columns, sheet_title, column_index,
                              year_index)
     body = render(expr, context) if expr is not None else None
     if body is None:
         cell.value = None
-        cell.font = Font(name=BASE_FONT, size=11, color=COLOR_MISSING, italic=True)
+        cell.font = _value_font(ts.CELL_MISSING)
         return cell
     cell.value = guarded(body, year_index)
-    cell.font = Font(name=BASE_FONT, size=11, color=COLOR_DERIVED)
+    cell.font = _value_font(ts.CELL_DERIVED, body)
     cell.number_format = number_format
     return cell
 
@@ -475,7 +595,7 @@ def _write_forecast_cell(worksheet, row, row_number, column, column_index,
     return write_forecast_formula(
         worksheet, row.forecast, row_number, column, column_index, year_index,
         placements, columns, worksheet.title,
-        _UNIT_FORMAT.get(row.unit, FORMAT_DOLLAR))
+        _UNIT_FORMAT.get(row.unit, FORMAT_DOLLAR_MILLIONS))
 
 
 def write_check_row(worksheet, layout, spec, check, placements, columns, row_number):
@@ -484,9 +604,14 @@ def write_check_row(worksheet, layout, spec, check, placements, columns, row_num
     A check that this filer's data disarmed is written without the colouring and
     with the reason in its comment. Colouring a zero green when the zero was
     constructed rather than found is the one thing a checks sheet must not do.
+
+    These are the rows that keep the unscaled dollar format. Everything else in
+    the workbook displays in millions, and a residual of a few thousand dollars
+    displayed in millions is a zero, which would make a broken check look like a
+    passing one.
     """
     from openpyxl.formatting.rule import FormulaRule
-    from openpyxl.styles import Font, PatternFill
+    from openpyxl.styles import PatternFill
     from openpyxl.utils import get_column_letter
 
     historical = ts.historical_periods(spec)
@@ -494,7 +619,7 @@ def write_check_row(worksheet, layout, spec, check, placements, columns, row_num
 
     label = worksheet.cell(row=row_number, column=layout.label_column)
     label.value = check["name"]
-    label.font = Font(name=BASE_FONT, size=11, bold=True)
+    label.font = _font(bold=True)
     _attach_check_note(label, check)
 
     written = []
@@ -504,17 +629,15 @@ def write_check_row(worksheet, layout, spec, check, placements, columns, row_num
         cell.number_format = FORMAT_DOLLAR
         model_cell = check["cells"][period.key]
         if model_cell.value is None:
-            cell.font = Font(name=BASE_FONT, size=11, color=COLOR_MISSING,
-                             italic=True)
+            cell.font = _value_font(ts.CELL_MISSING)
             continue
         context = FormulaContext(placements, columns, worksheet.title, index)
         body = render_terms(check["terms"], context)
         if body is None:
-            cell.font = Font(name=BASE_FONT, size=11, color=COLOR_MISSING,
-                             italic=True)
+            cell.font = _value_font(ts.CELL_MISSING)
             continue
         cell.value = "={}".format(body)
-        cell.font = Font(name=BASE_FONT, size=11)
+        cell.font = _value_font(ts.CELL_DERIVED, body)
         written.append(cell.coordinate)
 
     for offset, _period in enumerate(forecast):
@@ -527,7 +650,7 @@ def write_check_row(worksheet, layout, spec, check, placements, columns, row_num
         if body is None:
             continue
         cell.value = guarded(body, offset)
-        cell.font = Font(name=BASE_FONT, size=11)
+        cell.font = _value_font(ts.CELL_DERIVED, body)
         written.append(cell.coordinate)
 
     if check["tie"] and written:
@@ -559,29 +682,26 @@ def write_coverage_row(worksheet, layout, spec, entry, placements, columns,
     over an empty cell is a division by zero, and Excel showing #DIV/0! across
     a Checks sheet is the repair-dialog kind of damage in slower motion.
     """
-    from openpyxl.styles import Font
-
     label = worksheet.cell(row=row_number, column=layout.label_column)
     label.value = entry["name"]
-    label.font = Font(name=BASE_FONT, size=11)
+    label.font = _font()
+    label.alignment = _indent(1)
 
     for index, period in enumerate(ts.historical_periods(spec)):
         column = layout.first_data_column + index
         cell = worksheet.cell(row=row_number, column=column)
         cell.number_format = FORMAT_PERCENT
         if entry["cells"].get(period.key) is None:
-            cell.font = Font(name=BASE_FONT, size=11, color=COLOR_MISSING,
-                             italic=True)
+            cell.font = _value_font(ts.CELL_MISSING)
             continue
         context = FormulaContext(placements, columns, worksheet.title, index)
         total = render(ts.ref(entry["total_row"]), context)
         plug = render(ts.ref(entry["plug_row"]), context)
         if total is None or plug is None:
-            cell.font = Font(name=BASE_FONT, size=11, color=COLOR_MISSING,
-                             italic=True)
+            cell.font = _value_font(ts.CELL_MISSING)
             continue
         cell.value = "=({}-{})/{}".format(total, plug, total)
-        cell.font = Font(name=BASE_FONT, size=11)
+        cell.font = _value_font(ts.CELL_DERIVED, total)
     return row_number + 1
 
 
@@ -621,24 +741,37 @@ def _placements(layout, spec):
     return placements
 
 
-def _write_header(worksheet, layout, spec, subtitle):
-    from openpyxl.styles import Alignment, Font, PatternFill
+def _write_header(worksheet, layout, spec, subtitle, units_note):
+    """Title, scale note and column headings, in the rows the layout reserves.
+
+    The scale note goes between the title and the column headings, which is
+    where a reader of any model looks for it, and it is written only if the
+    layout leaves a row there. It says what the number format does and what the
+    cell still holds, because those are now two different things and a reader
+    who copies a cell out needs to know which one they are getting.
+    """
+    from openpyxl.styles import Alignment, PatternFill
     from openpyxl.utils import get_column_letter
 
     title = worksheet.cell(row=layout.title_row, column=layout.label_column)
     title.value = "{} -- {}".format(spec.entity, subtitle)
-    title.font = Font(name=BASE_FONT, size=12, bold=True, color=COLOR_HEADER)
+    title.font = _font(size=12, bold=True, color=COLOR_HEADER)
+
+    if units_note and layout.title_row + 1 < layout.header_row:
+        note = worksheet.cell(row=layout.title_row + 1, column=layout.label_column)
+        note.value = units_note
+        note.font = _font(size=10, italic=True, color=COLOR_NOTE)
 
     header = worksheet.cell(row=layout.header_row, column=layout.label_column)
-    header.value = "In whole units, as reported"
-    header.font = Font(name=BASE_FONT, size=11, bold=True, color="FFFFFF")
+    header.value = "Line item"
+    header.font = _font(bold=True, color="FFFFFF")
     header.fill = PatternFill("solid", fgColor=FILL_HEADER)
 
     for index, period in enumerate(spec.periods):
         cell = worksheet.cell(row=layout.header_row,
                               column=layout.first_data_column + index)
         cell.value = period.label
-        cell.font = Font(name=BASE_FONT, size=11, bold=True, color="FFFFFF")
+        cell.font = _font(bold=True, color="FFFFFF")
         cell.fill = PatternFill("solid", fgColor=FILL_HEADER)
         cell.alignment = Alignment(horizontal="right")
         worksheet.column_dimensions[
@@ -650,7 +783,7 @@ def _write_header(worksheet, layout, spec, subtitle):
 
 def _write_assumptions(workbook, layout, spec):
     """The blank sheet the analyst fills, and the readiness row that reads it."""
-    from openpyxl.styles import Alignment, Font, PatternFill
+    from openpyxl.styles import Alignment, PatternFill
     from openpyxl.utils import get_column_letter
     from openpyxl.workbook.defined_name import DefinedName
 
@@ -659,17 +792,22 @@ def _write_assumptions(workbook, layout, spec):
 
     title = worksheet.cell(row=layout.title_row, column=layout.label_column)
     title.value = "{} -- assumptions. Every cell is yours to fill.".format(spec.entity)
-    title.font = Font(name=BASE_FONT, size=12, bold=True, color=COLOR_HEADER)
+    title.font = _font(size=12, bold=True, color=COLOR_HEADER)
+
+    if layout.title_row + 1 < layout.header_row:
+        note = worksheet.cell(row=layout.title_row + 1, column=layout.label_column)
+        note.value = UNITS_NOTE_ASSUMPTIONS
+        note.font = _font(size=10, italic=True, color=COLOR_NOTE)
 
     header = worksheet.cell(row=layout.header_row, column=layout.label_column)
     header.value = "Assumption"
-    header.font = Font(name=BASE_FONT, size=11, bold=True, color="FFFFFF")
+    header.font = _font(bold=True, color="FFFFFF")
     header.fill = PatternFill("solid", fgColor=FILL_HEADER)
     for index, period in enumerate(forecast):
         cell = worksheet.cell(row=layout.header_row,
                               column=layout.first_data_column + index)
         cell.value = period.label
-        cell.font = Font(name=BASE_FONT, size=11, bold=True, color="FFFFFF")
+        cell.font = _font(bold=True, color="FFFFFF")
         cell.fill = PatternFill("solid", fgColor=FILL_HEADER)
         cell.alignment = Alignment(horizontal="right")
         worksheet.column_dimensions[
@@ -679,8 +817,9 @@ def _write_assumptions(workbook, layout, spec):
     row_number = layout.first_data_row
     for assumption in spec.assumptions:
         label = worksheet.cell(row=row_number, column=layout.label_column)
-        label.value = assumption.label
-        label.font = Font(name=BASE_FONT, size=11)
+        label.value = assumption_label(assumption)
+        label.font = _font()
+        label.alignment = _indent(1)
         if assumption.note:
             from openpyxl.comments import Comment
             label.comment = Comment(assumption.note, "Edgardly")
@@ -697,7 +836,7 @@ def _write_assumptions(workbook, layout, spec):
     row_number += 1
     label = worksheet.cell(row=row_number, column=layout.label_column)
     label.value = "Year ready to model?"
-    label.font = Font(name=BASE_FONT, size=11, bold=True)
+    label.font = _font(bold=True)
     from openpyxl.comments import Comment
     label.comment = Comment(
         "True only when every assumption for this year and every earlier year is "
@@ -715,12 +854,26 @@ def _write_assumptions(workbook, layout, spec):
         if index:
             body = "IF({},{},FALSE)".format(ready_name(index - 1), body)
         cell.value = "={}".format(body)
-        cell.font = Font(name=BASE_FONT, size=11, bold=True)
+        cell.font = _font(bold=True)
         attr = "{}!${}${}".format(_quote(worksheet.title),
                                   get_column_letter(column), row_number)
         workbook.defined_names.add(DefinedName(ready_name(index), attr_text=attr))
+    _rule_off(worksheet, layout, row_number, len(forecast))
 
     return worksheet
+
+
+def assumption_label(assumption):
+    """The label on the input row, which has to say what units to type.
+
+    An assumption in dollars is typed in millions, and a cell that does not say
+    so beside statements displaying millions is how a model acquires an
+    order-of-magnitude error nobody sees. The model spec's label is untouched;
+    this is what the sheet shows.
+    """
+    if assumption.unit in ASSUMPTION_SCALE:
+        return "{} ($ in millions)".format(assumption.label)
+    return assumption.label
 
 
 def _write_statements(workbook, layout, spec, placements, columns):
@@ -728,7 +881,7 @@ def _write_statements(workbook, layout, spec, placements, columns):
     for code, subtitle, _block in ts.STATEMENT_BLOCKS:
         worksheet = workbook.create_sheet(getattr(layout.sheets,
                                                   _STATEMENT_SHEET[code]))
-        _write_header(worksheet, layout, spec, subtitle)
+        _write_header(worksheet, layout, spec, subtitle, UNITS_NOTE_STATEMENT)
         write_statement_block(worksheet, layout, spec, ts.rows_for(spec, code),
                               placements, columns, layout.first_data_row)
         written[code] = worksheet
@@ -791,29 +944,34 @@ def _has_value(spec, row_name, period_key):
 
 
 def _write_schedule_line(worksheet, layout, spec, label, terms, placements, columns,
-                         row_number):
+                         row_number, closing=False):
     """One line of a schedule: signed references to cells the statements hold.
 
     A historical column whose sources are not all reported is left empty rather
     than shown as a zero, which is the same rule the statements themselves
     follow and the reason the Schedules sheet cannot invent an opening balance
     for the first year of the model.
-    """
-    from openpyxl.styles import Font
 
+    Every figure here is a reference to a statement sheet, so every written cell
+    is green: on this sheet the convention says the whole page is a reading of
+    the statements rather than a second place any of it is decided.
+    """
     historical = ts.historical_periods(spec)
     forecast = ts.forecast_periods(spec)
 
     cell = worksheet.cell(row=row_number, column=layout.label_column)
     cell.value = label
-    cell.font = Font(name=BASE_FONT, size=11)
+    cell.font = _font(bold=closing)
+    cell.alignment = _indent(0 if closing else 1)
+    if closing:
+        _rule_off(worksheet, layout, row_number, len(historical) + len(forecast))
 
     for index in range(len(historical) + len(forecast)):
         column = layout.first_data_column + index
         forecast_index = index - len(historical)
         year_index = forecast_index if forecast_index >= 0 else None
         target = worksheet.cell(row=row_number, column=column)
-        target.number_format = FORMAT_DOLLAR
+        target.number_format = FORMAT_DOLLAR_MILLIONS
         if year_index is None:
             known = True
             for name, _sign, offset in terms:
@@ -831,21 +989,19 @@ def _write_schedule_line(worksheet, layout, spec, label, terms, placements, colu
             continue
         target.value = ("={}".format(body) if year_index is None
                         else guarded(body, year_index))
-        target.font = Font(name=BASE_FONT, size=11)
+        target.font = _value_font(ts.CELL_DERIVED, body)
     return row_number + 1
 
 
 def _write_schedules(workbook, layout, spec, placements, columns):
-    from openpyxl.styles import Font
-
     worksheet = workbook.create_sheet(layout.sheets.schedules)
-    _write_header(worksheet, layout, spec, "Schedules")
+    _write_header(worksheet, layout, spec, "Schedules", UNITS_NOTE_SCHEDULES)
 
     row_number = layout.first_data_row
     for schedule in _SCHEDULES:
         heading = worksheet.cell(row=row_number, column=layout.label_column)
         heading.value = schedule.title
-        heading.font = Font(name=BASE_FONT, size=11, bold=True, color=COLOR_HEADER)
+        heading.font = _font(bold=True, color=COLOR_HEADER)
         row_number += 1
 
         opening_label, opening_row = schedule.opening
@@ -867,10 +1023,7 @@ def _write_schedules(workbook, layout, spec, placements, columns):
                                           row_number)
         row_number = _write_schedule_line(worksheet, layout, spec, closing_label,
                                           ((closing_row, 1, 0),), placements,
-                                          columns, row_number)
-        worksheet.cell(row=row_number - 1,
-                       column=layout.label_column).font = Font(name=BASE_FONT,
-                                                               size=11, bold=True)
+                                          columns, row_number, closing=True)
         for label, source in schedule.extras:
             row_number = _write_schedule_line(worksheet, layout, spec, label,
                                               ((source, 1, 0),), placements,
@@ -880,10 +1033,8 @@ def _write_schedules(workbook, layout, spec, placements, columns):
 
 
 def _write_checks(workbook, layout, spec, placements, columns):
-    from openpyxl.styles import Font
-
     worksheet = workbook.create_sheet(layout.sheets.checks)
-    _write_header(worksheet, layout, spec, "Checks")
+    _write_header(worksheet, layout, spec, "Checks", UNITS_NOTE_CHECKS)
     row_number = layout.first_data_row
     for check in spec.checks:
         row_number = write_check_row(worksheet, layout, spec, check, placements,
@@ -892,14 +1043,15 @@ def _write_checks(workbook, layout, spec, placements, columns):
     row_number += 1
     note = worksheet.cell(row=row_number, column=layout.label_column)
     note.value = ("Green is within one unit of zero. A row that is not a tie is not "
-                  "coloured; hover its label for why.")
-    note.font = Font(name=BASE_FONT, size=10, italic=True, color=COLOR_NOTE)
+                  "coloured; hover its label for why. These rows are in whole "
+                  "dollars, not millions, so a small residual stays visible.")
+    note.font = _font(size=10, italic=True, color=COLOR_NOTE)
 
     if spec.coverage:
         row_number += 2
         heading = worksheet.cell(row=row_number, column=layout.label_column)
         heading.value = "How much of each balance sheet section this scaffold reaches"
-        heading.font = Font(name=BASE_FONT, size=11, bold=True, color=COLOR_HEADER)
+        heading.font = _font(bold=True, color=COLOR_HEADER)
         from openpyxl.comments import Comment
         comment = Comment(ts.COVERAGE_NOTE, "Edgardly")
         comment.width = 440
@@ -913,25 +1065,25 @@ def _write_checks(workbook, layout, spec, placements, columns):
         note.value = ("The rest of each subtotal is in its plug row. These are "
                       "measurements, not warnings: hover the heading for what a "
                       "low figure does and does not mean.")
-        note.font = Font(name=BASE_FONT, size=10, italic=True, color=COLOR_NOTE)
+        note.font = _font(size=10, italic=True, color=COLOR_NOTE)
         row_number += 1
 
     row_number += 2
     heading = worksheet.cell(row=row_number, column=layout.label_column)
     heading.value = "What this scaffold flags about this filer"
-    heading.font = Font(name=BASE_FONT, size=11, bold=True, color=COLOR_HEADER)
+    heading.font = _font(bold=True, color=COLOR_HEADER)
     row_number += 1
     for flag in ts.summarised_flags(spec):
         cell = worksheet.cell(row=row_number, column=layout.label_column)
         cell.value = "[{}] {}".format(flag["flag_type"], flag["message"])
-        cell.font = Font(name=BASE_FONT, size=10, color=COLOR_FLAG)
+        cell.font = _font(size=10, color=COLOR_FLAG)
         row_number += 1
     return worksheet
 
 
 def _write_source_tags(workbook, layout, spec):
     """One line per historical value, so a reader can trace any cell to a filing."""
-    from openpyxl.styles import Alignment, Font, PatternFill
+    from openpyxl.styles import Alignment, PatternFill
     from openpyxl.utils import get_column_letter
 
     worksheet = workbook.create_sheet(layout.sheets.source_tags)
@@ -940,7 +1092,7 @@ def _write_source_tags(workbook, layout, spec):
     for index, heading in enumerate(headings):
         cell = worksheet.cell(row=1, column=1 + index)
         cell.value = heading
-        cell.font = Font(name=BASE_FONT, size=11, bold=True, color="FFFFFF")
+        cell.font = _font(bold=True, color="FFFFFF")
         cell.fill = PatternFill("solid", fgColor=FILL_HEADER)
         cell.alignment = Alignment(horizontal="left")
     for index, width in enumerate((10, 56, 10, 10, 46, 12, 22, 90)):
@@ -966,10 +1118,10 @@ def _write_source_tags(workbook, layout, spec):
             for index, value in enumerate(values):
                 cell = worksheet.cell(row=row_number, column=1 + index)
                 cell.value = value
-                cell.font = Font(name=BASE_FONT, size=10,
-                                 color=COLOR_MISSING
-                                 if model_cell.state == ts.CELL_MISSING
-                                 else COLOR_DERIVED)
+                cell.font = _font(size=10,
+                                  color=COLOR_MISSING
+                                  if model_cell.state == ts.CELL_MISSING
+                                  else COLOR_DERIVED)
             row_number += 1
     worksheet.freeze_panes = "A2"
     return worksheet

@@ -32,6 +32,9 @@ wrong, change it here with a dated note saying why.
 | 2026-08-05 | An annual column takes a value only from an annual report | Amends the 2026-08-04 ranking entry, which ordered filings that both report a period and could say nothing about a period only one of them reports. Ranking gave the 10-K the row wherever a 10-K carried the item; where none does, a 10-Q comparative won by default and the annual series took a figure no annual report presents. Apple's FY2025 Intangibles is the case: no Apple 10-K has ever carried an intangibles caption, and the row read 13,301 million off the re-presented balance sheet of the 10-Q filed 2026-07-31. So the scaffold's historical columns now require an annual report: a value carried only by an interim filing makes the cell a flagged blank that names the figure, names the filing it came from, and says the year's own annual report does not present the line. This is the log's own standard applied to a case it had not met -- a number nobody can source to the statement the row sits on is worse than an admitted hole -- and it is confined to the scaffold, where a column is a fiscal year of a filed annual report. The two tables are unchanged: they show whatever a filer tagged for a period and say which filing said it, which is a different promise. |
 | 2026-08-05 | A debt row matches the caption it sits beside, and the combined tag wins | Amends the 2026-08-04 chain corrections, which made both debt rows strictly debt and left them below the line they sit beside for any filer presenting debt and finance leases as one caption. Kroger is that filer: its balance sheet carries "current portion of long-term debt including obligations under finance leases" of 1,802 million and "long-term debt including obligations under finance leases" of 15,764 at 2026-01-31, and it separately tags the debt-only amounts of 1,366 and 14,509, which is what the rows read. Both readings are defensible and only one is checkable against the filing, which decides it: LongTermDebtAndCapitalLeaseObligationsCurrent and LongTermDebtAndCapitalLeaseObligations move to the front of their chains, so where a filer tags the combined caption the row equals the caption. A filer that tags only the debt-only element is unaffected, which is Apple; a filer already resolving through the combined element is unaffected, which is Honeywell. What it costs is that Total Debt then includes finance leases for such filers, and the rows say so; what it buys is a row a reader can tie to the statement in front of them, which no amount of internal consistency substitutes for. |
 | 2026-08-05 | The Checks flag list carries every flag the workbook raises | Amends nothing; it settles what the 2026-08-05 hand-check found open. The list's heading says "What this scaffold flags about this filer" and it carried the forecast flags, the two derived-total flags and the plug-size flags alone, while every PLUG_ABSORBS_BLANK, every TAG_TRANSITION and every LARGE_YOY_CHANGE reached only a cell comment and the Source Tags sheet. Narrowing the heading was the other way out and was rejected: a reader who opens the Checks sheet to find out what is doubtful about a workbook is asking the question the heading answers, and answering two thirds of it silently is worse than a longer list. So every flag on every cell reaches the list, grouped by the row it names with a count of the periods it covers, which is the collapsing rule the sheet already used for plug sizes and is what keeps thirty copies of one sentence from being the reason nobody reads it. A flag that names no row still groups by its own message, which is the Session 6 fix and is untouched. |
+| 2026-08-06 | The workbook is formatted to standard model conventions | Settled as one decision because the pieces are one convention. Positive numbers carry the alignment underscore so their digits sit above the digits of a parenthesised negative; a single top border rules off a subtotal and a double bottom closes each statement; detail rows indent under the subtotal they belong to, using openpyxl's Alignment indent rather than spaces in the label, so a downstream read of a row label is the same string it was before; and a formula that reaches another sheet is green, the convention's one colour that says where a number comes from rather than what kind of number it is. Blue for reported, black for same-sheet derived and grey italic for missing are unchanged. None of this moves a value, a formula or a flag, which is the property the session was measured on. |
+| 2026-08-06 | Dollars display in millions; the stored value stays a raw dollar | The scale lives in the number format, which divides by a million for display and leaves the cell holding what the filer tagged. So a reader sees 416,161 and a formula, an audit of the cell, or a copy into another tool still gets 416,161,000,000, and every check still nets to zero in whole dollars rather than to a rounded zero. Rejected alternative: divide the values themselves and write the statements in millions. That is what most hand-built models do and it fails this workbook's own standard twice over, because a reported cell would no longer hold the number the filing reports and the provenance comment beside it would name a tag whose value differs from the cell by six orders of magnitude. Check rows are the exception in the other direction and keep the unscaled format: a check exists to show a residual, and a residual of a few thousand dollars displayed in millions is a zero, which is the one thing a checks sheet must never show. Share counts scale the same way as dollars and per-share amounts do not scale at all. |
+| 2026-08-06 | A currency assumption is typed in millions and multiplied back in the formula | Follows from the entry above. The analyst types 500 into a cell labelled and formatted in millions, and every forecast formula that consumes a currency assumption multiplies it by a million, so the arithmetic downstream is in raw dollars like everything else in the workbook. Typing 500000000 into a cell beside statements displaying 416,161 was the alternative and is how a model gets an order-of-magnitude error nobody sees. Percent and days assumptions are unchanged; they have no scale to get wrong. |
 | 2026-08-05 | The checklist's value comparison is done by a Claude session; the user reviews the evidence and signs | The acceptance hand-check has two halves and they need different hands. Reading five years of three statements off three filers' 10-Ks and comparing every cell, sign and scale against a workbook is mechanical, high-volume and exactly what a session with network access and the filings open can do without tiring; V2_PLAN R10 is the risk that it never happens because one person has to do all of it. So a Claude session performs the comparison and writes the evidence into the checklist: for every ticked box, a citations block naming the filing by accession, the statement inside it, and the figure read there, so the claim is checkable rather than asserted. What stays with the user is everything a session cannot do or should not certify: opening the workbook by hand in real Excel and watching for a repair dialog, hovering a row label to see the tooltip render, judging whether a plug or a coverage figure is acceptable for their purpose, and signing. The signature therefore certifies that the user has reviewed the evidence and found it sound, not that they recomputed every cell themselves; that is what makes it a signature a person can honestly give. A discrepancy the session finds is written into the breakage log as an open entry with its diagnosis and is never marked resolved by the session that found it, because the same hand should not both report and close a defect. A copy with an open entry against it is still unsignable, which is the rule the log already carried. |
 
 ## Session log
@@ -51,6 +54,7 @@ open questions the next session needs to know about.
 | 2026-08-05 | 5 | The first Phase 2 session: V2_PLAN 2.1, 2.2, 2.2b and 2.5. Four commits: session prompt amended and quarters named for their fiscal year, the model spec in app/scaffold/three_statement.py, the writer kit in app/scaffold/excel.py, the formula-evaluation harness. | 0 | Open question 10 closed. Two new ones, 11 and 12, both raised by measuring the scaffold rather than by building it. |
 | 2026-08-05 | 6 | The last Phase 2 session: V2_PLAN 2.3 and 2.4. Three commits: open questions 11 and 12 settled, the endpoint and the button, the acceptance documents and the generator. Phase 2's exit review is written and its last criterion is the user's hand-check, which has not run. | 0 | Open questions 11 and 12 closed. None new. |
 | 2026-08-05 | 6H | The delegated half of the acceptance hand-check. Five historical years of all three statements for all three filers compared against the filings on EDGAR, cell by cell, for value, sign and scale; the checklist filled in with a citations block under every table; sixteen open entries written into the breakage log. Documents only: no application code was touched and nothing generated was committed. | 0 | None closed. Sixteen breakage entries open, and Phase 2 still cannot be declared done. |
+| 2026-08-06 | 6c | Presentation polish on the scaffold workbooks: standard model formatting conventions, dollars and share counts displayed in millions through the number format, currency assumptions typed in millions and multiplied back, cross-sheet links in green, detail rows indented, subtotals ruled off. Three decisions recorded. Fourteen new tests, no existing one rewritten. The three acceptance workbooks were evaluated before and after and 3,461 numeric cells are identical; the only numbers that moved are the currency assumption's own input cells. | 0 | None. Phase 2 still waits only on the user's interactive pass and three signatures, and that pass now has more to look at. |
 | 2026-08-06 | 6b | All sixteen breakage entries closed. Eleven commits: the three user decisions and the YoY span fix, annual-only columns, the debt chains and the finance lease rows, the intangibles chain, the opening-cash message, the operating income caveat, temporary equity, the widened Checks list, comparability seams, the four document dispositions, and this record. Twelve of the sixteen end in code with a test that fails on the old behaviour; three are document corrections and one is a documented filer-side inconsistency. Workbooks regenerated and every touched cell re-verified against live EDGAR. | 0 | None. Sixteen closed, none open. Phase 2 waits only on the user's interactive pass and three signatures. |
 
 ### Session 1 detail
@@ -1008,6 +1012,99 @@ no exchange-rate line at all, which is what made the Session 6 sentence false.
 which are the user's and which no session can do: opening each workbook by hand in
 real Excel and watching for a repair dialog, hovering a row label to see the
 tooltip render, and signing. Nothing else stands between here and Phase 2.
+
+### Session 6c detail
+
+Suite state: 732 tests, all passing, zero xfails. 686 mocked tests run offline in
+about 82 seconds; 46 integration tests hit live EDGAR or start a browser. Session
+6b left 718. The 14 new tests are 13 in the Excel writer module and 1 in the
+formulas harness. No existing test was rewritten. One shared constant was: the
+harness's filled assumption set now types its net debt issuance as -2,000 rather
+than -2,000,000,000, because that is what the input cell now asks for and it is
+the same two billion dollar repayment it always was.
+
+**The session was measured before it started.** All three acceptance workbooks
+were built through the endpoint and evaluated through the formulas harness twice
+each, once with the Assumptions sheet blank and once filled, and every evaluated
+cell was written down. The same capture was taken after the work and compared
+cell by cell. 3,461 numeric cells were compared and 18 differ, all of them the
+currency assumption's own input cells: three per filer plus the defined name each
+is reached by, now holding -2,000 where they held -2,000,000,000. Every other
+number in every statement, schedule and check of every filer, blank and filled,
+is the same to the dollar. Forty-two text cells differ and they are seven
+distinct labels: the five sheets' column heading and the two notes described
+below. The regenerated workbooks were also compared directly against the copies
+generated earlier the same day, which reaches what an evaluation cannot: 19 cell
+differences and 4 comment differences per filer, the 4 comments being the
+currency assumption's note, 6 of the 19 being the scaled formulas and the other
+13 being header text. Defined names are identical, 48 per workbook.
+
+**Two answers to the scale question, and only one of them keeps the workbook's
+promises.** Dividing the values and writing the statements in millions is what a
+hand-built model does, and it fails this workbook's own standard twice: a
+reported cell would stop holding the number the filing reports, and the
+provenance comment beside it would name a tag whose value differed from the cell
+by six orders of magnitude. Scaling in the number format costs nothing and keeps
+both. It also keeps the checks exact, which is the reason for the one exception:
+check rows stay in whole dollars, because a residual of a few thousand dollars
+displayed in millions is a displayed zero, and a checks sheet that shows a zero
+where there is a difference is worse than no checks sheet.
+
+**A units error is consistent with itself, which is why the harness test asserts
+an absolute figure.** The currency assumption is the only place a display scale
+reaches a formula. Before this session the balance check tied for every filer
+with -2,000,000,000 typed in; after the change it ties just as well with the same
+number typed in, which now means two thousand million million dollars. Nothing
+internal notices, because both cells that read the assumption are scaled the same
+way and the model stays consistent with whatever it was told. So the new harness
+test types 500 and asserts the debt balance moves by 500,000,000 and the
+financing line evaluates to 500,000,000, and only then that the forecast still
+ties. A test that had checked the tie alone would have passed on either scale.
+
+**The green rule is decided by the formula, not by a list of rows.** The prompt
+named six link rows; the writer colours any cell whose formula carries a sheet
+qualifier, which is those six and every cell of the Schedules and Checks sheets,
+because every figure on both of those is a reading of a statement rather than a
+second place anything is decided. A list would have gone stale the first time a
+row was added, and it would then have been wrong about exactly the cell a reader
+most needs it to be right about. A defined name is not coloured: an assumption
+reference names itself, and the convention's green is about a reference to
+another sheet's cell.
+
+**Where the rules fall.** The double rule closes each statement on the last row
+that is a subtotal or a derivation rather than the last row written, because all
+three statements carry memo lines below their bottom line: earnings per share and
+share counts under net income, total debt under total equity. Read off the rows
+rather than named per statement, so a block Phase 3 or 4 passes in is closed the
+same way.
+
+**Two header cells had to change and one of them is worth naming.** The label
+column's heading said "In whole units, as reported", which stopped being a true
+description of what a reader sees the moment the display scaled, and which was
+doing a column heading's job with a units note's words. It now reads "Line item"
+and the scale note moved to its own row between the title and the headings, which
+is where a reader of any model looks for it. Each note says both things: what the
+format shows and what the cell holds, because those are now different and someone
+copying a cell out needs to know which one they are getting.
+
+**Three places the work went past the eight steps, all in the same direction.**
+The Schedules sheet was given the indent and a single top rule on each closing
+balance, and the readiness row on the Assumptions sheet a single top rule, none
+of which the steps name. The reason in each case is that the row is a subtotal in
+the sense the rule is about, and formatting two sheets to a convention and
+leaving a third beside them unformatted is not a smaller change, only a less
+finished one. Shares were given the alignment underscore as well as dollars and
+per-share amounts, for the same reason the underscore exists: the three appear in
+the same columns.
+
+**What is not done, and what this session added to it.** The three interactive
+items per copy and the signatures, unchanged from 6b. The by-hand open in real
+Excel matters more now than it did: number formats, borders and cell alignment
+are new repair-dialog surface, and automation cannot see a repair dialog because
+it suppresses alerts. Every workbook reads back through openpyxl and the defined
+names are unchanged, which is what the automated half of R4 can say. The
+acceptance checklists were not touched and nothing was signed; the values they
+certify have not moved, which is what the before-and-after comparison is for.
 
 ## Phase 2 exit review
 
