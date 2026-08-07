@@ -25,7 +25,10 @@ acceptable for their purpose, and signing. The signature certifies review of the
 evidence below, not personal recomputation of every cell.
 
 A box left unticked has its reason written under it. A box reserved for the user
-is left blank and named as such above each sitting log.
+is left blank and named as such above each sitting log until the user does it,
+and then it is ticked with the date and what was seen. All three copies were
+completed and signed on 2026-08-06; the two user-reserved boxes on each carry
+that date.
 
 ## How to generate a workbook
 
@@ -411,18 +414,33 @@ it; nothing here depends on it.
 - [x] With assumptions blank, all forecast cells are blank: no zeros, no
       leftovers
       All 234 return empty with the Assumptions sheet as shipped.
-- [ ] Rows with no forecast say why when you hover the row label
+- [x] Rows with no forecast say why when you hover the row label
       Reserved for the user: whether a comment renders on hover is a thing only
       Excel can show. The text is present and correct in the file -- EPS basic,
       EPS diluted and both share counts carry NO_FORECAST_DRIVER on their row
       labels, and goodwill, intangibles, short-term borrowings and temporary
       equity carry NO_REPORTED_HISTORY.
+      Ticked by the user on 2026-08-06, at the same sitting as the open below.
+      The row-label tooltips render, as do the provenance comments on the cells,
+      which is the half of "all comments readable" that automation cannot reach.
 
 ### The workbook itself
 
-- [ ] Opens in real Excel with no repair prompt, opened by hand rather than by
+- [x] Opens in real Excel with no repair prompt, opened by hand rather than by
       automation, because automation runs with alerts suppressed and would not
       see the dialog
+      Ticked by the user on 2026-08-06. Opened by double-click in real Excel,
+      no repair dialog, and all seven sheets present on the screen rather than
+      through a reader.
+      The file opened is the 15:45 workbook of 2026-08-06, not the 13:19 one this
+      copy's header names. The 15:45 file is the Session 6c regeneration, which
+      is presentation only: PROGRESS.md's Session 6c detail records 3,461 numeric
+      cells compared before and after with 18 differing, all of them the currency
+      assumption's own input cells, and 48 defined names identical. So it holds
+      every value this copy certifies, and it carries the number formats, borders
+      and alignment Session 6c added, which are new repair-dialog surface and are
+      the reason the by-hand open is worth more against this file than against the
+      13:19 one.
 - [x] All seven sheets present, all comments readable, no #REF! or #VALUE!
       anywhere
       Re-checked 2026-08-06 on the regenerated workbook: seven sheets in the order
@@ -433,15 +451,24 @@ it; nothing here depends on it.
 
 ### Sitting log
 
-Left for the user: the interactive open above, the hover-tooltip line, and the
-signature. Everything else on this copy is worked, with its evidence beside it.
+Nothing is left open on this copy. The two interactive lines above were the
+user's and are ticked with the date they were done; everything else is worked,
+with its evidence beside it.
 
 | Date | Where you stopped |
 | --- | --- |
 | 2026-08-05 | Value comparison complete for all five years of all three statements. Six entries open in the breakage log against this copy (rows 1, 3, 4, 5, 6 and 15), so it cannot be signed. |
 | 2026-08-06 | All six closed by Session 6b and re-verified against the filings on live EDGAR, with the citations above. The workbook was regenerated through the endpoint after the fixes and this copy now describes that file. No breakage entry stands against this copy. The three user items above are all that remain before a signature. |
+| 2026-08-06 | The user's interactive pass, on the 15:45 workbook of the same day. Opened by double-click in real Excel, no repair dialog, all seven sheets present, and the provenance comments and row-label tooltips render. Both interactive lines ticked and the copy signed. |
 
-    Signed off:                              Date:
+    Signed off: Elliot                       Date: 2026-08-06
+
+Recorded by this session on the user's explicit instruction, relayed through the
+planning session. Per the 2026-08-05 decisions-log entry in PROGRESS.md, this
+signature certifies that the user has reviewed the evidence above and the
+workbook and found them sound. It does not certify that they recomputed every
+cell; the value comparison was performed by a Claude session and every ticked box
+carries the citations that make it checkable.
 
 ---
 
@@ -883,31 +910,45 @@ real Excel is the user's to run if they want it.
 - [x] With assumptions blank, all forecast cells are blank: no zeros, no
       leftovers
       All 243 return empty as shipped.
-- [ ] Rows with no forecast say why when you hover the row label
+- [x] Rows with no forecast say why when you hover the row label
       Reserved for the user. The text is present: the four per-share and share
       count rows carry NO_FORECAST_DRIVER and commercial paper carries
       NO_REPORTED_HISTORY.
+      Ticked by the user on 2026-08-06, at the same sitting as the open below.
+      The row-label tooltips render, as do the provenance comments on the cells.
 
 ### The workbook itself
 
-- [ ] Opens in real Excel with no repair prompt, opened by hand
+- [x] Opens in real Excel with no repair prompt, opened by hand
+      Ticked by the user on 2026-08-06. Opened by double-click in real Excel, no
+      repair dialog, and all seven sheets present on the screen.
+      The file opened is the 15:45 workbook of 2026-08-06, not the 13:19 one this
+      copy's header names; see the Apple copy for what the difference is and why
+      it makes the by-hand open worth more rather than less.
 - [x] All seven sheets present, all comments readable, no #REF! or #VALUE!
       anywhere
       Re-checked 2026-08-06: seven sheets, 48 defined names, 421 comments against
       402 before, and no error value anywhere in a full evaluation, blank or
-      filled. "Readable" belongs with the open above.
+      filled. "Readable" belongs with the open above, and is ticked there.
 
 ### Sitting log
 
-Left for the user: the interactive open above, the hover-tooltip line, and the
-signature. Everything else on this copy is worked, with its evidence beside it.
+Nothing is left open on this copy. The two interactive lines above were the
+user's and are ticked with the date they were done; everything else is worked,
+with its evidence beside it.
 
 | Date | Where you stopped |
 | --- | --- |
 | 2026-08-05 | Value comparison complete for all five years of all three statements. Eight entries open in the breakage log against this copy (rows 5, 6, 7, 8, 9, 10, 11 and 16), so it cannot be signed. |
 | 2026-08-06 | All eight closed by Session 6b and re-verified against the filings on live EDGAR, with the citations above. Six were code fixes, one is a documented filer-side inconsistency (row 10) and one closes with a named limitation (row 16). The workbook was regenerated through the endpoint after the fixes and this copy now describes that file. No breakage entry stands against this copy. The three user items above are all that remain before a signature. |
+| 2026-08-06 | The user's interactive pass, on the 15:45 workbook of the same day. Opened by double-click in real Excel, no repair dialog, all seven sheets present, and the provenance comments and row-label tooltips render. Both interactive lines ticked and the copy signed. |
 
-    Signed off:                              Date:
+    Signed off: Elliot                       Date: 2026-08-06
+
+Recorded by this session on the user's explicit instruction, relayed through the
+planning session. Per the 2026-08-05 decisions-log entry in PROGRESS.md, this
+signature certifies that the user has reviewed the evidence above and the
+workbook and found them sound, not that they recomputed every cell.
 
 ---
 
@@ -1286,28 +1327,42 @@ pass in real Excel is the user's to run if they want it.
 - [x] With assumptions blank, all forecast cells are blank: no zeros, no
       leftovers
       All 225 return empty as shipped.
-- [ ] Rows with no forecast say why when you hover the row label
+- [x] Rows with no forecast say why when you hover the row label
       Reserved for the user. The text is present: the four per-share and share
       count rows carry NO_FORECAST_DRIVER, and the seven untagged rows above carry
       NO_REPORTED_HISTORY.
+      Ticked by the user on 2026-08-06, at the same sitting as the open below.
+      The row-label tooltips render, as do the provenance comments on the cells.
 
 ### The workbook itself
 
-- [ ] Opens in real Excel with no repair prompt, opened by hand
+- [x] Opens in real Excel with no repair prompt, opened by hand
+      Ticked by the user on 2026-08-06. Opened by double-click in real Excel, no
+      repair dialog, and all seven sheets present on the screen.
+      The file opened is the 15:45 workbook of 2026-08-06, not the 13:19 one this
+      copy's header names; see the Apple copy for what the difference is and why
+      it makes the by-hand open worth more rather than less.
 - [x] All seven sheets present, all comments readable, no #REF! or #VALUE!
       anywhere
       Re-checked 2026-08-06: seven sheets, 48 defined names, 422 comments against
       403 before, and no error value anywhere in a full evaluation, blank or
-      filled. "Readable" belongs with the open above.
+      filled. "Readable" belongs with the open above, and is ticked there.
 
 ### Sitting log
 
-Left for the user: the interactive open above, the hover-tooltip line, and the
-signature. Everything else on this copy is worked, with its evidence beside it.
+Nothing is left open on this copy. The two interactive lines above were the
+user's and are ticked with the date they were done; everything else is worked,
+with its evidence beside it.
 
 | Date | Where you stopped |
 | --- | --- |
 | 2026-08-05 | Value comparison complete for all five years of all three statements. Six entries open in the breakage log against this copy (rows 2, 5, 6, 12, 13 and 14), so it cannot be signed. |
 | 2026-08-06 | All six closed by Session 6b and re-verified against the filings on live EDGAR, with the citations above. Three were code fixes, two are checklist lines that could not be ticked as written and now can (rows 13 and 14), and row 12 closes with both halves of every debt caption on the page and the arithmetic named on each cell. The workbook was regenerated through the endpoint after the fixes and this copy now describes that file. No breakage entry stands against this copy. The three user items above are all that remain before a signature. |
+| 2026-08-06 | The user's interactive pass, on the 15:45 workbook of the same day. Opened by double-click in real Excel, no repair dialog, all seven sheets present, and the provenance comments and row-label tooltips render. Both interactive lines ticked and the copy signed. |
 
-    Signed off:                              Date:
+    Signed off: Elliot                       Date: 2026-08-06
+
+Recorded by this session on the user's explicit instruction, relayed through the
+planning session. Per the 2026-08-05 decisions-log entry in PROGRESS.md, this
+signature certifies that the user has reviewed the evidence above and the
+workbook and found them sound, not that they recomputed every cell.
