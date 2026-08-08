@@ -66,6 +66,20 @@ Edgardly was built around a few principles that came directly from the frustrati
 
 ## Screenshots
 
+### Three-Statement Model Scaffold
+
+![Apple balance sheet in the scaffold, with a provenance note open on the Inventory cell showing the InventoryNet tag, the 10-K it came from, and the filing accession number](docs/screenshots/scaffold-statement.png)
+
+Every reported value carries a note naming the tag, form, and accession it came from. The cell displays 6,580 while the formula bar holds the raw 6,580,000,000, because the scaling to millions lives in the number format only.
+
+![Kroger Checks sheet, showing balance check and cash tie rows at zero, the percentage of each balance sheet subtotal the scaffold reaches, and a list of what the scaffold flags about this filer](docs/screenshots/scaffold-checks.png)
+
+The Checks sheet states how much of the filer the scaffold actually reaches and what it could not model.
+
+![Kroger Assumptions sheet, with every forecast input left blank and the Year ready to model row reading FALSE for each forecast year](docs/screenshots/scaffold-assumptions.png)
+
+Assumptions ship empty. The scaffold reports each forecast year as not ready until you fill them in.
+
 ### Filing Search
 
 ![Filing search view](docs/screenshots/filing-search.jpg)
