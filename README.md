@@ -38,6 +38,8 @@ Edgardly runs entirely on your machine and requires no API keys, no paid subscri
   - Total Assets, Total Liabilities, Total Equity
   - Cash and Equivalents, Long-Term Debt, Total Debt
 
+  Two of those are not read straight from a tag. Total Debt is arithmetic, because no filer reports it: Edgardly sums the filer's short-term and long-term debt, and leaves the row blank when either is missing rather than treating an absent balance as zero. Gross Profit comes from a tag when the filer reports one and falls back to revenue less cost of revenue only for periods where nobody tagged it.
+
 - **Automated validation flags:** an independent validation layer checks extracted values for common data issues: negative revenue, net income exceeding revenue, balance sheet equation mismatches, EPS-to-net-income reconciliation discrepancies, extreme year-over-year changes, and a change of XBRL tag mid-series. Flagged values are surfaced visually with full context; they are never silently hidden, auto-corrected, or excluded from exports.
 
 - **Peer comparison:** run side-by-side XBRL extraction across a comp set you define. Results are aligned by relative fiscal year (FY0, FY-1, FY-2, and so on) rather than by calendar date, so companies with different fiscal year ends line up correctly, and every value in the table is scaled consistently. Validation flags carry through to the peer view.
@@ -93,8 +95,6 @@ Assumptions ship empty. The scaffold reports each forecast year as not ready unt
 ### Peer Comparison
 
 ![Peer comparison table](docs/screenshots/peer-comparison1.jpg)
-
-![Peer comparison chart](docs/screenshots/peer-comparison2.jpg)
 
 ---
 

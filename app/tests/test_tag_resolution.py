@@ -229,7 +229,7 @@ def test_an_unknown_line_item_resolves_to_nothing():
 
 
 def test_a_registry_item_outside_tag_map_resolves():
-    """Extraction is not limited to the 14 displayed items."""
+    """Extraction is not limited to the 14 items in TAG_MAP."""
     payload = facts({"DepreciationDepletionAndAmortization": [
         entry("2018-12-31", 42, "2019-02-01")]})
 

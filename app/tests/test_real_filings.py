@@ -51,7 +51,10 @@ def apple_facts():
 
 @pytest.fixture(scope="module")
 def apple_deduped(apple_facts):
-    """The 14 displayed items, resolved and deduplicated -- what the UI renders."""
+    """The 14 items a tag reports, resolved and deduplicated.
+
+    The UI renders these plus derived Total Debt, for the 15 it displays.
+    """
     return xbrl.deduplicate_all_line_items(xbrl.extract_all_line_items(apple_facts))
 
 

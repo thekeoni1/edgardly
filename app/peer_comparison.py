@@ -140,8 +140,10 @@ def fetch_peer_data(cik, line_items, n_periods=5):
 
     Args:
         cik:        company CIK (str or int)
-        line_items: list of canonical line-item names (keys of xbrl.TAG_MAP).
-                    Items not in TAG_MAP are returned with all-None periods.
+        line_items: list of canonical line-item names (keys of xbrl.TAG_MAP, or
+                    any other registry name).  Total Debt is in no tag chain and
+                    still comes back with values, because derivation runs before
+                    the result is filtered down to what was asked for.
         n_periods:  how many most-recent fiscal years to include (newest first
                     as FY0, FY-1, FY-2, ...)
 

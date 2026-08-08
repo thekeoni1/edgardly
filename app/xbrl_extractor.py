@@ -1,7 +1,12 @@
 """xbrl_extractor.py -- EDGAR XBRL structured financial data extraction.
 
-Stage 1: tag-mapping dictionary, companyfacts fetch, and per-line-item resolution.
-Stage 2: deduplication and clean period time-series.
+Fetches a filer's companyfacts, resolves each line item to the data points one
+tag reported, deduplicates those into a clean period time-series, validates the
+result, and says where every value came from.
+
+The tag chains live in line_items.py and the period logic in periods.py; this
+module imports both rather than holding either.
+
 Reuses _rate_limited_get from edgar_api for consistent rate limiting and User-Agent.
 """
 
@@ -18,9 +23,11 @@ XBRL_BASE = "https://data.sec.gov/api/xbrl"
 #
 # The tag chains now live in the line-item registry in line_items.py, which
 # holds the whole vocabulary the models need. TAG_MAP is the subset the existing
-# views extract and display: the same 14 items, in the same order, as a plain
-# dict of canonical name to ordered tag list. Re-exported here because callers
-# already reach for xbrl.TAG_MAP.
+# views extract: the 14 items a tag reports, in display order, as a plain dict of
+# canonical name to ordered tag list. Those views display 15, the other being
+# derived Total Debt, and they extract line_items.UI_LINE_ITEMS along with the
+# inputs their derivations need. Re-exported here because callers already reach
+# for xbrl.TAG_MAP.
 #
 # Add a line item to line_items.REGISTRY; add it to line_items.UI_LINE_ITEMS
 # only if it should appear in the existing tables.
@@ -191,9 +198,9 @@ def extract_all_line_items(facts_data, names=None):
     """
     Extract data for a set of line items.
 
-    names defaults to TAG_MAP, the 14 items the existing views display.  Pass an
-    explicit sequence of registry names to extract anything else; the registry
-    is a superset of TAG_MAP.
+    names defaults to TAG_MAP, the 14 items a tag reports.  Pass an explicit
+    sequence of registry names to extract anything else; the registry is a
+    superset of TAG_MAP.
 
     Returns:
         dict keyed by line-item name, each value:

@@ -221,7 +221,7 @@ def built(monkeypatch):
 
 
 def test_every_cell_of_the_table_is_in_exactly_one_state(built):
-    """No hole in the grid: 14 line items times 2 years, all accounted for."""
+    """No hole in the grid: 15 line items times 2 years, all accounted for."""
     _entity, columns, rows, _scope = built
     states = {}
     for row in rows.values():

@@ -7,9 +7,11 @@ derived when no tag reports it at all.
 
 The registry is a superset of what the UI shows. TAG_MAP, the extraction set the
 single-company table and the peer table have always driven off, stays at the same
-14 items it has always held; UI_LINE_ITEMS names them and fixes their display
-order. Everything else in the registry is available to callers that ask for it by
-name (the scaffold engine will) without appearing in any existing view.
+14 tag-reported items it has always held. UI_LINE_ITEMS is what those views
+display and fixes the display order: those 14 plus Total Debt, which no filer
+reports and Edgardly derives, for 15 in all. Everything else in the registry is
+available to callers that ask for it by name (the scaffold engine will) without
+appearing in any existing view.
 
 Nothing here reads EDGAR. Tag resolution lives in xbrl_extractor, which imports
 TAG_MAP and tags_for from this module.
