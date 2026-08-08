@@ -1486,21 +1486,31 @@
                 + ', ' + fore + ' blank forecast ' + (fore === 1 ? 'column' : 'columns')
                 + '. Fill the Assumptions sheet to populate them.';
             el.appendChild(summary);
-            const flags = data.flags || [];
-            if (!flags.length) return;
-            const heading = document.createElement('div');
-            heading.textContent = 'Flagged for this filer, also on the Checks sheet:';
-            el.appendChild(heading);
-            const list = document.createElement('ul');
+            const messages = [];
             const seen = new Set();
-            flags.forEach(flag => {
+            (data.flags || []).forEach(flag => {
                 if (seen.has(flag.message)) return;
                 seen.add(flag.message);
+                messages.push(flag.message);
+            });
+            if (!messages.length) return;
+            // A count, not the list: the full text of every flag buried the
+            // confirmation it sits under. The details element keeps it one
+            // click away for anyone who wants it without opening the file.
+            const details = document.createElement('details');
+            const caption = document.createElement('summary');
+            caption.textContent = messages.length + ' note'
+                + (messages.length === 1 ? '' : 's')
+                + " about this filer's data, all on the workbook's Checks sheet.";
+            details.appendChild(caption);
+            const list = document.createElement('ul');
+            messages.forEach(message => {
                 const item = document.createElement('li');
-                item.textContent = flag.message;
+                item.textContent = message;
                 list.appendChild(item);
             });
-            el.appendChild(list);
+            details.appendChild(list);
+            el.appendChild(details);
         }
 
         document.getElementById('xbrl-scaffold-folder-btn').addEventListener('click', () => {

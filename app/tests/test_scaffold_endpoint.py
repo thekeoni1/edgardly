@@ -331,3 +331,15 @@ def test_the_button_surfaces_a_refusal_instead_of_an_error():
     assert "status === 422" in source
     assert 'id="xbrl-scaffold-refusal"' in source
     assert "xbrlShowScaffoldRefusal" in source
+
+
+def test_the_confirmation_counts_the_flags_rather_than_listing_them():
+    """Every flag's full text under the confirmation took over the screen, and a
+    filer's flags are already on the Checks sheet. The count says how many there
+    are and a collapsed details element holds them for anyone who wants them."""
+    source = _template()
+
+    assert "messages.length + ' note'" in source
+    assert "about this filer's data, all on the workbook's Checks sheet." in source
+    assert "createElement('details')" in source
+    assert "Flagged for this filer, also on the Checks sheet:" not in source
