@@ -1,5 +1,8 @@
 # Three-statement scaffold acceptance checklist
 
+An acceptance record: what was checked, against which filings, and on what date. Each copy
+below is a record as of the date it carries and is not edited afterwards.
+
 The gate on Phase 2. Automated tests cannot replace this: openpyxl computes no
 formulas, the evaluation harness computes them but cannot tell whether a row is
 the right row or whether a tag means what the registry says it means, and

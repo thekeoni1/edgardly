@@ -1,5 +1,8 @@
 # Edgardly v2 session prompts
 
+The prompts, one per work session, each a record of what was asked for as of its date.
+What actually happened in each session is in PROGRESS.md.
+
 Staggered work sessions covering the pre-Phase-1 fixes, Phase 1, and Phase 2 of
 docs/V2_PLAN.md. Each prompt is self-contained: paste one into a fresh Claude Code session,
 and it loads its own context before doing anything. Session 4 was split into 4A and 4B once

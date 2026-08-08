@@ -1,5 +1,8 @@
 # Edgardly v2 progress
 
+A dated working log, not documentation of the current code. Every entry below is a record
+of what was true and what was decided on its date, and is not edited afterwards.
+
 Running state for the v2 build. docs/V2_PLAN.md is the plan and the single source of truth.
 docs/SESSIONS.md holds the session prompts. This file records what actually happened.
 

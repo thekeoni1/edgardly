@@ -1,5 +1,8 @@
 # Scaffold breakage log
 
+An acceptance record: everything the hand-check turned up, one entry each. Every entry is
+a record as of its date and stands as written once it is closed.
+
 Everything the acceptance hand-check turns up, one row each, written down before
 anybody decides whether it matters. A discrepancy that looks harmless at the
 time it is found is exactly the kind that turns out not to be, and the log costs

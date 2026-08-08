@@ -1,5 +1,8 @@
 # Edgardly v2 Plan
 
+A plan, and a record of what was planned as of its date rather than a description of what
+now exists. The running copy of every decision since taken is in PROGRESS.md.
+
 Written 2026-08-01. Scope: turn Edgardly from a data puller into a model scaffolder that
 generates the mechanical skeleton of standard finance models in Excel, with real historicals
 from filings and every judgment input left blank for the analyst. The tool never fills in
