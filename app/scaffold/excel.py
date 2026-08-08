@@ -7,7 +7,7 @@ primitives -- a statement block, a named input, a forecast row, a check row, a
 provenance comment -- for a comps sheet and a DCF, which is why they are
 functions with explicit arguments rather than steps inside one exporter.
 
-Four rules run through all of it.
+Five rules run through all of it.
 
 **A formula is written only where the model has a value.** A historical cell
 the spec could not compute stays empty rather than carrying arithmetic that
@@ -19,9 +19,8 @@ open.
 **Reported values are static; everything else is a formula.** A number a filer
 tagged is written as that number, blue, with its tag, filing date and accession
 in the cell comment. A derived value is the live arithmetic over the cells it
-came from, black, so the workbook shows its own working. Total Debt is a
-formula over Short-Term Debt, which is itself a formula over three tagged
-lines, and every leaf of that descent is a blue cell with a filing behind it.
+came from, black, so the workbook shows its own working, and every leaf of that
+descent is a blue cell with a filing behind it.
 
 **A blank assumption produces a blank forecast.** Each forecast year has a
 readiness cell that is true only when that year's inputs and every earlier
@@ -42,8 +41,7 @@ A dollar cell stores the whole dollars the filer tagged and shows millions,
 which is what keeps a provenance comment true, a check exact to the dollar and a
 cell a reader copies out worth what the filing says it is. The one place a scale
 reaches a formula is the currency assumption, which is typed in millions and
-multiplied back where it is consumed, and it is written down here because it is
-the exception.
+multiplied back where it is consumed.
 """
 
 from collections import namedtuple

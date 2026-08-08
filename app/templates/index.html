@@ -269,10 +269,7 @@
         <p>Data sourced from SEC EDGAR - public domain</p>
     </footer>
 
-    <!-- Above the script, not below it: the script looks this element up as it
-         runs, and a tooltip declared after it was silently null, so hovering a
-         cell set innerHTML on nothing. Position is fixed, so where it sits in
-         the document does not affect layout. -->
+    <!-- Above the script, which looks this element up as it runs. -->
     <div id="xbrl-tooltip" class="xbrl-tooltip hidden"></div>
 
     <script>
@@ -1345,9 +1342,8 @@
             return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
         }
 
-        // Every value says which of the three states it is in: reported by the
-        // filer, derived by Edgardly from reported values, or missing with a
-        // pointer to the statement where a reader can find it by hand.
+        // Every value is reported by the filer, derived from reported values,
+        // or missing with a pointer to the statement that carries it.
         function xbrlProvenanceHtml(prov, fallbackTag) {
             if (!prov) {
                 return '<div class="tt-row"><b>Tag:</b> ' + xbrlEsc(fallbackTag || '—') + '</div>';
@@ -1363,8 +1359,7 @@
                     html += '<div class="tt-row tt-derived-input">&#8226; ' + xbrlEsc(input.name)
                           + (input.tag ? ' (' + xbrlEsc(input.tag) + ')' : '')
                           + (input.formula ? ' = ' + xbrlEsc(input.formula) : '') + '</div>';
-                    // An input that is itself derived carries its own inputs, and
-                    // those are the reported values a reader can check.
+                    // A derived input carries its own inputs, which are reported.
                     (input.inputs || []).forEach(leaf => {
                         html += '<div class="tt-row tt-derived-leaf">&#8226; ' + xbrlEsc(leaf.name)
                               + (leaf.tag ? ' (' + xbrlEsc(leaf.tag) + ')' : '') + '</div>';

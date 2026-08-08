@@ -11,10 +11,10 @@ The label cannot be believed. EDGAR stamps fp on the filing rather than on the
 fact, so a 10-Q that carries the previous year-end balance sheet as its
 comparative column hands that instant the label "Q2", and resolution keeping
 the most recently filed entry means the 10-Q's copy is the one that survives.
-Honeywell's 2025-12-31 total assets is exactly this: 73,681 million, reported
-in the FY2025 10-K, labeled Q2 by the July 2026 10-Q that repeated it. Reading
-the label dropped the whole year from the single-company table while the peer
-table showed it (PROGRESS.md open question 3, V2_PLAN risk R5).
+Honeywell's 2025-12-31 total assets is exactly this: reported in the FY2025
+10-K, labeled Q2 by the July 2026 10-Q that repeated it. Reading the label
+dropped the whole year from the single-company table while the peer table
+showed it (PROGRESS.md open question 3, V2_PLAN risk R5).
 
 So dates decide:
 

@@ -10,42 +10,32 @@ Four ideas carry the whole module.
 
 **A total is reported; the components plug to it.** XBRL hands over isolated
 tagged values, not a statement, so the tagged components of a subtotal almost
-never sum to the subtotal a filer reports (V2_PLAN risk R1). Apple tags cash,
-short-term investments, receivables and inventory, and those four are two
-thirds of its current assets; the rest is vendor non-trade receivables and
-other buckets the 41-item registry does not reach. So each subtotal carries an
-explicit plug row -- "Other current assets (plug to reported total)" -- written
-as arithmetic rather than filled in as a number. On the income statement and
-the cash flow statement a plug over a tenth of the total it plugs to is
-flagged; on the balance sheet the same measurement is reported as a per-section
-coverage percentage instead, because there it is true nearly everywhere and a
-warning shown nearly everywhere is one nobody reads. The registry stays 41
-items; the gap between it and a filer's balance sheet is shown rather than
+never sum to the subtotal a filer reports (V2_PLAN risk R1). Each subtotal
+therefore carries an explicit plug row -- "Other current assets (plug to
+reported total)" -- written as arithmetic rather than filled in as a number. On
+the income statement and the cash flow statement a plug over a tenth of the
+total it plugs to is flagged; on the balance sheet the same measurement is
+reported as a per-section coverage percentage instead, because there it is true
+nearly everywhere and a warning shown nearly everywhere is one nobody reads.
+The registry is not widened to close the gap: the gap is shown rather than
 closed by guessing.
 
 **A blank is a fact about the filing.** A row a filer does not tag is present,
-missing, and explained: Kroger tags no InventoryNet, Honeywell tags no
-Liabilities at all. Such a row is never quietly folded into a plug without the
-plug saying so, and a plug that absorbed one names it. That is the difference
-between a model that is honest about being incomplete and one that looks
-complete.
+missing, and explained. Such a row is never quietly folded into a plug without
+the plug saying so, and a plug that absorbed one names it. That is the
+difference between a model that is honest about being incomplete and one that
+looks complete.
 
 **A filer's own number wins.** Some rows are both: a tag when the filer carries
-it, arithmetic when it does not. Apple tags GrossProfit and Honeywell does not;
-no filer in the acceptance set tags DebtCurrent, so short-term debt is the sum
-of three current-liability lines for all of them; Honeywell tags no Liabilities
-at all, so its liability total is assets less equity. The tag is preferred
-wherever it exists, per period, and the arithmetic stands in only where it does
-not, saying so.
+it, arithmetic when it does not. The tag is preferred wherever it exists, per
+period, and the arithmetic stands in only where it does not, saying so.
 
 **Every leaf is a tag.** Derived rows and plugs are arithmetic on other rows,
 and the descent bottoms out at values a filer reported, with the tag, the
-filing date and the accession behind each. Total Debt stands on Short-Term
-Debt, which stands on three tagged current-liability lines: two levels of
-formula and four reported leaves, all of them visible in the workbook. The
-one-level limit the decisions log fixes governs values Edgardly computes and
-ships as numbers; here nothing is shipped as a number that a reader cannot
-expand in front of them, so depth costs nothing that rule was protecting.
+filing date and the accession behind each. The one-level limit the decisions
+log fixes governs values Edgardly computes and ships as numbers; here nothing
+is shipped as a number that a reader cannot expand in front of them, so depth
+costs nothing that rule was protecting.
 
 The forecast side is plumbing only. Every forecast cell is arithmetic on an
 assumption the analyst enters or on another forecast cell, and a year whose
