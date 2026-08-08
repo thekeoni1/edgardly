@@ -260,13 +260,13 @@
                 </div>
             </div>
             <p class="peer-legend">
-                <span class="peer-flag-icon">⚠</span> Flagged value — hover any data cell for tag, period dates, and flag details.
+                <span class="peer-flag-icon">⚠</span> Flagged value - hover any data cell for tag, period dates, and flag details.
                 "N/A" = no XBRL data found for that company and period.
             </p>
         </section>
     </main>
     <footer>
-        <p>Data sourced from SEC EDGAR &mdash; public domain</p>
+        <p>Data sourced from SEC EDGAR - public domain</p>
     </footer>
 
     <!-- Above the script, not below it: the script looks this element up as it
@@ -357,7 +357,7 @@
             companyInput.value = '';
             companyInput.placeholder = 'Type to change company';
             const ticker = r.ticker ? ' (' + r.ticker + ')' : '';
-            selectedName.textContent = r.company_name + ticker + ' — CIK ' + r.cik;
+            selectedName.textContent = r.company_name + ticker + ' - CIK ' + r.cik;
             selectedName.classList.remove('hidden');
             searchBtn.disabled = false;
             hideDropdown();
@@ -1012,7 +1012,7 @@
             xbrlSelectedCik.value = r.cik;
             xbrlCompanyInput.value = '';
             xbrlCompanyInput.placeholder = 'Type to change company';
-            xbrlSelectedName.textContent = r.company_name + (r.ticker ? ' (' + r.ticker + ')' : '') + ' — CIK ' + r.cik;
+            xbrlSelectedName.textContent = r.company_name + (r.ticker ? ' (' + r.ticker + ')' : '') + ' - CIK ' + r.cik;
             xbrlSelectedName.classList.remove('hidden');
             xbrlLoadBtn.disabled = false;
             xbrlHideDropdown();
@@ -1314,7 +1314,7 @@
                 let html = xbrlProvenanceHtml(d.provenance, d.tag);
                 if (!d.provenance || d.provenance.state !== 'missing') {
                     html += d.start
-                        ? '<div class="tt-row"><b>Period:</b> ' + d.start + ' — ' + d.end + '</div>'
+                        ? '<div class="tt-row"><b>Period:</b> ' + d.start + ' - ' + d.end + '</div>'
                         : '<div class="tt-row"><b>Date:</b> ' + (d.end || '—') + '</div>';
                     const rawNum = (d.value !== null && d.value !== undefined)
                         ? Number(d.value).toLocaleString('en-US') + (d.unit ? ' ' + d.unit : '')
@@ -1737,7 +1737,7 @@
                     if (peerES) { peerES.close(); peerES = null; }
                     peerProgress.classList.add('hidden');
                     peerRunBtn.disabled = false;
-                    if (!peerResult) peerSetStatus('Connection error — try again.', 'error');
+                    if (!peerResult) peerSetStatus('Connection error - try again.', 'error');
                 };
             });
 
@@ -1993,7 +1993,7 @@
                     if (d.provenance || d.tag) html += xbrlProvenanceHtml(d.provenance, d.tag);
                     if (!d.provenance || d.provenance.state !== 'missing') {
                         if (d.start)
-                            html += '<div class="tt-row"><b>Period:</b> ' + d.start + ' — ' + d.end + '</div>';
+                            html += '<div class="tt-row"><b>Period:</b> ' + d.start + ' - ' + d.end + '</div>';
                         else if (d.end)
                             html += '<div class="tt-row"><b>Date:</b> ' + d.end + '</div>';
                         if (d.value !== null && d.value !== undefined) {

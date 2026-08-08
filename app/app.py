@@ -850,7 +850,7 @@ def _xbrl_add_chart_sheet(wb, entity, columns, rows, dollar_factor, dollar_label
     note_row = 6
     if has_flags:
         ws.cell(note_row, 1,
-            "Note: one or more plotted values are flagged for review — "
+            "Note: one or more plotted values are flagged for review - "
             "see 'Financial Data' sheet (yellow highlighted cells) for details."
         )
         note_row = 7
@@ -859,7 +859,7 @@ def _xbrl_add_chart_sheet(wb, entity, columns, rows, dollar_factor, dollar_label
     # Chart 1: Revenue & Net Income
     # ------------------------------------------------------------------
     c1 = LineChart()
-    c1.title        = "{} — Revenue & Net Income".format(entity)
+    c1.title        = "{} - Revenue & Net Income".format(entity)
     c1.y_axis.title = dollar_label
     c1.x_axis.title = "Period"
     c1.style        = 10
@@ -878,7 +878,7 @@ def _xbrl_add_chart_sheet(wb, entity, columns, rows, dollar_factor, dollar_label
     # Chart 2: Gross Margin % and Net Margin %
     # ------------------------------------------------------------------
     c2 = LineChart()
-    c2.title        = "{} — Gross Margin % and Net Margin %".format(entity)
+    c2.title        = "{} - Gross Margin % and Net Margin %".format(entity)
     c2.y_axis.title = "%"
     c2.x_axis.title = "Period"
     c2.style        = 10
@@ -958,7 +958,7 @@ def _peer_add_chart_sheet(wb, comparison_result):
 
     for idx, ((label, key, y_label), start) in enumerate(zip(metrics, starts)):
         c = LineChart()
-        c.title        = "{} — {}".format(label, names_short)
+        c.title        = "{} - {}".format(label, names_short)
         c.y_axis.title = y_label
         c.x_axis.title = "Period (oldest → newest)"
         c.style        = 10
@@ -1994,7 +1994,7 @@ def _ensure_playwright_chromium():
             if os.path.exists(p.chromium.executable_path):
                 return
     except ImportError:
-        print("WARNING: playwright not installed — PDF downloads unavailable.")
+        print("WARNING: playwright not installed - PDF downloads unavailable.")
         print("  Run: pip install playwright && playwright install chromium")
         return
     except Exception:
@@ -2015,7 +2015,7 @@ def _ensure_playwright_chromium():
         proc.wait()
         if proc.returncode != 0:
             raise RuntimeError(f"installer exited with code {proc.returncode}")
-        print("\nSetup complete — PDF rendering engine ready.\n")
+        print("\nSetup complete - PDF rendering engine ready.\n")
     except Exception as exc:
         print(f"\nWARNING: Auto-install failed: {exc}")
         print("To enable PDF downloads, run manually:")
