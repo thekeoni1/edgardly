@@ -60,7 +60,7 @@ open questions the next session needs to know about.
 | 2026-08-06 | 6c | Presentation polish on the scaffold workbooks: standard model formatting conventions, dollars and share counts displayed in millions through the number format, currency assumptions typed in millions and multiplied back, cross-sheet links in green, detail rows indented, subtotals ruled off. Three decisions recorded. Fourteen new tests, no existing one rewritten. The three acceptance workbooks were evaluated before and after and 3,461 numeric cells are identical; the only numbers that moved are the currency assumption's own input cells. | 0 | None. Phase 2 still waits only on the user's interactive pass and three signatures, and that pass now has more to look at. |
 | 2026-08-06 | 6b | All sixteen breakage entries closed. Eleven commits: the three user decisions and the YoY span fix, annual-only columns, the debt chains and the finance lease rows, the intangibles chain, the opening-cash message, the operating income caveat, temporary equity, the widened Checks list, comparability seams, the four document dispositions, and this record. Twelve of the sixteen end in code with a test that fails on the old behaviour; three are document corrections and one is a documented filer-side inconsistency. Workbooks regenerated and every touched cell re-verified against live EDGAR. | 0 | None. Sixteen closed, none open. Phase 2 waits only on the user's interactive pass and three signatures. |
 | 2026-08-06 | 6d | The Phase 2 wrap-up. The user ran the interactive pass on all three workbooks and the two user-reserved boxes on each copy are ticked and dated; all three copies are signed, 2026-08-06, recorded by this session on the user's explicit instruction and certifying review of the evidence rather than recomputation, per the 2026-08-05 decisions-log entry. The sixth exit criterion is filled and **Phase 2 is declared done**, dated 2026-08-06. Documents only: no application code, no regeneration, no test change. Phase 3, trading comps, is not scheduled: V2_PLAN Part 5 gates it and everything after it on the matching course, so its planning waits on the user's course progress. | 0 | None. Nothing is open on any checklist copy, the breakage log has no open rows, and the project has no next session until the Phase 3 gate opens. |
-| 2026-08-07 | 7 | Polish and publish. Eight commits: playwright pinned and the test-only requirements split out, the README rewritten for v2, the scaffold confirmation's flag dump replaced by a count and a collapsed list, the XBRL legend shortened, em dashes out of user-visible text, the overexplaining docstrings and comments trimmed, a framing header on each of the five internal records, and this record. One new test, none rewritten. The repo is pushed to GitHub: 67 commits of v2 work, public at once. | 0 | None. |
+| 2026-08-07 | 7 | Polish and publish. Eight commits: playwright pinned and the test-only requirements split out, the README rewritten for v2, the scaffold confirmation's flag dump replaced by a count and a collapsed list, the XBRL legend shortened, em dashes out of user-visible text, the overexplaining docstrings and comments trimmed, a framing header on each of the five internal records, and this record. One new test, none rewritten. The repo is pushed to GitHub: 67 commits of v2 work, public at once, after the author email on all 67 was rewritten to the GitHub noreply address to clear a GH007 refusal. | 0 | None. |
 
 ### Session 1 detail
 
@@ -1181,9 +1181,23 @@ is and that its entries are records as of their date. Nothing else in any of the
 five moved, and the acceptance documents' certified content was not touched at
 all: a record edited after the fact is not one.
 
-**Publication.** 67 commits between origin/master and this one, every one of
-them v2 work, and origin/master was an ancestor of the local tip, so the push is
-a fast-forward rather than a history anyone has to reconcile.
+**Publication, and what it took.** 67 commits between origin/master and this
+one, every one of them v2 work, and origin/master was an ancestor of the local
+tip, so the push is a fast-forward rather than a history anyone has to reconcile.
+
+GitHub refused the first attempt with GH007. The account has "block command line
+pushes that expose my email" turned on and every commit was authored as
+thekeoni@gmail.com, which this push does not newly expose: it is on every commit
+already public in this repository, and it is the SEC User-Agent contact in
+edgar_api.py by the Session 1 decision. The setting is account-wide rather than
+per repository, so on the user's instruction the author and committer email of
+all 67 was rewritten to 55367154+thekeoni1@users.noreply.github.com and the push
+then succeeded. Verified to be metadata and nothing else: every commit's tree,
+message and author date is what it was, the final tree is identical to the
+pre-rewrite branch, and that branch is kept locally as
+backup-pre-email-rewrite. The address itself stays where it was, in the
+User-Agent and in the Session 1 entry above. What moved is who the commits say
+they are from, not what the repository says.
 
 ## Phase 2 exit review
 
