@@ -88,13 +88,25 @@ Assumptions ship empty. The scaffold reports each forecast year as not ready unt
 
 ### XBRL Single-Company View
 
-![XBRL financial data table](docs/screenshots/xbrl-single-company1.jpg)
+![Apple annual financials from FY2016 to FY2025, with the Revenue row showing the tag transition from Revenues to RevenueFromContractWithCustomer](docs/screenshots/xbrl-single-company1.png)
 
-![XBRL chart and validation flags](docs/screenshots/xbrl-single-company2.jpg)
+Each line item names the tag that produced it, and a row whose tag changed mid-period shows both.
+
+![Bottom of the Apple table, with the reported Long-Term Debt row above a derived Total Debt row](docs/screenshots/xbrl-single-company2.png)
+
+Total Debt is derived from short-term plus long-term debt, and renders in italics beside the reported Long-Term Debt row to keep the two apart.
+
+![Revenue and Net Income plotted across ten fiscal years, with triangle markers on the two flagged Revenue points](docs/screenshots/xbrl-single-company-chart.png)
+
+Flagged values keep their place on the chart and are marked with a triangle rather than dropped.
 
 ### Peer Comparison
 
-![Peer comparison table](docs/screenshots/peer-comparison1.jpg)
+![Peer comparison of Apple and Microsoft over three years, with fifteen line items selected and the top of the results table below](docs/screenshots/peer-comparison1.png)
+
+![Peer chart with the Net Income tab active, comparing Apple and Microsoft across three fiscal years](docs/screenshots/peer-comparison2.png)
+
+Four metric tabs switch the chart between Revenue, Net Income, Gross Margin, and Net Margin.
 
 ---
 
