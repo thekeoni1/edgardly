@@ -60,6 +60,7 @@ open questions the next session needs to know about.
 | 2026-08-06 | 6c | Presentation polish on the scaffold workbooks: standard model formatting conventions, dollars and share counts displayed in millions through the number format, currency assumptions typed in millions and multiplied back, cross-sheet links in green, detail rows indented, subtotals ruled off. Three decisions recorded. Fourteen new tests, no existing one rewritten. The three acceptance workbooks were evaluated before and after and 3,461 numeric cells are identical; the only numbers that moved are the currency assumption's own input cells. | 0 | None. Phase 2 still waits only on the user's interactive pass and three signatures, and that pass now has more to look at. |
 | 2026-08-06 | 6b | All sixteen breakage entries closed. Eleven commits: the three user decisions and the YoY span fix, annual-only columns, the debt chains and the finance lease rows, the intangibles chain, the opening-cash message, the operating income caveat, temporary equity, the widened Checks list, comparability seams, the four document dispositions, and this record. Twelve of the sixteen end in code with a test that fails on the old behaviour; three are document corrections and one is a documented filer-side inconsistency. Workbooks regenerated and every touched cell re-verified against live EDGAR. | 0 | None. Sixteen closed, none open. Phase 2 waits only on the user's interactive pass and three signatures. |
 | 2026-08-06 | 6d | The Phase 2 wrap-up. The user ran the interactive pass on all three workbooks and the two user-reserved boxes on each copy are ticked and dated; all three copies are signed, 2026-08-06, recorded by this session on the user's explicit instruction and certifying review of the evidence rather than recomputation, per the 2026-08-05 decisions-log entry. The sixth exit criterion is filled and **Phase 2 is declared done**, dated 2026-08-06. Documents only: no application code, no regeneration, no test change. Phase 3, trading comps, is not scheduled: V2_PLAN Part 5 gates it and everything after it on the matching course, so its planning waits on the user's course progress. | 0 | None. Nothing is open on any checklist copy, the breakage log has no open rows, and the project has no next session until the Phase 3 gate opens. |
+| 2026-08-07 | 7 | Polish and publish. Eight commits: playwright pinned and the test-only requirements split out, the README rewritten for v2, the scaffold confirmation's flag dump replaced by a count and a collapsed list, the XBRL legend shortened, em dashes out of user-visible text, the overexplaining docstrings and comments trimmed, a framing header on each of the five internal records, and this record. One new test, none rewritten. The repo is pushed to GitHub: 67 commits of v2 work, public at once. | 0 | None. |
 
 ### Session 1 detail
 
@@ -1109,6 +1110,80 @@ it suppresses alerts. Every workbook reads back through openpyxl and the defined
 names are unchanged, which is what the automated half of R4 can say. The
 acceptance checklists were not touched and nothing was signed; the values they
 certify have not moved, which is what the before-and-after comparison is for.
+
+### Session 7 detail
+
+Suite state: 733 tests, all passing, zero xfails. 687 mocked tests run offline in
+about two minutes; 46 integration tests hit live EDGAR or start a browser.
+Session 6c left 732. The one new test is in test_scaffold_endpoint.py and reads
+the template source, which is how that module already tests the button.
+
+One behaviour change in the whole session, and it is in the browser. Everything
+else is prose: a README, four docstrings and comments, five framing headers, and
+a punctuation pass.
+
+**The README described a tool that no longer exists.** It was written for the v1
+puller and had never been rewritten, so the scaffolder, which is the whole of
+Phase 2 and the reason the project was reopened, appeared nowhere in it. Two
+claims in it were not merely incomplete but wrong, and both were checked against
+the code rather than against the last README:
+
+- The extracted line-item list named thirteen rows. `line_items.UI_LINE_ITEMS` is
+  fifteen. Total Debt has been displayed since Session 4B, "Cost of Goods Sold"
+  has been Cost of Revenue since the registry was built, and the single "Shares
+  Outstanding" is two rows, basic and diluted.
+- The export colour sentence read blue for XBRL, red for flagged, grey italic
+  for unreported. That has not been the semantics since Phase 1. It is blue
+  reported, black derived, grey italic missing, with red on top of any of them
+  for a value the validation layer flagged, which is what the workbook's own
+  legend row says.
+
+Every other claim was checked before being kept: the nine form-type chips, the
+twelve columns of the metadata export, the EFTS fallback, the native-PDF
+preference, the chart gap and marker behaviour, the peer view's relative-period
+alignment, port 5050, and the rate limiter behind the SEC guideline sentence.
+Python 3.9 is the floor because playwright 1.60.0 asks for it; the other four
+dependencies ask for 3.8.
+
+**The confirmation the button writes.** It printed the full text of every flag
+the workbook raises, which since Session 6b widened the Checks list is a wall of
+sentences that pushes the summary line off the screen. The flags are already on
+the Checks sheet, grouped by row, which is where a reader who wants them will
+be. So the summary stays, the list becomes a count of the distinct messages, and
+the messages sit inside a collapsed details element. Deduplication is unchanged
+and now feeds the count as well as the list. Driven in a real browser offline
+before it was committed: collapsed on render, the count is the deduplicated one
+and not the raw one, singular and plural both read correctly, and the no-flag
+case still shows the summary alone.
+
+**One em dash is not punctuation and stays.** The empty-value glyph in both
+tables is the zero section of the Excel number format the same tables export to,
+so a blank cell reads the same on screen as in the workbook; replacing it with a
+hyphen would have made the two disagree for no gain. Em dashes inside code
+comments stay for the same reason the docstrings are still prose. What changed
+is user-visible text only: the two legends, the footer, the peer connection
+error, the "CIK" separator, the period range in both tooltips, three Excel chart
+titles, the flagged-value chart note and the two first-run console prints.
+
+**Trimming stopped at the rules.** The two scaffold module docstrings keep every
+rule they carried and lose the worked company anecdotes, which takes
+three_statement.py's from 54 lines to 44 and excel.py's from 47 to 45; excel.py's
+heading said four rules and there have been five since Session 6c. periods.py loses one figure from a sentence that already names the
+filing, the tag and the label. The tooltip element's comment loses its account
+of the bug that put it where it is and keeps the constraint that put it there.
+
+**What a framing header is for.** PROGRESS.md, V2_PLAN.md, SESSIONS.md and the
+two acceptance documents go public with the code, and none of them said what it
+was. A reader opening this file expecting documentation of the current code
+finds measurements from a fortnight ago; one opening V2_PLAN.md finds a plan
+written before any of it existed. Two lines at the top of each say what the file
+is and that its entries are records as of their date. Nothing else in any of the
+five moved, and the acceptance documents' certified content was not touched at
+all: a record edited after the fact is not one.
+
+**Publication.** 67 commits between origin/master and this one, every one of
+them v2 work, and origin/master was an ancestor of the local tip, so the push is
+a fast-forward rather than a history anyone has to reconcile.
 
 ## Phase 2 exit review
 
