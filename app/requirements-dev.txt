@@ -1,0 +1,6 @@
+# Test-only dependencies. Running the app needs requirements.txt alone; running
+# the suite needs both, which is what the first line pulls in.
+-r requirements.txt
+
+pytest==8.2.2
+pytest-timeout==2.3.1
